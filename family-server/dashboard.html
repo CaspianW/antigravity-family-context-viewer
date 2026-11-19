@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh-Hans" data-public-view="false">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>家庭用量 · Antigravity</title>
+<style>
+  :root{color-scheme:light;--bg:#edf2f8;--card:#fff;--text:#101e34;--muted:#52627b;--line:#dbe4ef;--accent:#254cb8;--tint:#e9efff;--live:#087b64;--chart:#5070da;--error:#ad322a;--shadow:0 18px 50px #172c4810}
+  [data-theme=dark]{color-scheme:dark;--bg:#0d1526;--card:#141f33;--text:#f0f5ff;--muted:#a7b5cc;--line:#2b3a54;--accent:#abc2ff;--tint:#223258;--live:#66d4b3;--chart:#87a2ff;--error:#ffafa5;--shadow:0 18px 50px #0003}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{background:var(--card);border-bottom:1px solid var(--line)}
+  .top,.wrap{width:min(1160px,100% - 48px);margin-inline:auto}
+  .top{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .brand{display:flex;align-items:center;gap:12px;font-weight:760}
+  .mark{width:28px;height:28px;border-radius:8px;background:#3157c9;display:flex;align-items:center;justify-content:center;gap:2px}
+  .mark b{width:3px;background:white;border-radius:2px}.mark b:nth-child(1){height:8px}.mark b:nth-child(2){height:15px}.mark b:nth-child(3){height:11px}
+  .top-actions,.actions,.filters,.legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .wrap{padding:35px 0 60px}
+  h1,h2,h3,p{margin:0}h1{font-size:clamp(2.1rem,6vw,3.2rem);line-height:1.12;letter-spacing:-.04em}h2{font-size:1.24rem}h3{font-size:1.05rem}
+  .intro{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+  .intro p,.muted,small{color:var(--muted)}.intro p{margin-top:8px}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button,select,input,textarea{padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card)}
+  button{cursor:pointer;font-weight:620}button:hover{border-color:var(--accent)}button:disabled{opacity:.55;cursor:wait}
+  .primary{color:#fff;background:#2c52bf;border-color:#2c52bf}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  label{display:grid;gap:5px;font-size:.9rem}
+  .filters{padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card);margin-bottom:16px}
+  .range{display:flex;flex-wrap:wrap;gap:5px;margin-right:auto}
+  .range button{border-color:transparent;font-size:.92rem;white-space:nowrap}
+  .range [aria-pressed=true]{background:var(--tint);color:var(--accent)}
+  .label-inline{display:flex;align-items:center;gap:7px}
+  .label-inline select{min-width:0}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .card,.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);min-width:0}
+  .card{padding:18px 20px}.card span{color:var(--muted);font-size:.88rem}.card strong{display:block;font-size:1.9rem;line-height:1.24;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin-top:5px}
+  .panel{padding:20px;margin-bottom:16px}.panel h2{margin-bottom:10px}.panel p{margin-block:4px}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:16px}
+  .line{display:flex;align-items:center;justify-content:space-between;gap:10px;overflow-wrap:anywhere}.line small{text-align:right}
+  .member{border-bottom:1px solid var(--line);padding:9px 0 12px}.member:last-child{border:0;padding-bottom:0}
+  summary{cursor:pointer;overflow-wrap:anywhere;color:var(--text)}
+  .member summary{display:flex;align-items:flex-start;gap:8px;list-style:none}
+  .member summary:before{content:'›';color:var(--muted)}.member[open] summary:before{content:'⌄'}
+  .member-overview{min-width:0;flex:1}
+  .member small{display:block;margin:5px 0 0;font-size:.82rem;color:var(--muted)}
+  .track{height:8px;background:var(--tint);border-radius:999px;overflow:hidden;margin-top:7px}
+  .track span{display:block;height:100%;border-radius:inherit;background:var(--chart)}
+  .detail{margin-top:10px;padding-left:12px;border-left:2px solid var(--line);font-size:.92rem}
+  .detail h3{margin-block:8px 4px}
+  .quota{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .quota-meta{font-size:.82rem;color:var(--muted);margin:4px 0 10px}.quota-window{margin-top:10px}.quota-window .track span{background:var(--live)}
+  .quota-window .line:first-child{font-size:.88rem}.status{font-size:.85rem;color:var(--muted)}
+  .status[data-live=true]{color:var(--live)}
+  .status[data-live=true]:before{content:'';display:inline-block;width:7px;height:7px;background:var(--live);border-radius:50%;margin-right:6px}
+  .error{color:var(--error);margin:8px 0;overflow-wrap:anywhere}
+  .chart{height:160px;display:flex;align-items:stretch;gap:clamp(2px,.8vw,8px);padding:8px 1px 0;border-bottom:1px solid var(--line)}
+  .chart .slot{flex:1;min-width:0;display:flex;align-items:flex-end;justify-content:center}
+  .chart i{display:block;max-width:30px;width:100%;background:var(--chart);border-radius:4px 4px 0 0}
+  .chart-labels{display:flex;justify-content:space-between;margin:5px 0 0;font-size:.82rem;color:var(--muted)}
+  .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.admin-grid h3{margin:15px 0 5px}
+  .admin-row{padding:9px 0;border-bottom:1px solid var(--line)}.admin-row button{font-size:.82rem}
+  dialog{width:min(455px,calc(100% - 28px));border:1px solid var(--line);border-radius:16px;padding:23px;background:var(--card);color:var(--text);box-shadow:var(--shadow)}dialog::backdrop{background:#0a10239c}
+  form{display:grid;gap:12px}.checkbox{display:flex;align-items:center;gap:8px}.checkbox input{width:auto}
+  dialog .actions{justify-content:flex-end}textarea{width:100%;resize:vertical}
+  #fields{display:grid;gap:10px}
+  .login{max-width:460px;margin:8vh auto 0;padding:28px}
+  [data-public-view=true] .login{margin:0 auto 20px}
+  @media(max-width:760px){.top,.wrap{width:calc(100% - 28px)}.wrap{padding-top:24px}.grid,.admin-grid{grid-template-columns:1fr;gap:0}.intro{align-items:flex-start;flex-direction:column}.card,.panel{padding:15px}.card strong{font-size:1.42rem}.range{width:100%}.top-actions button{font-size:.8rem;padding:6px 8px}}
+  @media(max-width:410px){.top{gap:6px}.brand{font-size:.8rem;gap:6px}.mark{width:23px;height:23px;flex:none}.top-actions{gap:4px}.top-actions button{font-size:.72rem;padding:6px}.cards{gap:6px}.card{padding:9px}.card strong{font-size:1.03rem}.card span{font-size:.75rem}.range button{padding:6px 7px;font-size:.84rem}.label-inline{font-size:.8rem}.filters select{padding:6px 5px}}
+</style>
+</head>
+<body>
+<header><div class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"><b></b><b></b><b></b></span>Antigravity 家庭组</div>
+  <div class="top-actions">
+    <button id="theme" type="button">切换主题</button>
+    <button id="manage" type="button" hidden>管理登录</button>
+    <button id="invite" type="button" hidden>复制加入配置</button>
+    <button id="logout" type="button" hidden>退出管理</button>
+  </div>
+</div></header>
+<main class="wrap">
+<section class="login card" id="login" hidden>
+  <form id="loginForm">
+    <h1 id="loginTitle">家庭用量</h1>
+    <p id="loginHint" class="muted">输入家庭组密钥，查看各成员与设备的用量。</p>
+    <label>家庭组密钥<input id="password" type="password" required maxlength="512" autocomplete="off"></label>
+    <label class="checkbox"><input id="remember" type="checkbox">在此浏览器记住密钥</label>
+    <p id="loginError" class="error" role="alert" hidden></p>
+    <div class="actions">
+      <button id="closeLogin" type="button" hidden>取消</button>
+      <button id="loginSubmit" class="primary" type="submit">打开看板</button>
+    </div>
+  </form>
+</section>
+<div id="view" hidden>
+  <div class="intro">
+    <div><h1>家庭用量</h1><p>按成员汇总各设备上报的 Antigravity 用量</p></div>
+    <div class="actions"><span id="status" class="status" role="status"></span><button type="button" id="refresh">刷新</button></div>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div class="filters">
+    <div id="range" class="range" role="group" aria-label="时间范围">
+      <button data-range="5h" aria-pressed="false">近 5 小时</button><button data-range="today" aria-pressed="true">今日</button><button data-range="7d" aria-pressed="false">近 7 天</button><button data-range="month" aria-pressed="false">本月</button><button data-range="all" aria-pressed="false">全部</button>
+    </div>
+    <label id="scopePicker" class="label-inline" hidden>范围<select id="scope"><option value="shared">家庭统计</option><option value="personal">独立统计（家庭成员可见）</option></select></label>
+    <label class="label-inline">占比<select id="metric"><option value="totalTokens">总 Token</option><option value="costUSD">API 参考费用</option></select></label>
+  </div>
+  <div class="cards">
+    <div class="card"><span>总 Token</span><strong id="totalTokens">—</strong></div>
+    <div class="card"><span>模型调用</span><strong id="totalCalls">—</strong></div>
+    <div class="card"><span>API 参考费用</span><strong id="totalCost">—</strong></div>
+  </div>
+  <div class="grid">
+    <section class="panel"><h2>成员用量</h2><p id="unpriced" class="muted"></p><div id="members"></div></section>
+    <section class="panel" id="quotaPanel"><h2>账号额度快照</h2><p class="muted">每个账号显示最近上报的模型组剩余额度。</p><div id="quotas"></div></section>
+  </div>
+  <section class="panel"><h2 id="chartTitle">Token 趋势</h2><div id="trend"></div></section>
+  <details id="admin" class="panel" hidden>
+    <summary><strong>成员与设备管理</strong></summary>
+    <div class="admin-grid">
+      <div><h3>成员</h3><button id="addMember" type="button">添加成员</button><div id="manageMembers"></div></div>
+      <div><h3>设备</h3><div id="manageDevices"></div></div>
+    </div>
+  </details>
+</div>
+</main>
+<dialog id="editor">
+  <form id="editForm">
+    <h2 id="editTitle"></h2>
+    <div id="fields"></div>
+    <p id="editError" class="error" role="alert" hidden></p>
+    <div class="actions"><button id="cancel" type="button">关闭</button><button id="save" type="submit" class="primary">保存</button></div>
+  </form>
+</dialog>
+<script>
+'use strict';
+const el = id => document.getElementById(id);
+const number = value => Number(value).toLocaleString('zh-Hans');
+const usd = value => Number(value).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 });
+const dateText = value => new Date(value).toLocaleString('zh-Hans', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const tokenKey = 'antigravity-family-secret';
+const publicView = document.documentElement.dataset.publicView === 'true';
+const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const store = (key, value) => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch {} };
+
+let secret = '';
+let range = 'today';
+let etag = '';
+let data = null;
+let timer;
+let requestCount = 0;
+let editOperation = null;
+let chartFormatter = value => dateText(value);
+
+function node(tag, text = '', className = '') {
+  const result = document.createElement(tag);
+  result.textContent = text;
+  if (className) result.className = className;
+  return result;
+}
+
+function message(id, text) {
+  const target = el(id);
+  target.textContent = text;
+  target.hidden = !text;
+}
+
+function meter(value, color) {
+  const bar = node('div', '', 'track');
+  const fill = node('span');
+  fill.style.width = Math.max(0, Math.min(100, value)) + '%';
+  if (color) fill.style.background = color;
+  bar.append(fill);
+  return bar;
+}
+
+function line(left, right) {
+  const row = node('div', '', 'line');
+  row.append(node('span', left), node('small', right));
+  return row;
+}
+
+function compactTokens(row) {
+  return '输入 ' + number(row.inputTokens) + ' · 缓存读 ' + number(row.cacheReadTokens) + ' · 输出 ' +
+    number(row.outputTokens) + ' · 思考 ' + number(row.thinkingTokens);
+}
+
+async function api(route, options = {}) {
+  const headers = { ...options.headers };
+  if (secret) headers.Authorization = 'Bearer ' + secret;
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const response = await fetch('/api/v1/' + route, { ...options, headers, signal: AbortSignal.timeout(8000) });
+  if (response.status === 304) return { unchanged: true };
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(response.status === 401 ? '家庭组密钥有误。' : result.error || '请求失败。');
+    error.status = response.status;
+    throw error;
+  }
+  return { result, etag: response.headers.get('ETag') };
+}
+
+function metricText(row, metric) {
+  return metric === 'costUSD' ? usd(row.costUSD) : number(row.totalTokens) + ' Token';
+}
+
+function renderMembers() {
+  const rows = el('members');
+  const expanded = new Set(Array.from(rows.querySelectorAll('details[open]'), item => item.dataset.member));
+  rows.replaceChildren();
+  const metric = el('metric').value;
+  const sorted = [...data.members].sort((a, b) => b[metric] - a[metric]);
+  if (!data.total.calls) rows.append(node('p', '该时间范围暂无上报记录。', 'muted'));
+  for (const member of sorted) {
+    const details = node('details', '', 'member');
+    details.dataset.member = member.id;
+    details.open = expanded.has(member.id);
+    const share = metric === 'costUSD' ? member.costShare : member.tokenShare;
+    const summary = node('summary');
+    const overview = node('div', '', 'member-overview');
+    const title = node('div', '', 'line');
+    title.append(node('strong', member.name + (member.archived ? ' · 已归档' : '')),
+      node('strong', share == null ? '—' : (share * 100).toFixed(1) + '%'));
+    overview.append(title, meter(100 * (share ?? 0), member.color),
+      node('small', metricText(member, metric) + ' · ' + number(member.calls) + ' 次调用'),
+      node('small', compactTokens(member)));
+    summary.append(overview);
+    details.append(summary);
+    const detail = node('div', '', 'detail');
+    if (member.devices.length) detail.append(node('h3', '设备与账号'));
+    for (const device of member.devices) {
+      detail.append(line(device.deviceName, metricText(device, metric)));
+      for (const account of device.accounts) {
+        detail.append(line(account.accountAlias || '账号 ' + account.accountScopeKey.slice(-6), metricText(account, metric)));
+      }
+    }
+    if (member.models.length) detail.append(node('h3', '模型'));
+    for (const model of member.models) detail.append(line(model.model, metricText(model, metric)));
+    if (!member.calls) detail.append(node('p', '暂无调用记录。', 'muted'));
+    details.append(detail);
+    rows.append(details);
+  }
+}
+
+function renderQuotas() {
+  const quota = el('quotas');
+  el('quotaPanel').hidden = data.scope === 'personal';
+  quota.replaceChildren();
+  if (!data.quotaSnapshots.length) quota.append(node('p', '等待加入家庭统计的账号上报额度。', 'muted'));
+  for (const [index, snapshot] of data.quotaSnapshots.entries()) {
+    const card = node('article', '', 'quota');
+    const label = snapshot.accountAlias || '账号 ' + (snapshot.accountScopeKey?.slice(-6) ?? (index + 1));
+    card.append(node('h3', label));
+    const meta = node('div', '', 'quota-meta');
+    meta.dataset.observed = snapshot.observedAt;
+    meta.dataset.reporter = [snapshot.memberName, snapshot.deviceName].filter(Boolean).join(' · ');
+    card.append(meta);
+    for (const window of snapshot.windows) {
+      const row = node('div', '', 'quota-window');
+      row.append(line(window.pool + ' · ' + (window.window === '5h' ? '5 小时' : '每周'), number(window.remainingPct) + '%'), meter(window.remainingPct));
+      if (window.resetAt) {
+        const reset = node('div', '', 'quota-meta');
+        reset.dataset.reset = window.resetAt;
+        row.append(reset);
+      }
+      card.append(row);
+    }
+    quota.append(card);
+  }
+  updateTimes();
+}
+
+function updateTimes() {
+  for (const item of document.querySelectorAll('[data-observed]')) {
+    const seconds = Math.max(0, Math.floor((Date.now() - Number(item.dataset.observed)) / 1000));
+    item.textContent = (item.dataset.reporter ? item.dataset.reporter + ' · ' : '') +
+      (seconds < 90 ? seconds + ' 秒前' : seconds < 3600 ? Math.floor(seconds / 60) + ' 分钟前' : dateText(Number(item.dataset.observed))) +
+      (seconds >= 180 ? ' · 快照已过期' : '');
+  }
+  for (const item of document.querySelectorAll('[data-reset]')) {
+    const minutes = Math.ceil((Number(item.dataset.reset) - Date.now()) / 60000);
+    item.textContent = minutes <= 0 ? '等待刷新后的额度' : Math.floor(minutes / 60) + ' 小时 ' + minutes % 60 + ' 分钟后重置';
+  }
+}
+
+function renderTrend() {
+  const target = el('trend');
+  target.replaceChildren();
+  if (!data.trend.length) {
+    target.append(node('p', '该时间范围暂无趋势数据。', 'muted'));
+    return;
+  }
+  const interval = data.interval;
+  const rows = new Map(data.trend.map(point => [point.timestamp, point.totalTokens]));
+  const first = data.trend[0].timestamp;
+  const last = data.trend.at(-1).timestamp;
+  const slotCount = Math.floor((last - first) / interval) + 1;
+  // Long histories are grouped into roughly weekly-sized visual buckets.
+  const stride = Math.max(1, Math.ceil(slotCount / 50));
+  const points = new Array(Math.ceil(slotCount / stride)).fill(0);
+  for (const [time, value] of rows) points[Math.floor((time - first) / interval / stride)] += value;
+  const peak = Math.max(1, ...points);
+  const chart = node('div', '', 'chart');
+  chart.setAttribute('role', 'img');
+  chart.setAttribute('aria-label', 'Token 用量趋势。最高 ' + number(peak) + ' Token');
+  for (const [index, value] of points.entries()) {
+    const slot = node('div', '', 'slot');
+    const bar = node('i');
+    bar.style.height = value ? Math.max(2, value / peak * 100) + '%' : '0';
+    slot.title = chartFormatter(first + index * stride * interval) + ' · ' + number(value) + ' Token';
+    slot.append(bar);
+    chart.append(slot);
+  }
+  const labels = node('div', '', 'chart-labels');
+  labels.append(node('span', chartFormatter(first)), node('span', chartFormatter(last)));
+  target.append(chart, labels);
+}
+
+function inputField(parent, title, name, initial, options = {}) {
+  const label = node('label', title);
+  const field = node(options.tag || 'input');
+  field.name = name;
+  for (const [key, value] of Object.entries(options)) if (key !== 'tag') field[key] = value;
+  if (field.type === 'checkbox') {
+    label.className = 'checkbox';
+    label.prepend(field);
+    field.checked = Boolean(initial);
+  } else {
+    field.value = initial;
+    label.append(field);
+  }
+  parent.append(label);
+  return field;
+}
+
+function showEditor(title, build, operation) {
+  const fields = el('fields');
+  fields.replaceChildren();
+  el('editTitle').textContent = title;
+  message('editError', '');
+  el('save').hidden = !operation;
+  editOperation = operation;
+  build(fields);
+  el('editor').showModal();
+}
+
+function openMember(member) {
+  showEditor(member ? '编辑成员' : '添加成员', fields => {
+    inputField(fields, '姓名', 'name', member?.name ?? '', { required: true, maxLength: 64 });
+    inputField(fields, '图表颜色', 'color', member?.color ?? '#4179c5', { type: 'color' });
+    inputField(fields, '备注', 'note', member?.note ?? '', { maxLength: 180 });
+    if (member) inputField(fields, '归档成员', 'archived', member.archived, { type: 'checkbox' });
+  }, async form => {
+    const body = Object.fromEntries(form);
+    if (member) body.archived = form.has('archived');
+    await api(member ? 'members/' + member.id : 'members', { method: member ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+  });
+}
+
+function openDevice(device, members) {
+  showEditor('编辑设备', fields => {
+    inputField(fields, '设备名称', 'deviceName', device.deviceName, { required: true, maxLength: 64 });
+    const picker = inputField(fields, '所属成员', 'memberId', '', { tag: 'select' });
+    for (const member of members.filter(item => !item.archived || item.id === device.memberId)) {
+      const option = node('option', member.name);
+      option.value = member.id;
+      picker.append(option);
+    }
+    picker.value = device.memberId;
+    inputField(fields, '一并迁移该设备的历史用量', 'migrateHistory', false, { type: 'checkbox' });
+  }, async form => {
+    const body = Object.fromEntries(form);
+    body.migrateHistory = form.has('migrateHistory');
+    await api('devices/' + device.deviceId, { method: 'PATCH', body: JSON.stringify(body) });
+  });
+}
+
+function renderAdmin(members) {
+  const memberList = el('manageMembers');
+  const deviceList = el('manageDevices');
+  memberList.replaceChildren();
+  deviceList.replaceChildren();
+  for (const member of members) {
+    const row = line(member.name + (member.archived ? ' · 已归档' : ''), member.deviceCount + ' 台');
+    row.classList.add('admin-row');
+    const edit = node('button', '编辑');
+    edit.onclick = () => openMember(member);
+    row.append(edit);
+    memberList.append(row);
+  }
+  if (!data.devices.length) deviceList.append(node('p', '暂无设备接入。', 'muted'));
+  for (const device of data.devices) {
+    const member = members.find(item => item.id === device.memberId);
+    const row = line(device.deviceName, (member?.name || '') + ' · ' + device.platform + ' · ' + (device.online ? '在线' : '最近同步 ' + dateText(device.lastSeenAt)));
+    row.classList.add('admin-row');
+    const edit = node('button', '编辑');
+    edit.onclick = () => openDevice(device, members);
+    row.append(edit);
+    deviceList.append(row);
+  }
+}
+
+function render() {
+  el('totalTokens').textContent = number(data.total.totalTokens);
+  el('totalCalls').textContent = number(data.total.calls);
+  el('totalCost').textContent = data.total.calls > data.total.unpricedCalls ? usd(data.total.costUSD) : '—';
+  const priceNote = '参考费用按公开 API 费率折算。';
+  el('unpriced').textContent = data.total.unpricedCalls
+    ? number(data.total.unpricedCalls) + ' 次调用缺少费率。费用占比仅汇总有费率记录。' : priceNote;
+  chartFormatter = data.interval === 3600000 ? dateText : value => new Date(value).toLocaleDateString('zh-Hans');
+  renderMembers();
+  renderQuotas();
+  renderTrend();
+}
+
+function setConnected(authenticated) {
+  if (authenticated || !publicView) el('login').hidden = authenticated;
+  el('view').hidden = !authenticated && !publicView;
+  el('manage').hidden = !publicView || authenticated;
+  for (const id of ['invite', 'logout', 'admin', 'scopePicker']) el(id).hidden = !authenticated;
+}
+
+function clearManagement() {
+  requestCount++;
+  clearTimeout(timer);
+  secret = '';
+  data = null;
+  etag = '';
+  store(tokenKey, '');
+  el('scope').value = 'shared';
+  el('login').hidden = publicView;
+  if (el('editor').open) el('editor').close();
+  editOperation = null;
+  for (const id of ['members', 'quotas', 'trend', 'unpriced', 'manageMembers', 'manageDevices', 'fields', 'status']) {
+    el(id).replaceChildren();
+  }
+  for (const id of ['totalTokens', 'totalCalls', 'totalCost']) el(id).textContent = '—';
+  setConnected(false);
+}
+
+async function refresh({ force = false, login = false } = {}) {
+  const authenticated = Boolean(secret);
+  if (!authenticated && !publicView) return;
+  clearTimeout(timer);
+  const request = ++requestCount;
+  const params = new URLSearchParams({
+    range,
+    scope: authenticated ? el('scope').value : 'shared',
+    tzOffset: -new Date().getTimezoneOffset()
+  });
+  const route = authenticated ? 'dashboard' : 'public-dashboard';
+  try {
+    const response = await api(route + '?' + params, { headers: etag && !force ? { 'If-None-Match': etag } : {} });
+    if (request !== requestCount) return;
+    if (!response.unchanged) {
+      const members = authenticated ? await api('members') : null;
+      if (request !== requestCount) return;
+      data = response.result;
+      etag = response.etag;
+      render();
+      if (members) renderAdmin(members.result.members);
+    }
+    setConnected(authenticated);
+    message('error', '');
+    el('status').dataset.live = 'true';
+    el('status').textContent = '已更新 ' + new Date().toLocaleTimeString('zh-Hans', { hour12: false });
+  } catch (error) {
+    if (request !== requestCount) return;
+    if (login || (authenticated && error.status === 401)) {
+      clearManagement();
+      el('login').hidden = false;
+      message('loginError', error.message);
+      if (publicView) await refresh({ force: true });
+    } else {
+      message('error', error.message);
+      el('status').dataset.live = 'false';
+      el('status').textContent = '更新失败';
+    }
+  } finally {
+    if ((secret || publicView) && request === requestCount) timer = setTimeout(refresh, document.hidden ? 60000 : 10000);
+  }
+}
+
+if (publicView) {
+  el('loginTitle').textContent = '管理登录';
+  el('loginHint').textContent = '输入家庭组密钥，管理成员和设备或查看私人统计。';
+  el('loginSubmit').textContent = '登录管理';
+  el('closeLogin').hidden = false;
+}
+el('manage').onclick = () => {
+  message('loginError', '');
+  el('login').hidden = false;
+  el('password').focus();
+};
+el('closeLogin').onclick = () => {
+  el('password').value = '';
+  el('login').hidden = true;
+};
+el('loginForm').onsubmit = async event => {
+  event.preventDefault();
+  message('loginError', '');
+  secret = el('password').value.trim();
+  el('password').value = '';
+  await refresh({ force: true, login: true });
+  if (secret && el('remember').checked) store(tokenKey, secret);
+};
+el('logout').onclick = () => {
+  clearManagement();
+  if (publicView) refresh({ force: true });
+};
+el('theme').onclick = () => {
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  store('ag-family-theme', theme);
+};
+document.documentElement.dataset.theme = stored('ag-family-theme') ||
+  (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+el('invite').onclick = async () => {
+  const config = JSON.stringify({ serverUrl: location.origin, familySecret: secret });
+  try {
+    await navigator.clipboard.writeText(config);
+    el('status').textContent = '已复制加入配置';
+  } catch {
+    showEditor('加入配置', fields => {
+      const box = inputField(fields, '复制后发给要加入的家庭成员', 'invite', config, { tag: 'textarea', readOnly: true, rows: 4 });
+      requestAnimationFrame(() => box.select());
+    }, null);
+  }
+};
+el('range').onclick = event => {
+  const selected = event.target.closest('button[data-range]');
+  if (!selected) return;
+  range = selected.dataset.range;
+  for (const button of el('range').children) button.setAttribute('aria-pressed', String(button === selected));
+  refresh({ force: true });
+};
+el('scope').onchange = () => refresh({ force: true });
+el('metric').onchange = () => { if (data) renderMembers(); };
+el('refresh').onclick = () => refresh({ force: true });
+el('addMember').onclick = () => openMember();
+el('cancel').onclick = () => el('editor').close();
+el('editForm').onsubmit = async event => {
+  event.preventDefault();
+  if (!editOperation) return;
+  el('save').disabled = true;
+  try {
+    await editOperation(new FormData(event.currentTarget));
+    el('editor').close();
+    await refresh({ force: true });
+  } catch (error) {
+    message('editError', error.message);
+  } finally {
+    el('save').disabled = false;
+  }
+};
+document.addEventListener('visibilitychange', () => { if ((secret || publicView) && !document.hidden) refresh(); });
+setInterval(updateTimes, 1000);
+secret = stored(tokenKey) || '';
+setConnected(false);
+if (secret || publicView) refresh({ force: true, login: Boolean(secret) });
+</script>
+</body>
+</html>
