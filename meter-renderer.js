@@ -2533,30 +2533,177 @@
       outline:none;border-color:#a78bfa;box-shadow:0 0 0 2px rgba(139,92,246,0.28);
     }
 
-    .family-usage-view{display:grid;gap:8px;margin-top:4px}
+    .family-usage-view{display:grid;gap:10px;margin-top:4px}
     .family-card{display:grid;gap:8px;min-width:0}
+    .family-panel-card{
+      background:var(--ag-bg-card);border:1px solid var(--ag-border-card);
+      border-radius:10px;padding:11px 12px;display:grid;gap:9px;min-width:0;
+      transition:border-color .15s ease,background-color .15s ease;
+    }
+    .family-hero-card{
+      border-color:rgba(167,139,250,0.28);
+      background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(168,85,247,0.03) 60%,var(--ag-bg-card));
+    }
+    :host([data-theme="light"]) .family-hero-card{
+      border-color:rgba(124,58,237,0.22);
+      background:linear-gradient(135deg,rgba(124,58,237,0.07),rgba(168,85,247,0.02) 60%,var(--ag-bg-card));
+    }
+    .family-hero-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    .family-hero-meta{display:grid;gap:3px;min-width:0;flex:1}
+    .family-hero-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+    .family-status-pill{
+      display:inline-flex;align-items:center;padding:1.5px 8px;border-radius:999px;
+      font-size:10px;font-weight:600;white-space:nowrap;
+      background:var(--ag-pill-muted-bg);border:1px solid var(--ag-pill-muted-border);
+      color:var(--ag-pill-muted-text);
+    }
+    .family-status-pill.is-on{
+      background:rgba(167,139,250,0.16);border-color:rgba(167,139,250,0.40);
+      color:var(--ag-custom-token-accent,var(--ag-token-accent-default));
+    }
+    :host([data-theme="light"]) .family-status-pill.is-on{
+      background:rgba(124,58,237,0.10);border-color:rgba(124,58,237,0.32);color:#7c3aed;
+    }
     .family-card p,.family-row p{margin:0}
     .family-card p:empty,.family-card small:empty{display:none}
-    .family-card small,.family-row p,.family-subline{color:var(--ag-text-muted)}
+    .family-card small,.family-row p,.family-subline,.family-step-hint{color:var(--ag-text-muted);font-size:10.5px;line-height:1.45}
     .family-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-    .family-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:6px;border-top:1px solid var(--ag-border-subcard);padding-top:7px}
-    .family-account strong{grid-column:1/-1;overflow-wrap:anywhere}
-    .family-account select{grid-column:2/3;grid-row:2}
+    .family-filter-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}
+    .family-account{
+      display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto;gap:7px;
+      padding:8px 9px;border-radius:8px;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+    }
+    .family-account-hdr{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+    .family-account strong{overflow-wrap:anywhere;font-size:11.5px;color:var(--ag-text-primary)}
     .family-account input{grid-column:1/2;grid-row:2}
-    .family-settings-body{padding-top:10px}
-    .family-settings-body label{display:grid;gap:3px}
-    .family-settings-body label.family-check{display:flex;align-items:center;gap:6px}
-    #family-usage-view :is(input,select,textarea,.family-button){min-width:0;box-sizing:border-box;max-width:100%;background:var(--ag-bg-subcard);color:var(--ag-text-primary);padding:4px 6px;border:1px solid var(--ag-border-subcard);border-radius:5px;font:inherit}
-    #family-usage-view .family-button{cursor:pointer;width:fit-content}
-    #family-usage-view .family-button:disabled{opacity:.5;cursor:default}
-    #family-usage-view a{color:var(--ag-link)}
-    #family-usage-view .family-error{color:var(--ag-bad,#f06f68)}
-    #family-usage-view progress{display:block;width:100%;height:8px;accent-color:var(--ag-link);margin:3px 0 5px}
-    .family-row{padding-bottom:6px;overflow-wrap:anywhere;border-bottom:1px solid var(--ag-border-subcard)}
-    .family-row:last-child{border-bottom:none;padding-bottom:0}
-    .family-row summary{cursor:pointer}
-    .family-row-detail{display:grid;gap:3px;padding:6px 0 2px 10px;border-left:2px solid var(--ag-border-subcard);margin-top:4px;font-size:11px}
-    .family-sub-title{font-weight:600;color:var(--ag-text-secondary);margin-top:4px}
+    .family-account select{grid-column:2/3;grid-row:2}
+    .family-account button{grid-column:3/4;grid-row:2}
+    .family-settings-summary{
+      display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;
+      font-size:12px;font-weight:600;color:var(--ag-text-primary);user-select:none;
+    }
+    .family-settings-body{display:grid;gap:10px;padding-top:10px;border-top:1px solid var(--ag-border-subcard);margin-top:4px}
+    .family-step-card{
+      display:grid;gap:8px;padding:9px 10px;border-radius:8px;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+    }
+    .family-step-head{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--ag-text-primary)}
+    .family-step-num{
+      width:18px;height:18px;border-radius:999px;flex-shrink:0;
+      background:linear-gradient(135deg,#7c3aed,#a855f7);color:#ffffff;
+      font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;
+      box-shadow:0 1px 4px rgba(139,92,246,0.35);
+    }
+    .family-field{display:grid;gap:4px;font-size:11px;color:var(--ag-text-secondary)}
+    .family-field-lbl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-weight:500}
+    .family-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    @media (max-width:520px){.family-form-grid{grid-template-columns:1fr}}
+    .family-settings-body label.family-check{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ag-text-primary);cursor:pointer}
+    .family-secret-wrap{display:flex;align-items:center;gap:5px;min-width:0}
+    .family-secret-wrap input{flex:1;min-width:0}
+    .family-eye-btn{
+      width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;
+      border-radius:6px;border:1px solid var(--ag-border-subcard);background:var(--ag-bg-input);
+      color:var(--ag-text-secondary);cursor:pointer;flex-shrink:0;transition:border-color .15s,color .15s,background .15s;
+    }
+    .family-eye-btn:hover,.family-eye-btn[aria-pressed="true"]{
+      border-color:rgba(167,139,250,0.55);color:var(--ag-custom-token-accent,var(--ag-token-accent-default));
+      background:rgba(167,139,250,0.12);
+    }
+    #family-usage-view :is(input:not([type="checkbox"]),select,textarea,.family-button){
+      min-width:0;box-sizing:border-box;max-width:100%;
+      background:var(--ag-bg-input);color:var(--ag-text-primary);
+      padding:5px 8px;border:1px solid var(--ag-border-subcard);border-radius:6px;
+      font:inherit;font-size:11px;transition:border-color .15s,box-shadow .15s,background .15s;
+    }
+    #family-usage-view :is(input:not([type="checkbox"]),select,textarea):focus-visible{
+      outline:none;border-color:var(--ag-custom-token-accent,var(--ag-token-accent-default));
+      box-shadow:0 0 0 2px rgba(167,139,250,0.22);
+    }
+    #family-usage-view select option{background:var(--ag-select-option-bg);color:var(--ag-select-option-fg)}
+    #family-usage-view .family-button{cursor:pointer;width:fit-content;font-weight:500;background:var(--ag-btn-bg);border-color:var(--ag-btn-border)}
+    #family-usage-view .family-button:hover:not(:disabled){
+      border-color:rgba(167,139,250,0.55);background:rgba(167,139,250,0.12);color:var(--ag-text-primary);
+    }
+    #family-usage-view .family-button.family-btn-primary{
+      background:linear-gradient(135deg,#7c3aed,#9333ea);border-color:rgba(192,132,252,0.5);
+      color:#ffffff;font-weight:600;box-shadow:0 1px 6px rgba(124,58,237,0.3);
+    }
+    #family-usage-view .family-button.family-btn-primary:hover:not(:disabled){
+      background:linear-gradient(135deg,#8b5cf6,#a855f7);border-color:#c084fc;
+      box-shadow:0 2px 10px rgba(139,92,246,0.42);color:#ffffff;
+    }
+    #family-usage-view .family-button:disabled{opacity:.48;cursor:default}
+    #family-usage-view a.family-link-pill{
+      display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:6px;
+      font-size:11px;font-weight:500;text-decoration:none;
+      background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.32);
+      color:var(--ag-custom-token-accent,var(--ag-token-accent-default));
+      transition:background .15s,border-color .15s;
+    }
+    #family-usage-view a.family-link-pill:hover{background:rgba(167,139,250,0.22);border-color:rgba(167,139,250,0.55)}
+    #family-usage-view .family-error{color:var(--ag-bad,#f87171)}
+    .family-pie-card{
+      display:grid;gap:10px;padding:11px 12px;border-radius:9px;
+      background:var(--ag-bg-subcard);border:1px solid rgba(167,139,250,0.22);
+    }
+    :host([data-theme="light"]) .family-pie-card{border-color:rgba(124,58,237,0.18)}
+    .family-pie-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .family-pie-title-wrap{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+    .family-pie-title{font-size:12px;font-weight:600;color:var(--ag-text-primary)}
+    .family-pie-ctrls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .family-pie-body{display:grid;grid-template-columns:138px minmax(0,1fr);gap:14px;align-items:center}
+    @media (max-width:480px){.family-pie-body{grid-template-columns:1fr}}
+    .family-donut-wrap{position:relative;width:132px;height:132px;margin:0 auto;flex-shrink:0}
+    .family-donut-svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+    .family-donut-seg{transition:opacity .16s ease,stroke-width .16s ease;cursor:pointer}
+    .family-donut-seg.is-dimmed{opacity:0.26}
+    .family-donut-center{
+      position:absolute;inset:22px;border-radius:50%;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:4px;
+    }
+    .family-donut-center strong{
+      font-size:17px;font-weight:700;color:var(--ag-text-primary);line-height:1.15;
+      font-variant-numeric:tabular-nums;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .family-donut-center span{font-size:9.5px;color:var(--ag-text-muted);margin-top:2px;line-height:1.2}
+    .family-pie-legend{display:grid;gap:4px;min-width:0}
+    .family-legend-row{
+      display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:3.5px 7px;border-radius:6px;font-size:11px;cursor:pointer;
+      transition:background-color .14s ease,opacity .14s ease;
+    }
+    .family-legend-row:hover,.family-legend-row.is-active{background:rgba(167,139,250,0.12)}
+    .family-legend-row.is-dimmed{opacity:0.42}
+    .family-legend-left{display:inline-flex;align-items:center;gap:7px;min-width:0}
+    .family-legend-name{color:var(--ag-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .family-legend-right{display:inline-flex;align-items:baseline;gap:6px;flex-shrink:0;font-variant-numeric:tabular-nums}
+    .family-legend-pct{font-weight:700;color:var(--ag-text-primary)}
+    .family-legend-sub{font-size:10px;color:var(--ag-text-muted)}
+    .family-dot{width:9px;height:9px;border-radius:999px;flex-shrink:0;display:inline-block}
+    .family-summary-bar{
+      display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;
+      padding:4px 2px 6px;border-bottom:1px solid var(--ag-border-subcard);
+    }
+    .family-summary-bar strong{font-size:12px;color:var(--ag-text-primary)}
+    .family-bar-track{width:100%;height:7px;border-radius:999px;background:var(--ag-track-bg);overflow:hidden;margin:5px 0 4px}
+    .family-bar-fill{
+      height:100%;border-radius:999px;min-width:0;
+      background:linear-gradient(90deg,#7c3aed,#9333ea,#c084fc);
+      transition:width .24s cubic-bezier(0.22,1,0.36,1);
+    }
+    .family-row{
+      padding:8px 9px;border-radius:8px;overflow-wrap:anywhere;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+    }
+    .family-row summary{cursor:pointer;list-style:none}
+    .family-row summary::-webkit-details-marker{display:none}
+    .family-row-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11.5px;font-weight:600;color:var(--ag-text-primary)}
+    .family-row-name{display:inline-flex;align-items:center;gap:6px;min-width:0}
+    .family-row-val{font-variant-numeric:tabular-nums;color:var(--ag-custom-token-accent,var(--ag-token-accent-default))}
+    .family-row-detail{display:grid;gap:4px;padding:7px 0 2px 10px;border-left:2px solid rgba(167,139,250,0.35);margin-top:6px;font-size:11px}
+    .family-sub-title{font-weight:600;color:var(--ag-text-secondary);margin-top:3px}
     .family-subline{display:flex;justify-content:space-between;gap:8px;font-size:11px}
   </style>
 
@@ -4418,68 +4565,166 @@
       <div id="model-usage-legend" class="model-usage-legend"></div>
     </div>
 
-    <!-- 家庭组多人用量与加权对比视图 -->
+    <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
-      <div class="ctx-settings-card family-card">
-        <strong id="family-device-status"></strong>
-        <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
-        <small id="family-sync-error" class="family-error"></small>
-        <div class="family-controls">
-          <button type="button" id="family-sync" class="family-button" data-i18n="family.sync" disabled>立即同步</button>
-          <a id="family-web" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+      <div class="family-panel-card family-hero-card">
+        <div class="family-hero-top">
+          <div class="family-hero-meta">
+            <div class="family-hero-title-row">
+              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
+              <strong id="family-device-status"></strong>
+            </div>
+            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
+            <small id="family-sync-error" class="family-error"></small>
+          </div>
+          <div class="family-controls">
+            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
+            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+          </div>
         </div>
         <p id="family-feedback" role="status"></p>
       </div>
-      <div class="ctx-settings-card family-card">
-        <div class="family-controls">
-          <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
-            <option value="5h" data-i18n="family.5h">近 5 小时</option>
-            <option value="today" data-i18n="family.today" selected>今日</option>
-            <option value="7d" data-i18n="family.7d">近 7 天</option>
-            <option value="month" data-i18n="family.month">本月</option>
-            <option value="all" data-i18n="family.all">全部</option>
-          </select>
-          <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
-            <option value="shared" data-i18n="family.mode.shared">家庭统计</option>
-            <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
-          </select>
-          <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
-            <option value="effectiveUSD" data-i18n="family.weighted" selected>等效价值（模型加权）</option>
-            <option value="costUSD" data-i18n="family.cost">仅已定价 API 费用</option>
-            <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
-          </select>
+
+      <div class="family-panel-card">
+        <div class="family-filter-row">
+          <div class="family-controls">
+            <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
+              <option value="5h" data-i18n="family.5h">近 5 小时</option>
+              <option value="today" data-i18n="family.today" selected>今日</option>
+              <option value="7d" data-i18n="family.7d">近 7 天</option>
+              <option value="month" data-i18n="family.month">本月</option>
+              <option value="all" data-i18n="family.all">全部</option>
+            </select>
+            <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
+              <option value="shared" data-i18n="family.mode.shared" selected>家庭统计</option>
+              <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
+            </select>
+            <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
+              <option value="effectiveUSD" data-i18n="family.weighted" selected>等效价值（模型加权）</option>
+              <option value="costUSD" data-i18n="family.cost">仅已定价 API 费用</option>
+              <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
+            </select>
+          </div>
         </div>
+
+        <div id="family-pie-card" class="family-pie-card" hidden>
+          <div class="family-pie-hdr">
+            <div class="family-pie-title-wrap">
+              <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
+              <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
+            </div>
+            <div class="source-switch-bar family-pie-ctrls">
+              <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
+              <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
+            </div>
+          </div>
+          <div class="family-pie-body">
+            <div class="family-donut-wrap">
+              <div id="family-pie-svg-wrap"></div>
+              <div id="family-pie-center" class="family-donut-center">
+                <strong>—</strong>
+                <span></span>
+              </div>
+            </div>
+            <div id="family-pie-legend" class="family-pie-legend"></div>
+          </div>
+          <small id="family-pie-note" class="family-pie-note"></small>
+        </div>
+
         <div id="family-results" class="family-card"></div>
       </div>
 
-      <div class="ctx-settings-card family-card">
-        <strong data-i18n="family.rules">本机账号规则</strong>
+      <div class="family-panel-card">
+        <div class="family-hero-title-row">
+          <strong data-i18n="family.rules">本机账号规则</strong>
+          <small data-i18n="family.rulesGuide">区分多账号：设为「家庭统计」计入共享池；「私人 · 仅本机」绝不上传</small>
+        </div>
         <p id="family-pending"></p>
         <div id="family-accounts" class="family-card"></div>
       </div>
-      <details id="family-settings" class="ctx-settings-card">
-        <summary data-i18n="family.settings">连接、成员与补传</summary>
-        <div class="family-card family-settings-body">
-          <label><span data-i18n="family.invite">加入配置 JSON</span><textarea id="family-invite" rows="2" autocomplete="off"></textarea></label>
-          <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
-          <label><span data-i18n="family.url">服务器地址</span><input type="url" id="family-url" autocomplete="off"></label>
-          <label><span data-i18n="family.secret">家庭组密钥</span><input type="password" id="family-secret" autocomplete="off"></label>
-          <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
-          <label><span data-i18n="family.pickMember">选择成员</span><select id="family-member"></select></label>
-          <div class="family-controls">
-            <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" aria-label="新成员姓名">
-            <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
+
+      <details id="family-settings" class="family-panel-card">
+        <summary class="family-settings-summary">
+          <span data-i18n="family.settings">连接、成员与补传（向导）</span>
+          <span id="family-setup-badge" class="family-status-pill" data-i18n="family.setupTodo">待配置 · 3 步快速加入</span>
+        </summary>
+        <div class="family-settings-body">
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">1</span>
+              <span data-i18n="family.step1Title">导入或连接家庭服务器</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step1Hint">最简单方式：直接导入管理员发来的 family-join.json；导入或填写一次后，本机将自动记住服务器地址。</small>
+            <div class="family-controls">
+              <input id="family-file" type="file" accept=".json,application/json" hidden>
+              <button type="button" id="family-pick-file" class="family-button family-btn-primary" data-i18n="family.pickFile">选择 JSON 文件一键导入</button>
+              <button type="button" id="family-paste-import" class="family-button" data-i18n="family.pasteImport">从剪贴板一键导入</button>
+            </div>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.invite">或直接粘贴配置 JSON（粘贴后自动导入）</span>
+              <textarea id="family-invite" rows="2" autocomplete="off" data-i18n-placeholder="family.invitePlaceholder" placeholder='粘贴 {"serverUrl":"https://...","familySecret":"..."}'></textarea>
+            </label>
+            <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
+            <div class="family-form-grid">
+              <label class="family-field">
+                <span class="family-field-lbl">
+                  <span data-i18n="family.url">服务器地址</span>
+                  <span id="family-url-default-tag" class="family-status-pill is-on" data-i18n="family.defaultUrlTag" hidden>本机默认</span>
+                </span>
+                <input type="url" id="family-url" autocomplete="off" data-i18n-placeholder="family.urlPlaceholder" placeholder="https://your-family-server.example">
+              </label>
+              <label class="family-field">
+                <span class="family-field-lbl" data-i18n="family.secret">家庭组密钥</span>
+                <div class="family-secret-wrap">
+                  <input type="password" id="family-secret" autocomplete="off" data-i18n-placeholder="family.secretPlaceholder" placeholder="输入家庭组密钥">
+                  <button type="button" id="family-secret-toggle" class="family-eye-btn" aria-pressed="false" data-i18n-aria="family.secretShow" data-i18n-title="family.secretShow" aria-label="显示或隐藏密钥" title="显示或隐藏密钥">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"></path>
+                      <circle cx="8" cy="8" r="2.2"></circle>
+                    </svg>
+                  </button>
+                </div>
+              </label>
+            </div>
+            <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
           </div>
-          <label><span data-i18n="family.device">设备名称</span><input id="family-device" maxlength="64"></label>
-          <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报</span></label>
-          <button type="button" id="family-save" class="family-button" data-i18n="family.save">保存</button>
-          <div class="family-controls">
-            <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
-              <option value="7d" data-i18n="family.7d">近 7 天</option>
-              <option value="30d" data-i18n="family.30d">近 30 天</option>
-              <option value="all" data-i18n="family.all">全部</option>
-            </select>
-            <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
+
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">2</span>
+              <span data-i18n="family.step2Title">绑定你的身份与设备</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step2Hint">同一位成员在不同电脑选择相同姓名，用量会自动合并计算；首次加入可在右侧新建名字。</small>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.pickMember">选择你的成员身份</span>
+              <select id="family-member"></select>
+            </label>
+            <div class="family-controls">
+              <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" data-i18n-placeholder="family.newMember" aria-label="新成员姓名" placeholder="首次加入？输入成员姓名">
+              <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
+            </div>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.device">本机设备名称（用于区分你的电脑）</span>
+              <input id="family-device" maxlength="64">
+            </label>
+            <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报（后台自动同步用量）</span></label>
+            <button type="button" id="family-save" class="family-button family-btn-primary" data-i18n="family.saveStep2">保存设置并开始同步</button>
+          </div>
+
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">3</span>
+              <span data-i18n="family.step3Title">补传历史账本（可选）</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step3Hint">如果之前已经在本地使用过 Antigravity，可选择时间范围一次性补传已记账的历史用量。</small>
+            <div class="family-controls">
+              <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
+                <option value="7d" data-i18n="family.7d" selected>近 7 天</option>
+                <option value="30d" data-i18n="family.30d">近 30 天</option>
+                <option value="all" data-i18n="family.all">全部</option>
+              </select>
+              <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
+            </div>
           </div>
         </div>
       </details>
@@ -5195,6 +5440,7 @@ const PANEL_I18N = {
   'family.pending': { 'zh-CN': "{n} 条记录待确认归属或分类。", 'zh-TW': "{n} 筆記錄待確認歸屬或分類。", en: "{n} calls await attribution or classification." },
   'family.undated': { 'zh-CN': "{n} 条记录缺少可靠时间，暂留本机。", 'zh-TW': "{n} 筆記錄缺少可靠時間，暫留本機。", en: "{n} calls without a reliable timestamp are held locally." },
   'family.rules': { 'zh-CN': "本机账号规则", 'zh-TW': "本機帳號規則", en: "Local account rules" },
+  'family.rulesGuide': { 'zh-CN': "区分多账号：设为「家庭统计」计入共享池；「私人 · 仅本机」绝不上传", 'zh-TW': "區分多帳號：設為「家庭統計」計入共享池；「私人 · 僅本機」絕不上傳", en: "Multi-account isolation: \"Family usage\" syncs to pool; \"Private\" stays local" },
   'family.noAccounts': { 'zh-CN': "尚未检测到本机账号。", 'zh-TW': "尚未偵測到本機帳號。", en: "No local accounts detected." },
   'family.active': { 'zh-CN': "当前账号", 'zh-TW': "目前帳號", en: "Active" },
   'family.alias': { 'zh-CN': "看板别名", 'zh-TW': "看板別名", en: "Dashboard alias" },
@@ -5206,18 +5452,55 @@ const PANEL_I18N = {
   'family.personalConsent': { 'zh-CN': "这个账号的用量会在独立统计中显示，持有家庭组密钥的成员可以查看。确定继续？", 'zh-TW': "這個帳號的用量會在獨立統計中顯示，持有家庭群組金鑰的成員可以查看。確定繼續？", en: "Anyone with the family secret can view usage for this account in Separate usage. Continue?" },
   'family.historyConsent': { 'zh-CN': "将按当前账号规则同步所选时间范围内的历史账本。确定继续？", 'zh-TW': "將按目前帳號規則同步所選時間範圍內的歷史帳本。確定繼續？", en: "Upload ledger history in this range using the current account rules?" },
   'family.save': { 'zh-CN': "保存", 'zh-TW': "儲存", en: "Save" },
-  'family.settings': { 'zh-CN': "连接、成员与补传", 'zh-TW': "連線、成員與補傳", en: "Connection, member and history" },
+  'family.settings': { 'zh-CN': "连接、成员与补传（向导）", 'zh-TW': "連線、成員與補傳（精靈）", en: "Connection, member & history setup" },
+  'family.setupTodo': { 'zh-CN': "待配置 · 3 步快速加入", 'zh-TW': "待設定 · 3 步快速加入", en: "Setup · 3 quick steps" },
+  'family.setupDone': { 'zh-CN': "已配置 · 展开修改", 'zh-TW': "已設定 · 展開修改", en: "Configured · Edit" },
+  'family.step1Title': { 'zh-CN': "导入或连接家庭服务器", 'zh-TW': "匯入或連線家庭伺服器", en: "Import or connect to family server" },
+  'family.step1Hint': { 'zh-CN': "最简单方式：直接导入管理员发来的 family-join.json；导入或填写一次后，本机将自动记住服务器地址。", 'zh-TW': "最簡單方式：直接匯入管理員發送的 family-join.json；匯入或填寫一次後，本機將自動記住伺服器網址。", en: "Fastest setup: import family-join.json from your admin. Once filled or connected, the server URL becomes your local default." },
+  'family.pickFile': { 'zh-CN': "选择 JSON 文件一键导入", 'zh-TW': "選擇 JSON 檔案一鍵匯入", en: "Import JSON file" },
+  'family.pasteImport': { 'zh-CN': "从剪贴板一键导入", 'zh-TW': "從剪貼簿一鍵匯入", en: "Paste from clipboard" },
+  'family.invite': { 'zh-CN': "或直接粘贴配置 JSON（粘贴后自动导入）", 'zh-TW': "或直接貼上設定 JSON（貼上後自動匯入）", en: "Or paste join JSON (auto-imports on paste)" },
+  'family.invitePlaceholder': { 'zh-CN': "粘贴 {\"serverUrl\":\"https://...\",\"familySecret\":\"...\"}", 'zh-TW': "貼上 {\"serverUrl\":\"https://...\",\"familySecret\":\"...\"}", en: "Paste {\"serverUrl\":\"https://...\",\"familySecret\":\"...\"}" },
   'family.import': { 'zh-CN': "导入并连接", 'zh-TW': "匯入並連線", en: "Import and connect" },
-  'family.invite': { 'zh-CN': "加入配置 JSON", 'zh-TW': "加入設定 JSON", en: "Join configuration JSON" },
+  'family.importSuccess': { 'zh-CN': "已导入配置并载入成员，请在第 2 步选择成员并点击「保存设置并开始同步」。", 'zh-TW': "已匯入設定並載入成員，請在第 2 步選擇成員並點擊「儲存設定並開始同步」。", en: "Config imported and members loaded. Choose a member in Step 2 and click Save." },
+  'family.clipboardEmpty': { 'zh-CN': "剪贴板中没有有效的配置 JSON，请手动粘贴或直接选择文件。", 'zh-TW': "剪貼簿中沒有有效的設定 JSON，請手動貼上或直接選擇檔案。", en: "No valid join JSON found in clipboard. Paste manually or pick a file." },
   'family.url': { 'zh-CN': "服务器地址", 'zh-TW': "伺服器網址", en: "Server URL" },
+  'family.defaultUrlTag': { 'zh-CN': "本机默认", 'zh-TW': "本機預設", en: "Saved default" },
+  'family.urlPlaceholder': { 'zh-CN': "https://your-family-server.example", 'zh-TW': "https://your-family-server.example", en: "https://your-family-server.example" },
   'family.secret': { 'zh-CN': "家庭组密钥", 'zh-TW': "家庭群組金鑰", en: "Family secret" },
+  'family.secretPlaceholder': { 'zh-CN': "输入家庭组密钥", 'zh-TW': "輸入家庭群組金鑰", en: "Enter family secret" },
+  'family.secretSavedHint': { 'zh-CN': "已保存密钥（留空即沿用，重填则覆盖）", 'zh-TW': "已儲存金鑰（留空即沿用，重填則覆蓋）", en: "Saved on this device (leave blank to keep)" },
+  'family.secretShow': { 'zh-CN': "显示密钥", 'zh-TW': "顯示金鑰", en: "Show secret" },
+  'family.secretHide': { 'zh-CN': "隐藏密钥", 'zh-TW': "隱藏金鑰", en: "Hide secret" },
   'family.connect': { 'zh-CN': "连接并载入成员", 'zh-TW': "連線並載入成員", en: "Connect and load members" },
+  'family.step2Title': { 'zh-CN': "绑定你的身份与设备", 'zh-TW': "綁定你的身分與裝置", en: "Bind member & device" },
+  'family.step2Hint': { 'zh-CN': "同一位成员在不同电脑选择相同姓名，用量会自动合并；首次加入可在下方添加成员。", 'zh-TW': "同一位成員在不同電腦選擇相同姓名，用量會自動合併；首次加入可在下方新增成員。", en: "Pick the same member name across devices to combine usage, or create a new member below." },
   'family.pickMember': { 'zh-CN': "选择成员", 'zh-TW': "選擇成員", en: "Select member" },
   'family.newMember': { 'zh-CN': "新成员姓名", 'zh-TW': "新成員姓名", en: "New member name" },
   'family.create': { 'zh-CN': "添加成员", 'zh-TW': "新增成員", en: "Add member" },
   'family.device': { 'zh-CN': "设备名称", 'zh-TW': "裝置名稱", en: "Device name" },
   'family.enable': { 'zh-CN': "启用自动上报", 'zh-TW': "啟用自動上報", en: "Enable auto-sync" },
+  'family.saveStep2': { 'zh-CN': "保存设置并开始同步", 'zh-TW': "儲存設定並開始同步", en: "Save & start syncing" },
+  'family.step3Title': { 'zh-CN': "补传历史账本（可选）", 'zh-TW': "補傳歷史帳本（選填）", en: "Upload history (optional)" },
+  'family.step3Hint': { 'zh-CN': "如果此前已在本机使用过 Antigravity，可选择范围一次性补传本地账本记录。", 'zh-TW': "若先前已在本機使用過 Antigravity，可選擇範圍一次補傳本機帳本記錄。", en: "Backfill earlier local usage records using your current account rules." },
   'family.backfill': { 'zh-CN': "补传历史", 'zh-TW': "補傳歷史", en: "Upload history" },
+  'family.pieTitleQuota': { 'zh-CN': "共享周额度分布", 'zh-TW': "共享週額度分布", en: "Shared weekly quota" },
+  'family.pieTitleUsage': { 'zh-CN': "成员当前占比", 'zh-TW': "成員目前佔比", en: "Member share" },
+  'family.quotaPool': { 'zh-CN': "共享额度池", 'zh-TW': "共享額度池", en: "Quota pool" },
+  'family.pieModeQuota': { 'zh-CN': "周额度占比", 'zh-TW': "週額度佔比", en: "Weekly quota" },
+  'family.pieModeUsage': { 'zh-CN': "当前统计占比", 'zh-TW': "目前統計佔比", en: "Usage share" },
+  'family.pieCenterQuota': { 'zh-CN': "共享池已用", 'zh-TW': "共享池已用", en: "Pool used" },
+  'family.pieCenterUsage': { 'zh-CN': "家庭合计", 'zh-TW': "家庭合計", en: "Family total" },
+  'family.pieUnattributed': { 'zh-CN': "已用 · 暂无调用可归属", 'zh-TW': "已用 · 暫無呼叫可歸屬", en: "Used · unattributed" },
+  'family.pieRemaining': { 'zh-CN': "剩余额度", 'zh-TW': "剩餘額度", en: "Remaining" },
+  'family.pieNoteQuota': { 'zh-CN': "额度快照 {time} · {basis}", 'zh-TW': "額度快照 {time} · {basis}", en: "Snapshot {time} · {basis}" },
+  'family.pieBasisCost': { 'zh-CN': "成员占比按本周已上报调用参考费用估算", 'zh-TW': "成員佔比依本週已上報呼叫參考費用估算", en: "Estimated by reported weekly API cost" },
+  'family.pieBasisTokens': { 'zh-CN': "成员占比按本周已上报调用 Token 估算", 'zh-TW': "成員佔比依本週已上報呼叫 Token 估算", en: "Estimated by reported weekly tokens" },
+  'family.pieBasisWeighted': { 'zh-CN': "成员占比按本周模型加权等效价值估算", 'zh-TW': "成員佔比依本週模型加權等效價值估算", en: "Estimated by weighted model value" },
+  'family.pieBasisNone': { 'zh-CN': "暂无可用于分摊的本周调用记录，已用额度暂未归属", 'zh-TW': "暫無可用於分攤的本週呼叫記錄，已用額度暫未歸屬", en: "No attributed weekly calls yet" },
+  'family.pieBasisZero': { 'zh-CN': "当前共享池尚无已用额度", 'zh-TW': "目前共享池尚無已用額度", en: "No pool quota used yet" },
+  'family.pieNoteUsage': { 'zh-CN': "当前筛选口径：{metric}", 'zh-TW': "目前篩選口徑：{metric}", en: "Current breakdown: {metric}" },
+  'family.pieEmpty': { 'zh-CN': "当前范围暂无可展示的用量数据。", 'zh-TW': "目前範圍暫無可展示的用量資料。", en: "No usage data in this range." },
   'family.range': { 'zh-CN': "时间范围", 'zh-TW': "時間範圍", en: "Time range" },
   'family.scope': { 'zh-CN': "统计范围", 'zh-TW': "統計範圍", en: "Usage scope" },
   'family.metric': { 'zh-CN': "占比口径", 'zh-TW': "占比基準", en: "Share by" },
@@ -13912,7 +14195,11 @@ function closeAllDropdowns(exceptWrap = null) {
     members: [],
     busy: false,
     epoch: 0,
-    refreshTimer: null
+    refreshTimer: null,
+    pieMode: 'auto',
+    selectedPool: '',
+    lastData: null,
+    secretVisible: false
   };
 
   // 费用面板紧凑摘要与展开详情切换
@@ -16142,9 +16429,22 @@ function closeAllDropdowns(exceptWrap = null) {
     const member = familyView.members.find(row => row.id === config.memberId);
     const active = config.accounts.find(account => account.active);
     const activeLabel = active ? (active.alias || active.label) + ' · ' + familyModeText(active.mode) : '';
+    const statusPill = el('family-enabled-pill');
+    if (statusPill) {
+      statusPill.textContent = t(config.enabled ? 'family.on' : 'family.off');
+      statusPill.classList.toggle('is-on', Boolean(config.enabled));
+    }
+    const setupBadge = el('family-setup-badge');
+    if (setupBadge) {
+      setupBadge.textContent = t(config.deviceId ? 'family.setupDone' : 'family.setupTodo');
+      setupBadge.classList.toggle('is-on', Boolean(config.deviceId));
+    }
+    const defaultUrlTag = el('family-url-default-tag');
+    if (defaultUrlTag) defaultUrlTag.hidden = !config.hasDefaultServerUrl && !config.serverUrl;
+
     el('family-device-status').textContent = [
-      member?.name, config.deviceName, t(config.enabled ? 'family.on' : 'family.off'), activeLabel
-    ].filter(Boolean).join(' · ');
+      member?.name, config.deviceName, activeLabel
+    ].filter(Boolean).join(' · ') || t('family.setupTodo');
     el('family-sync-status').textContent = config.lastSyncAt
       ? t('family.lastSync', { time: new Date(config.lastSyncAt).toLocaleString() }) : t('family.waiting');
     el('family-sync-error').textContent = config.lastError || '';
@@ -16158,13 +16458,15 @@ function closeAllDropdowns(exceptWrap = null) {
     if (url) web.href = url;
     for (const id of ['family-sync', 'family-backfill']) el(id).disabled = !config.deviceId;
     if (resetFields) {
-      el('family-url').value = config.serverUrl;
+      el('family-url').value = config.serverUrl || '';
       el('family-secret').value = '';
-      el('family-secret').placeholder = config.hasSecret ? '••••••••' : '';
-      el('family-device').value = config.deviceName;
-      el('family-enabled').checked = config.enabled;
+      el('family-secret').placeholder = t(config.hasSecret ? 'family.secretSavedHint' : 'family.secretPlaceholder');
+      el('family-device').value = config.deviceName || '';
+      el('family-enabled').checked = Boolean(config.enabled);
       renderFamilyMemberOptions();
       if (!config.deviceId) el('family-settings').open = true;
+    } else if (!el('family-url').value.trim() && config.serverUrl) {
+      el('family-url').value = config.serverUrl;
     }
     const accounts = el('family-accounts');
     if (accounts.contains(shadow.activeElement)) return;
@@ -16172,7 +16474,9 @@ function closeAllDropdowns(exceptWrap = null) {
     if (!config.accounts.length) accounts.append(familyNode('p', t('family.noAccounts')));
     for (const account of config.accounts) {
       const row = familyNode('div', null, 'family-account');
-      const title = familyNode('strong', account.label + (account.active ? ' · ' + t('family.active') : ''));
+      const hdr = familyNode('div', null, 'family-account-hdr');
+      hdr.append(familyNode('strong', account.label));
+      if (account.active) hdr.append(familyNode('span', t('family.active'), 'family-status-pill is-on'));
       const alias = familyNode('input');
       alias.value = account.alias;
       alias.maxLength = 48;
@@ -16196,19 +16500,263 @@ function closeAllDropdowns(exceptWrap = null) {
         renderFamilyConfig(updated);
         setFamilyStatus(t('family.saved'));
       });
-      row.append(title, mode, alias, save);
+      row.append(hdr, mode, alias, save);
       accounts.append(row);
     }
   }
 
-  function familyProgress(value) {
-    const progress = familyNode('progress');
-    progress.max = 100;
-    progress.value = value;
-    return progress;
+  const FAMILY_PIE_COLORS = ['#8b5cf6', '#c084fc', '#6366f1', '#ec4899', '#a855f7', '#06b6d4'];
+  function buildFamilyColorMap(members = []) {
+    const map = new Map();
+    const sorted = [...members].sort((a, b) => String(a.id || a.name).localeCompare(String(b.id || b.name)));
+    sorted.forEach((m, idx) => {
+      map.set(m.id || m.name, FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length]);
+    });
+    return map;
+  }
+
+  function formatPiePct(value) {
+    if (!(value > 0)) return '0%';
+    return value < 0.05 ? '<0.1%' : Number(value.toFixed(1)) + '%';
+  }
+
+  function deriveWeeklyPoolsFromSnapshots(data, enriched) {
+    const snapshots = Array.isArray(data?.quotaSnapshots) ? data.quotaSnapshots : [];
+    const byPool = new Map();
+    for (const snap of snapshots) {
+      const obs = Number(snap?.observedAt || 0);
+      for (const w of snap?.windows || []) {
+        if (w?.window !== 'weekly' || typeof w.remainingPct !== 'number' || !Number.isFinite(w.remainingPct)) continue;
+        const prev = byPool.get(w.pool);
+        if (!prev || obs >= prev.observedAt) {
+          byPool.set(w.pool, {
+            pool: w.pool,
+            usedPct: Math.max(0, Math.min(100, Number((100 - w.remainingPct).toFixed(1)))),
+            expiresAt: Number(w.resetAt || (Date.now() + 3600000)),
+            observedAt: obs
+          });
+        }
+      }
+    }
+    if (!byPool.size) return [];
+    const totalW = enriched.reduce((s, m) => s + Number(m.effectiveUSD || 0), 0);
+    const totalTok = enriched.reduce((s, m) => s + Number(m.totalTokens || 0), 0);
+    const useWeighted = totalW > 0;
+    const denom = useWeighted ? totalW : totalTok;
+    return [...byPool.values()].map(entry => {
+      if (entry.usedPct <= 0) {
+        return { ...entry, estimates: [], unattributedPct: 0, basis: null };
+      }
+      if (denom <= 0) {
+        return { ...entry, estimates: [], unattributedPct: entry.usedPct, basis: null };
+      }
+      const estimates = enriched
+        .map(m => ({ name: m.name, val: useWeighted ? Number(m.effectiveUSD || 0) : Number(m.totalTokens || 0) }))
+        .filter(item => item.val > 0)
+        .map(item => ({ name: item.name, pct: Number(((item.val / denom) * entry.usedPct).toFixed(2)) }));
+      return { ...entry, estimates, unattributedPct: 0, basis: useWeighted ? 'weighted' : 'tokens' };
+    });
+  }
+
+  function renderFamilyPieChart(data, enriched, metric, totalEffectiveUSD, colorMap, formatMetric) {
+    const card = el('family-pie-card');
+    if (!card) return;
+    card.hidden = false;
+    const nowMs = Date.now();
+    const serverPools = (Array.isArray(data?.familyWeekly) ? data.familyWeekly : [])
+      .filter(p => p && (!p.expiresAt || p.expiresAt > nowMs));
+    const scopeVal = el('family-scope')?.value || 'shared';
+    const weeklyPools = scopeVal === 'personal'
+      ? []
+      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, enriched));
+    const canQuotaMode = weeklyPools.length > 0;
+    const effectiveMode = (familyView.pieMode === 'usage' || !canQuotaMode) ? 'usage' : 'quota';
+
+    const btnQuota = el('family-pie-mode-quota');
+    const btnUsage = el('family-pie-mode-usage');
+    if (btnQuota) {
+      btnQuota.disabled = !canQuotaMode;
+      btnQuota.classList.toggle('active', effectiveMode === 'quota');
+    }
+    if (btnUsage) {
+      btnUsage.classList.toggle('active', effectiveMode === 'usage');
+    }
+    const titleEl = el('family-pie-title');
+    if (titleEl) titleEl.textContent = t(effectiveMode === 'quota' ? 'family.pieTitleQuota' : 'family.pieTitleUsage');
+
+    const poolSelect = el('family-quota-pool');
+    let slices = [];
+    let centerVal = '—';
+    let centerLbl = '';
+    let noteText = '';
+
+    if (effectiveMode === 'quota') {
+      const poolNames = weeklyPools.map(p => p.pool).sort((a, b) => a.localeCompare(b));
+      if (poolSelect) {
+        poolSelect.replaceChildren(...poolNames.map(name => familyOption(name, name)));
+        const chosen = poolNames.includes(familyView.selectedPool)
+          ? familyView.selectedPool
+          : (poolNames.includes('Gemini Models') ? 'Gemini Models' : poolNames[0]);
+        familyView.selectedPool = chosen;
+        poolSelect.value = chosen;
+        poolSelect.hidden = poolNames.length < 1;
+      }
+      const poolObj = weeklyPools.find(p => p.pool === familyView.selectedPool) || weeklyPools[0];
+      const usedPct = Math.max(0, Math.min(100, Number(poolObj?.usedPct || 0)));
+      const estimates = Array.isArray(poolObj?.estimates) ? poolObj.estimates : [];
+      const byMemberName = new Map(estimates.map(item => [item.name, Number(item.pct || 0)]));
+      const memberNames = new Set([
+        ...enriched.filter(m => !m.archived).map(m => m.name),
+        ...byMemberName.keys()
+      ]);
+      const idByName = new Map(enriched.map(m => [m.name, m.id || m.name]));
+      slices = [...memberNames].sort((a, b) => a.localeCompare(b)).map((name, idx) => ({
+        key: 'm:' + name,
+        label: name,
+        color: colorMap.get(idByName.get(name)) || FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length],
+        pct: Math.max(0, byMemberName.get(name) ?? 0),
+        sub: ''
+      }));
+      const unattr = Math.max(0, Number(poolObj?.unattributedPct || 0));
+      if (unattr > 0) {
+        slices.push({ key: 'unattr', label: t('family.pieUnattributed'), color: '#64748b', pct: unattr, sub: '' });
+      }
+      slices.push({
+        key: 'remaining',
+        label: t('family.pieRemaining'),
+        color: 'var(--ag-track-bg, rgba(148,163,184,0.22))',
+        pct: Math.max(0, 100 - usedPct),
+        sub: '',
+        isTrack: true
+      });
+      centerVal = formatPiePct(usedPct);
+      centerLbl = t('family.pieCenterQuota');
+      const basisKey = usedPct <= 0
+        ? 'family.pieBasisZero'
+        : poolObj?.basis === 'cost'
+          ? 'family.pieBasisCost'
+          : poolObj?.basis === 'tokens'
+            ? 'family.pieBasisTokens'
+            : poolObj?.basis === 'weighted'
+              ? 'family.pieBasisWeighted'
+              : 'family.pieBasisNone';
+      noteText = t('family.pieNoteQuota', {
+        time: poolObj?.observedAt ? new Date(poolObj.observedAt).toLocaleString() : '—',
+        basis: t(basisKey)
+      });
+    } else {
+      if (poolSelect) poolSelect.hidden = true;
+      const totalCost = Number(data?.total?.costUSD || 0);
+      const totalTok = Number(data?.total?.totalTokens || 0);
+      const denom = metric === 'effectiveUSD' ? totalEffectiveUSD : (metric === 'costUSD' ? totalCost : totalTok);
+      slices = [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)).map((m, idx) => {
+        const val = Number(m[metric] || 0);
+        const pct = denom > 0 ? (val / denom) * 100 : 0;
+        return {
+          key: 'm:' + (m.id || m.name),
+          label: m.name,
+          color: colorMap.get(m.id || m.name) || FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length],
+          pct,
+          sub: formatMetric(m)
+        };
+      });
+      centerVal = denom <= 0
+        ? '—'
+        : metric === 'effectiveUSD'
+          ? '$' + totalEffectiveUSD.toFixed(2)
+          : metric === 'costUSD'
+            ? '$' + totalCost.toFixed(2)
+            : fmt(totalTok);
+      centerLbl = t('family.pieCenterUsage');
+      const metricLabel = el('family-metric')?.selectedOptions?.[0]?.textContent || t('family.weighted');
+      noteText = denom > 0 ? t('family.pieNoteUsage', { metric: metricLabel }) : t('family.pieEmpty');
+    }
+
+    const svgWrap = el('family-pie-svg-wrap');
+    const centerEl = el('family-pie-center');
+    const legendEl = el('family-pie-legend');
+    const noteEl = el('family-pie-note');
+    if (!svgWrap || !centerEl || !legendEl) return;
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const makeSvg = (tag, attrs = {}) => {
+      const n = document.createElementNS ? document.createElementNS(svgNS, tag) : document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+      return n;
+    };
+    const r = 46;
+    const circumference = 2 * Math.PI * r;
+    const svg = makeSvg('svg', { viewBox: '0 0 120 120', class: 'family-donut-svg', role: 'img' });
+    svg.appendChild(makeSvg('circle', {
+      cx: 60, cy: 60, r, fill: 'none', stroke: 'var(--ag-track-bg, rgba(148,163,184,0.22))', 'stroke-width': 14
+    }));
+
+    const segMap = new Map();
+    const rowMap = new Map();
+    const setCenterDefault = () => {
+      const strong = familyNode('strong', centerVal);
+      const sub = familyNode('span', centerLbl);
+      centerEl.replaceChildren(strong, sub);
+    };
+    setCenterDefault();
+
+    const highlightSlice = (key) => {
+      for (const [k, seg] of segMap) seg.classList.toggle('is-dimmed', Boolean(key && k !== key));
+      for (const [k, row] of rowMap) {
+        row.classList.toggle('is-active', Boolean(key && k === key));
+        row.classList.toggle('is-dimmed', Boolean(key && k !== key));
+      }
+      if (!key) { setCenterDefault(); return; }
+      const target = slices.find(s => s.key === key);
+      if (target) {
+        centerEl.replaceChildren(familyNode('strong', formatPiePct(target.pct)), familyNode('span', target.label));
+      }
+    };
+
+    let offsetPct = 0;
+    for (const slice of slices) {
+      if (!slice.isTrack && slice.pct > 0) {
+        const dash = Math.min(circumference, (slice.pct / 100) * circumference);
+        const offset = (offsetPct / 100) * circumference;
+        const circle = makeSvg('circle', {
+          cx: 60, cy: 60, r, fill: 'none',
+          stroke: slice.color,
+          'stroke-width': 14,
+          'stroke-dasharray': `${dash.toFixed(3)} ${circumference.toFixed(3)}`,
+          'stroke-dashoffset': (-offset).toFixed(3),
+          class: 'family-donut-seg',
+          'data-slice-key': slice.key
+        });
+        circle.addEventListener('mouseenter', () => highlightSlice(slice.key));
+        circle.addEventListener('mouseleave', () => highlightSlice(null));
+        svg.appendChild(circle);
+        segMap.set(slice.key, circle);
+        offsetPct += slice.pct;
+      }
+    }
+    svgWrap.replaceChildren(svg);
+
+    legendEl.replaceChildren();
+    for (const slice of slices) {
+      const row = familyNode('div', null, 'family-legend-row');
+      const left = familyNode('span', null, 'family-legend-left');
+      const dot = familyNode('span', null, 'family-dot');
+      dot.style.background = slice.color;
+      left.append(dot, familyNode('span', slice.label, 'family-legend-name'));
+      const right = familyNode('span', null, 'family-legend-right');
+      right.append(familyNode('span', formatPiePct(slice.pct), 'family-legend-pct'));
+      if (slice.sub) right.append(familyNode('span', slice.sub, 'family-legend-sub'));
+      row.append(left, right);
+      row.addEventListener('mouseenter', () => highlightSlice(slice.key));
+      row.addEventListener('mouseleave', () => highlightSlice(null));
+      legendEl.append(row);
+      rowMap.set(slice.key, row);
+    }
+    if (noteEl) noteEl.textContent = noteText;
   }
 
   function renderFamilyDashboard(data) {
+    familyView.lastData = data;
     const box = el('family-results');
     const expanded = new Set(Array.from(box.querySelectorAll('details[open]'), item => item.dataset.member));
     box.replaceChildren();
@@ -16217,30 +16765,36 @@ function closeAllDropdowns(exceptWrap = null) {
       const w = computeFamilyMemberWeighted(member);
       return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
     });
+    const colorMap = buildFamilyColorMap(enriched);
     const totalEffectiveUSD = enriched.reduce((sum, m) => sum + m.effectiveUSD, 0);
     const totalEstimatedUSD = enriched.reduce((sum, m) => sum + m.estimatedUSD, 0);
 
     const metric = el('family-metric').value || 'effectiveUSD';
     const isWeighted = metric === 'effectiveUSD';
     const isPricedOnly = metric === 'costUSD';
+    const formatMetric = row => (isWeighted || isPricedOnly)
+      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
+      : fmt(row.totalTokens) + ' Token';
+
+    renderFamilyPieChart(data, enriched, metric, totalEffectiveUSD, colorMap, formatMetric);
+
     const headlineVal = isWeighted
       ? ' · ≈ $' + totalEffectiveUSD.toFixed(2)
       : isPricedOnly
         ? ' · $' + Number(total.costUSD || 0).toFixed(2)
         : '';
-    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
+    const summaryBar = familyNode('div', null, 'family-summary-bar');
+    summaryBar.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
     if (isWeighted && total.calls > 0) {
-      box.append(familyNode('small', total.unpricedCalls > 0
+      summaryBar.append(familyNode('small', total.unpricedCalls > 0
         ? t('family.weightedNote', { n: fmt(total.unpricedCalls), est: totalEstimatedUSD.toFixed(2) })
         : t('family.weightedPricedNote')));
     } else if (isPricedOnly && total.unpricedCalls) {
-      box.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
+      summaryBar.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
     }
+    box.append(summaryBar);
     if (!total.calls) box.append(familyNode('p', t('family.empty')));
 
-    const formatMetric = row => (isWeighted || isPricedOnly)
-      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
-      : fmt(row.totalTokens) + ' Token';
     const denom = isWeighted ? totalEffectiveUSD : (isPricedOnly ? Number(total.costUSD || 0) : Number(total.totalTokens || 0));
 
     for (const member of [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0))) {
@@ -16250,12 +16804,23 @@ function closeAllDropdowns(exceptWrap = null) {
       const val = Number(member[metric] || 0);
       const share = denom > 0 ? (val / denom) * 100 : 0;
       const displayShare = denom <= 0 ? '—' : share.toFixed(1) + '%';
+      const memberColor = colorMap.get(member.id || member.name) || '#8b5cf6';
+
       const summary = familyNode('summary');
-      summary.append(
-        familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare),
-        familyProgress(share)
-      );
+      const head = familyNode('div', null, 'family-row-head');
+      const nameWrap = familyNode('span', null, 'family-row-name');
+      const dot = familyNode('span', null, 'family-dot');
+      dot.style.background = memberColor;
+      nameWrap.append(dot, familyNode('span', member.name));
+      head.append(nameWrap, familyNode('span', formatMetric(member) + ' · ' + displayShare, 'family-row-val'));
+
+      const track = familyNode('div', null, 'family-bar-track');
+      const fill = familyNode('div', null, 'family-bar-fill');
+      fill.style.width = Math.max(0, Math.min(100, share)).toFixed(1) + '%';
+      track.append(fill);
+      summary.append(head, track);
       details.append(summary);
+
       details.append(familyNode('small', t('family.tokenSummary', {
         in: fmt(member.inputTokens || 0),
         cache: fmt(member.cacheReadTokens || 0),
@@ -16344,19 +16909,117 @@ function closeAllDropdowns(exceptWrap = null) {
     }
   }
 
-  el('family-import')?.addEventListener('click', () => runFamilyAction(async () => {
+  async function applyJoinConfigJson(rawText) {
     let config;
-    try { config = JSON.parse(el('family-invite').value); } catch { throw new Error(t('family.invalidInvite')); }
-    if (typeof config?.familySecret !== 'string' || typeof config.serverUrl !== 'string') throw new Error(t('family.invalidInvite'));
-    el('family-url').value = config.serverUrl;
-    el('family-secret').value = config.familySecret;
+    try { config = JSON.parse(String(rawText || '').trim()); } catch { throw new Error(t('family.invalidInvite')); }
+    if (typeof config?.familySecret !== 'string' || !config.familySecret.trim() ||
+        typeof config?.serverUrl !== 'string' || !config.serverUrl.trim()) {
+      throw new Error(t('family.invalidInvite'));
+    }
+    el('family-url').value = config.serverUrl.trim();
+    el('family-secret').value = config.familySecret.trim();
     el('family-invite').value = '';
+    const defaultTag = el('family-url-default-tag');
+    if (defaultTag) defaultTag.hidden = false;
+    el('family-settings').open = true;
     await connectFamilyMembers();
+    setFamilyStatus(t('family.importSuccess'));
+  }
+
+  el('family-import')?.addEventListener('click', () => runFamilyAction(() => applyJoinConfigJson(el('family-invite').value)));
+
+  el('family-pick-file')?.addEventListener('click', () => { el('family-file')?.click(); });
+  el('family-file')?.addEventListener('change', event => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    void runFamilyAction(async () => {
+      try {
+        const text = await file.text();
+        await applyJoinConfigJson(text);
+      } finally {
+        event.target.value = '';
+      }
+    });
+  });
+
+  el('family-paste-import')?.addEventListener('click', () => runFamilyAction(async () => {
+    let text = '';
+    try {
+      if (typeof navigator?.clipboard?.readText === 'function') {
+        text = await navigator.clipboard.readText();
+      }
+    } catch {}
+    if (!text.trim()) text = el('family-invite')?.value || '';
+    let parsed = null;
+    try { parsed = JSON.parse(text.trim()); } catch {}
+    if (!parsed || typeof parsed.serverUrl !== 'string' || typeof parsed.familySecret !== 'string') {
+      el('family-invite')?.focus?.();
+      throw new Error(t('family.clipboardEmpty'));
+    }
+    await applyJoinConfigJson(text);
   }));
+
+  el('family-invite')?.addEventListener('input', () => {
+    const raw = (el('family-invite')?.value || '').trim();
+    if (!raw.startsWith('{') || !raw.endsWith('}')) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.serverUrl === 'string' && parsed.serverUrl.trim() &&
+          typeof parsed?.familySecret === 'string' && parsed.familySecret.trim()) {
+        void runFamilyAction(() => applyJoinConfigJson(raw));
+      }
+    } catch {}
+  });
+
+  el('family-secret-toggle')?.addEventListener('click', () => {
+    const input = el('family-secret');
+    const toggle = el('family-secret-toggle');
+    if (!input || !toggle) return;
+    familyView.secretVisible = !familyView.secretVisible;
+    input.type = familyView.secretVisible ? 'text' : 'password';
+    toggle.setAttribute('aria-pressed', String(familyView.secretVisible));
+    const lbl = t(familyView.secretVisible ? 'family.secretHide' : 'family.secretShow');
+    toggle.setAttribute('aria-label', lbl);
+    toggle.setAttribute('title', lbl);
+    const svgNS = 'http://www.w3.org/2000/svg';
+    if (document.createElementNS) {
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('width', '14');
+      svg.setAttribute('height', '14');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '1.5');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      svg.setAttribute('aria-hidden', 'true');
+      const addPath = d => {
+        const p = document.createElementNS(svgNS, 'path');
+        p.setAttribute('d', d);
+        svg.appendChild(p);
+      };
+      if (familyView.secretVisible) {
+        addPath('M2 2l12 12');
+        addPath('M6.6 6.7a2 2 0 0 0 2.7 2.7');
+        addPath('M10.8 11.1A7 7 0 0 1 1 8s1.4-2.5 3.8-3.8');
+        addPath('M6.4 3.7A7 7 0 0 1 15 8a11.3 11.3 0 0 1-2.1 2.7');
+      } else {
+        addPath('M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z');
+        const c = document.createElementNS(svgNS, 'circle');
+        c.setAttribute('cx', '8');
+        c.setAttribute('cy', '8');
+        c.setAttribute('r', '2.2');
+        svg.appendChild(c);
+      }
+      toggle.replaceChildren(svg);
+    }
+  });
 
   async function connectFamilyMembers() {
     const info = await callFamily({ action: 'connect', ...familyConnectionFields() });
     familyView.members = info.members;
+    const defaultTag = el('family-url-default-tag');
+    if (defaultTag && el('family-url').value.trim()) defaultTag.hidden = false;
     renderFamilyMemberOptions();
     setFamilyStatus(t('family.connected'));
   }
@@ -16402,9 +17065,25 @@ function closeAllDropdowns(exceptWrap = null) {
       if (!result.ok) throw new Error(result.error);
     }));
   });
-  for (const id of ['family-range', 'family-scope', 'family-metric']) {
+  for (const id of ['family-range', 'family-scope']) {
     el(id)?.addEventListener('change', () => runFamilyAction(refreshFamilyData));
   }
+  el('family-metric')?.addEventListener('change', () => {
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+    else void runFamilyAction(refreshFamilyData);
+  });
+  el('family-pie-mode-quota')?.addEventListener('click', () => {
+    familyView.pieMode = 'quota';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
+  el('family-pie-mode-usage')?.addEventListener('click', () => {
+    familyView.pieMode = 'usage';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
+  el('family-quota-pool')?.addEventListener('change', event => {
+    familyView.selectedPool = event?.target?.value || el('family-quota-pool')?.value || '';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
   btnCtxSettings?.addEventListener('click', () => switchContextTab('settings'));
   btnCtxSettingsBack?.addEventListener('click', () => closeContextSettings());
 

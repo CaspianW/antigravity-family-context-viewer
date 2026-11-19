@@ -1974,7 +1974,11 @@
     members: [],
     busy: false,
     epoch: 0,
-    refreshTimer: null
+    refreshTimer: null,
+    pieMode: 'auto',
+    selectedPool: '',
+    lastData: null,
+    secretVisible: false
   };
 
   // 费用面板紧凑摘要与展开详情切换
@@ -4204,9 +4208,22 @@
     const member = familyView.members.find(row => row.id === config.memberId);
     const active = config.accounts.find(account => account.active);
     const activeLabel = active ? (active.alias || active.label) + ' · ' + familyModeText(active.mode) : '';
+    const statusPill = el('family-enabled-pill');
+    if (statusPill) {
+      statusPill.textContent = t(config.enabled ? 'family.on' : 'family.off');
+      statusPill.classList.toggle('is-on', Boolean(config.enabled));
+    }
+    const setupBadge = el('family-setup-badge');
+    if (setupBadge) {
+      setupBadge.textContent = t(config.deviceId ? 'family.setupDone' : 'family.setupTodo');
+      setupBadge.classList.toggle('is-on', Boolean(config.deviceId));
+    }
+    const defaultUrlTag = el('family-url-default-tag');
+    if (defaultUrlTag) defaultUrlTag.hidden = !config.hasDefaultServerUrl && !config.serverUrl;
+
     el('family-device-status').textContent = [
-      member?.name, config.deviceName, t(config.enabled ? 'family.on' : 'family.off'), activeLabel
-    ].filter(Boolean).join(' · ');
+      member?.name, config.deviceName, activeLabel
+    ].filter(Boolean).join(' · ') || t('family.setupTodo');
     el('family-sync-status').textContent = config.lastSyncAt
       ? t('family.lastSync', { time: new Date(config.lastSyncAt).toLocaleString() }) : t('family.waiting');
     el('family-sync-error').textContent = config.lastError || '';
@@ -4220,13 +4237,15 @@
     if (url) web.href = url;
     for (const id of ['family-sync', 'family-backfill']) el(id).disabled = !config.deviceId;
     if (resetFields) {
-      el('family-url').value = config.serverUrl;
+      el('family-url').value = config.serverUrl || '';
       el('family-secret').value = '';
-      el('family-secret').placeholder = config.hasSecret ? '••••••••' : '';
-      el('family-device').value = config.deviceName;
-      el('family-enabled').checked = config.enabled;
+      el('family-secret').placeholder = t(config.hasSecret ? 'family.secretSavedHint' : 'family.secretPlaceholder');
+      el('family-device').value = config.deviceName || '';
+      el('family-enabled').checked = Boolean(config.enabled);
       renderFamilyMemberOptions();
       if (!config.deviceId) el('family-settings').open = true;
+    } else if (!el('family-url').value.trim() && config.serverUrl) {
+      el('family-url').value = config.serverUrl;
     }
     const accounts = el('family-accounts');
     if (accounts.contains(shadow.activeElement)) return;
@@ -4234,7 +4253,9 @@
     if (!config.accounts.length) accounts.append(familyNode('p', t('family.noAccounts')));
     for (const account of config.accounts) {
       const row = familyNode('div', null, 'family-account');
-      const title = familyNode('strong', account.label + (account.active ? ' · ' + t('family.active') : ''));
+      const hdr = familyNode('div', null, 'family-account-hdr');
+      hdr.append(familyNode('strong', account.label));
+      if (account.active) hdr.append(familyNode('span', t('family.active'), 'family-status-pill is-on'));
       const alias = familyNode('input');
       alias.value = account.alias;
       alias.maxLength = 48;
@@ -4258,19 +4279,263 @@
         renderFamilyConfig(updated);
         setFamilyStatus(t('family.saved'));
       });
-      row.append(title, mode, alias, save);
+      row.append(hdr, mode, alias, save);
       accounts.append(row);
     }
   }
 
-  function familyProgress(value) {
-    const progress = familyNode('progress');
-    progress.max = 100;
-    progress.value = value;
-    return progress;
+  const FAMILY_PIE_COLORS = ['#8b5cf6', '#c084fc', '#6366f1', '#ec4899', '#a855f7', '#06b6d4'];
+  function buildFamilyColorMap(members = []) {
+    const map = new Map();
+    const sorted = [...members].sort((a, b) => String(a.id || a.name).localeCompare(String(b.id || b.name)));
+    sorted.forEach((m, idx) => {
+      map.set(m.id || m.name, FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length]);
+    });
+    return map;
+  }
+
+  function formatPiePct(value) {
+    if (!(value > 0)) return '0%';
+    return value < 0.05 ? '<0.1%' : Number(value.toFixed(1)) + '%';
+  }
+
+  function deriveWeeklyPoolsFromSnapshots(data, enriched) {
+    const snapshots = Array.isArray(data?.quotaSnapshots) ? data.quotaSnapshots : [];
+    const byPool = new Map();
+    for (const snap of snapshots) {
+      const obs = Number(snap?.observedAt || 0);
+      for (const w of snap?.windows || []) {
+        if (w?.window !== 'weekly' || typeof w.remainingPct !== 'number' || !Number.isFinite(w.remainingPct)) continue;
+        const prev = byPool.get(w.pool);
+        if (!prev || obs >= prev.observedAt) {
+          byPool.set(w.pool, {
+            pool: w.pool,
+            usedPct: Math.max(0, Math.min(100, Number((100 - w.remainingPct).toFixed(1)))),
+            expiresAt: Number(w.resetAt || (Date.now() + 3600000)),
+            observedAt: obs
+          });
+        }
+      }
+    }
+    if (!byPool.size) return [];
+    const totalW = enriched.reduce((s, m) => s + Number(m.effectiveUSD || 0), 0);
+    const totalTok = enriched.reduce((s, m) => s + Number(m.totalTokens || 0), 0);
+    const useWeighted = totalW > 0;
+    const denom = useWeighted ? totalW : totalTok;
+    return [...byPool.values()].map(entry => {
+      if (entry.usedPct <= 0) {
+        return { ...entry, estimates: [], unattributedPct: 0, basis: null };
+      }
+      if (denom <= 0) {
+        return { ...entry, estimates: [], unattributedPct: entry.usedPct, basis: null };
+      }
+      const estimates = enriched
+        .map(m => ({ name: m.name, val: useWeighted ? Number(m.effectiveUSD || 0) : Number(m.totalTokens || 0) }))
+        .filter(item => item.val > 0)
+        .map(item => ({ name: item.name, pct: Number(((item.val / denom) * entry.usedPct).toFixed(2)) }));
+      return { ...entry, estimates, unattributedPct: 0, basis: useWeighted ? 'weighted' : 'tokens' };
+    });
+  }
+
+  function renderFamilyPieChart(data, enriched, metric, totalEffectiveUSD, colorMap, formatMetric) {
+    const card = el('family-pie-card');
+    if (!card) return;
+    card.hidden = false;
+    const nowMs = Date.now();
+    const serverPools = (Array.isArray(data?.familyWeekly) ? data.familyWeekly : [])
+      .filter(p => p && (!p.expiresAt || p.expiresAt > nowMs));
+    const scopeVal = el('family-scope')?.value || 'shared';
+    const weeklyPools = scopeVal === 'personal'
+      ? []
+      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, enriched));
+    const canQuotaMode = weeklyPools.length > 0;
+    const effectiveMode = (familyView.pieMode === 'usage' || !canQuotaMode) ? 'usage' : 'quota';
+
+    const btnQuota = el('family-pie-mode-quota');
+    const btnUsage = el('family-pie-mode-usage');
+    if (btnQuota) {
+      btnQuota.disabled = !canQuotaMode;
+      btnQuota.classList.toggle('active', effectiveMode === 'quota');
+    }
+    if (btnUsage) {
+      btnUsage.classList.toggle('active', effectiveMode === 'usage');
+    }
+    const titleEl = el('family-pie-title');
+    if (titleEl) titleEl.textContent = t(effectiveMode === 'quota' ? 'family.pieTitleQuota' : 'family.pieTitleUsage');
+
+    const poolSelect = el('family-quota-pool');
+    let slices = [];
+    let centerVal = '—';
+    let centerLbl = '';
+    let noteText = '';
+
+    if (effectiveMode === 'quota') {
+      const poolNames = weeklyPools.map(p => p.pool).sort((a, b) => a.localeCompare(b));
+      if (poolSelect) {
+        poolSelect.replaceChildren(...poolNames.map(name => familyOption(name, name)));
+        const chosen = poolNames.includes(familyView.selectedPool)
+          ? familyView.selectedPool
+          : (poolNames.includes('Gemini Models') ? 'Gemini Models' : poolNames[0]);
+        familyView.selectedPool = chosen;
+        poolSelect.value = chosen;
+        poolSelect.hidden = poolNames.length < 1;
+      }
+      const poolObj = weeklyPools.find(p => p.pool === familyView.selectedPool) || weeklyPools[0];
+      const usedPct = Math.max(0, Math.min(100, Number(poolObj?.usedPct || 0)));
+      const estimates = Array.isArray(poolObj?.estimates) ? poolObj.estimates : [];
+      const byMemberName = new Map(estimates.map(item => [item.name, Number(item.pct || 0)]));
+      const memberNames = new Set([
+        ...enriched.filter(m => !m.archived).map(m => m.name),
+        ...byMemberName.keys()
+      ]);
+      const idByName = new Map(enriched.map(m => [m.name, m.id || m.name]));
+      slices = [...memberNames].sort((a, b) => a.localeCompare(b)).map((name, idx) => ({
+        key: 'm:' + name,
+        label: name,
+        color: colorMap.get(idByName.get(name)) || FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length],
+        pct: Math.max(0, byMemberName.get(name) ?? 0),
+        sub: ''
+      }));
+      const unattr = Math.max(0, Number(poolObj?.unattributedPct || 0));
+      if (unattr > 0) {
+        slices.push({ key: 'unattr', label: t('family.pieUnattributed'), color: '#64748b', pct: unattr, sub: '' });
+      }
+      slices.push({
+        key: 'remaining',
+        label: t('family.pieRemaining'),
+        color: 'var(--ag-track-bg, rgba(148,163,184,0.22))',
+        pct: Math.max(0, 100 - usedPct),
+        sub: '',
+        isTrack: true
+      });
+      centerVal = formatPiePct(usedPct);
+      centerLbl = t('family.pieCenterQuota');
+      const basisKey = usedPct <= 0
+        ? 'family.pieBasisZero'
+        : poolObj?.basis === 'cost'
+          ? 'family.pieBasisCost'
+          : poolObj?.basis === 'tokens'
+            ? 'family.pieBasisTokens'
+            : poolObj?.basis === 'weighted'
+              ? 'family.pieBasisWeighted'
+              : 'family.pieBasisNone';
+      noteText = t('family.pieNoteQuota', {
+        time: poolObj?.observedAt ? new Date(poolObj.observedAt).toLocaleString() : '—',
+        basis: t(basisKey)
+      });
+    } else {
+      if (poolSelect) poolSelect.hidden = true;
+      const totalCost = Number(data?.total?.costUSD || 0);
+      const totalTok = Number(data?.total?.totalTokens || 0);
+      const denom = metric === 'effectiveUSD' ? totalEffectiveUSD : (metric === 'costUSD' ? totalCost : totalTok);
+      slices = [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)).map((m, idx) => {
+        const val = Number(m[metric] || 0);
+        const pct = denom > 0 ? (val / denom) * 100 : 0;
+        return {
+          key: 'm:' + (m.id || m.name),
+          label: m.name,
+          color: colorMap.get(m.id || m.name) || FAMILY_PIE_COLORS[idx % FAMILY_PIE_COLORS.length],
+          pct,
+          sub: formatMetric(m)
+        };
+      });
+      centerVal = denom <= 0
+        ? '—'
+        : metric === 'effectiveUSD'
+          ? '$' + totalEffectiveUSD.toFixed(2)
+          : metric === 'costUSD'
+            ? '$' + totalCost.toFixed(2)
+            : fmt(totalTok);
+      centerLbl = t('family.pieCenterUsage');
+      const metricLabel = el('family-metric')?.selectedOptions?.[0]?.textContent || t('family.weighted');
+      noteText = denom > 0 ? t('family.pieNoteUsage', { metric: metricLabel }) : t('family.pieEmpty');
+    }
+
+    const svgWrap = el('family-pie-svg-wrap');
+    const centerEl = el('family-pie-center');
+    const legendEl = el('family-pie-legend');
+    const noteEl = el('family-pie-note');
+    if (!svgWrap || !centerEl || !legendEl) return;
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const makeSvg = (tag, attrs = {}) => {
+      const n = document.createElementNS ? document.createElementNS(svgNS, tag) : document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+      return n;
+    };
+    const r = 46;
+    const circumference = 2 * Math.PI * r;
+    const svg = makeSvg('svg', { viewBox: '0 0 120 120', class: 'family-donut-svg', role: 'img' });
+    svg.appendChild(makeSvg('circle', {
+      cx: 60, cy: 60, r, fill: 'none', stroke: 'var(--ag-track-bg, rgba(148,163,184,0.22))', 'stroke-width': 14
+    }));
+
+    const segMap = new Map();
+    const rowMap = new Map();
+    const setCenterDefault = () => {
+      const strong = familyNode('strong', centerVal);
+      const sub = familyNode('span', centerLbl);
+      centerEl.replaceChildren(strong, sub);
+    };
+    setCenterDefault();
+
+    const highlightSlice = (key) => {
+      for (const [k, seg] of segMap) seg.classList.toggle('is-dimmed', Boolean(key && k !== key));
+      for (const [k, row] of rowMap) {
+        row.classList.toggle('is-active', Boolean(key && k === key));
+        row.classList.toggle('is-dimmed', Boolean(key && k !== key));
+      }
+      if (!key) { setCenterDefault(); return; }
+      const target = slices.find(s => s.key === key);
+      if (target) {
+        centerEl.replaceChildren(familyNode('strong', formatPiePct(target.pct)), familyNode('span', target.label));
+      }
+    };
+
+    let offsetPct = 0;
+    for (const slice of slices) {
+      if (!slice.isTrack && slice.pct > 0) {
+        const dash = Math.min(circumference, (slice.pct / 100) * circumference);
+        const offset = (offsetPct / 100) * circumference;
+        const circle = makeSvg('circle', {
+          cx: 60, cy: 60, r, fill: 'none',
+          stroke: slice.color,
+          'stroke-width': 14,
+          'stroke-dasharray': `${dash.toFixed(3)} ${circumference.toFixed(3)}`,
+          'stroke-dashoffset': (-offset).toFixed(3),
+          class: 'family-donut-seg',
+          'data-slice-key': slice.key
+        });
+        circle.addEventListener('mouseenter', () => highlightSlice(slice.key));
+        circle.addEventListener('mouseleave', () => highlightSlice(null));
+        svg.appendChild(circle);
+        segMap.set(slice.key, circle);
+        offsetPct += slice.pct;
+      }
+    }
+    svgWrap.replaceChildren(svg);
+
+    legendEl.replaceChildren();
+    for (const slice of slices) {
+      const row = familyNode('div', null, 'family-legend-row');
+      const left = familyNode('span', null, 'family-legend-left');
+      const dot = familyNode('span', null, 'family-dot');
+      dot.style.background = slice.color;
+      left.append(dot, familyNode('span', slice.label, 'family-legend-name'));
+      const right = familyNode('span', null, 'family-legend-right');
+      right.append(familyNode('span', formatPiePct(slice.pct), 'family-legend-pct'));
+      if (slice.sub) right.append(familyNode('span', slice.sub, 'family-legend-sub'));
+      row.append(left, right);
+      row.addEventListener('mouseenter', () => highlightSlice(slice.key));
+      row.addEventListener('mouseleave', () => highlightSlice(null));
+      legendEl.append(row);
+      rowMap.set(slice.key, row);
+    }
+    if (noteEl) noteEl.textContent = noteText;
   }
 
   function renderFamilyDashboard(data) {
+    familyView.lastData = data;
     const box = el('family-results');
     const expanded = new Set(Array.from(box.querySelectorAll('details[open]'), item => item.dataset.member));
     box.replaceChildren();
@@ -4279,30 +4544,36 @@
       const w = computeFamilyMemberWeighted(member);
       return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
     });
+    const colorMap = buildFamilyColorMap(enriched);
     const totalEffectiveUSD = enriched.reduce((sum, m) => sum + m.effectiveUSD, 0);
     const totalEstimatedUSD = enriched.reduce((sum, m) => sum + m.estimatedUSD, 0);
 
     const metric = el('family-metric').value || 'effectiveUSD';
     const isWeighted = metric === 'effectiveUSD';
     const isPricedOnly = metric === 'costUSD';
+    const formatMetric = row => (isWeighted || isPricedOnly)
+      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
+      : fmt(row.totalTokens) + ' Token';
+
+    renderFamilyPieChart(data, enriched, metric, totalEffectiveUSD, colorMap, formatMetric);
+
     const headlineVal = isWeighted
       ? ' · ≈ $' + totalEffectiveUSD.toFixed(2)
       : isPricedOnly
         ? ' · $' + Number(total.costUSD || 0).toFixed(2)
         : '';
-    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
+    const summaryBar = familyNode('div', null, 'family-summary-bar');
+    summaryBar.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
     if (isWeighted && total.calls > 0) {
-      box.append(familyNode('small', total.unpricedCalls > 0
+      summaryBar.append(familyNode('small', total.unpricedCalls > 0
         ? t('family.weightedNote', { n: fmt(total.unpricedCalls), est: totalEstimatedUSD.toFixed(2) })
         : t('family.weightedPricedNote')));
     } else if (isPricedOnly && total.unpricedCalls) {
-      box.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
+      summaryBar.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
     }
+    box.append(summaryBar);
     if (!total.calls) box.append(familyNode('p', t('family.empty')));
 
-    const formatMetric = row => (isWeighted || isPricedOnly)
-      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
-      : fmt(row.totalTokens) + ' Token';
     const denom = isWeighted ? totalEffectiveUSD : (isPricedOnly ? Number(total.costUSD || 0) : Number(total.totalTokens || 0));
 
     for (const member of [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0))) {
@@ -4312,12 +4583,23 @@
       const val = Number(member[metric] || 0);
       const share = denom > 0 ? (val / denom) * 100 : 0;
       const displayShare = denom <= 0 ? '—' : share.toFixed(1) + '%';
+      const memberColor = colorMap.get(member.id || member.name) || '#8b5cf6';
+
       const summary = familyNode('summary');
-      summary.append(
-        familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare),
-        familyProgress(share)
-      );
+      const head = familyNode('div', null, 'family-row-head');
+      const nameWrap = familyNode('span', null, 'family-row-name');
+      const dot = familyNode('span', null, 'family-dot');
+      dot.style.background = memberColor;
+      nameWrap.append(dot, familyNode('span', member.name));
+      head.append(nameWrap, familyNode('span', formatMetric(member) + ' · ' + displayShare, 'family-row-val'));
+
+      const track = familyNode('div', null, 'family-bar-track');
+      const fill = familyNode('div', null, 'family-bar-fill');
+      fill.style.width = Math.max(0, Math.min(100, share)).toFixed(1) + '%';
+      track.append(fill);
+      summary.append(head, track);
       details.append(summary);
+
       details.append(familyNode('small', t('family.tokenSummary', {
         in: fmt(member.inputTokens || 0),
         cache: fmt(member.cacheReadTokens || 0),
@@ -4406,19 +4688,117 @@
     }
   }
 
-  el('family-import')?.addEventListener('click', () => runFamilyAction(async () => {
+  async function applyJoinConfigJson(rawText) {
     let config;
-    try { config = JSON.parse(el('family-invite').value); } catch { throw new Error(t('family.invalidInvite')); }
-    if (typeof config?.familySecret !== 'string' || typeof config.serverUrl !== 'string') throw new Error(t('family.invalidInvite'));
-    el('family-url').value = config.serverUrl;
-    el('family-secret').value = config.familySecret;
+    try { config = JSON.parse(String(rawText || '').trim()); } catch { throw new Error(t('family.invalidInvite')); }
+    if (typeof config?.familySecret !== 'string' || !config.familySecret.trim() ||
+        typeof config?.serverUrl !== 'string' || !config.serverUrl.trim()) {
+      throw new Error(t('family.invalidInvite'));
+    }
+    el('family-url').value = config.serverUrl.trim();
+    el('family-secret').value = config.familySecret.trim();
     el('family-invite').value = '';
+    const defaultTag = el('family-url-default-tag');
+    if (defaultTag) defaultTag.hidden = false;
+    el('family-settings').open = true;
     await connectFamilyMembers();
+    setFamilyStatus(t('family.importSuccess'));
+  }
+
+  el('family-import')?.addEventListener('click', () => runFamilyAction(() => applyJoinConfigJson(el('family-invite').value)));
+
+  el('family-pick-file')?.addEventListener('click', () => { el('family-file')?.click(); });
+  el('family-file')?.addEventListener('change', event => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    void runFamilyAction(async () => {
+      try {
+        const text = await file.text();
+        await applyJoinConfigJson(text);
+      } finally {
+        event.target.value = '';
+      }
+    });
+  });
+
+  el('family-paste-import')?.addEventListener('click', () => runFamilyAction(async () => {
+    let text = '';
+    try {
+      if (typeof navigator?.clipboard?.readText === 'function') {
+        text = await navigator.clipboard.readText();
+      }
+    } catch {}
+    if (!text.trim()) text = el('family-invite')?.value || '';
+    let parsed = null;
+    try { parsed = JSON.parse(text.trim()); } catch {}
+    if (!parsed || typeof parsed.serverUrl !== 'string' || typeof parsed.familySecret !== 'string') {
+      el('family-invite')?.focus?.();
+      throw new Error(t('family.clipboardEmpty'));
+    }
+    await applyJoinConfigJson(text);
   }));
+
+  el('family-invite')?.addEventListener('input', () => {
+    const raw = (el('family-invite')?.value || '').trim();
+    if (!raw.startsWith('{') || !raw.endsWith('}')) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.serverUrl === 'string' && parsed.serverUrl.trim() &&
+          typeof parsed?.familySecret === 'string' && parsed.familySecret.trim()) {
+        void runFamilyAction(() => applyJoinConfigJson(raw));
+      }
+    } catch {}
+  });
+
+  el('family-secret-toggle')?.addEventListener('click', () => {
+    const input = el('family-secret');
+    const toggle = el('family-secret-toggle');
+    if (!input || !toggle) return;
+    familyView.secretVisible = !familyView.secretVisible;
+    input.type = familyView.secretVisible ? 'text' : 'password';
+    toggle.setAttribute('aria-pressed', String(familyView.secretVisible));
+    const lbl = t(familyView.secretVisible ? 'family.secretHide' : 'family.secretShow');
+    toggle.setAttribute('aria-label', lbl);
+    toggle.setAttribute('title', lbl);
+    const svgNS = 'http://www.w3.org/2000/svg';
+    if (document.createElementNS) {
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('width', '14');
+      svg.setAttribute('height', '14');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '1.5');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      svg.setAttribute('aria-hidden', 'true');
+      const addPath = d => {
+        const p = document.createElementNS(svgNS, 'path');
+        p.setAttribute('d', d);
+        svg.appendChild(p);
+      };
+      if (familyView.secretVisible) {
+        addPath('M2 2l12 12');
+        addPath('M6.6 6.7a2 2 0 0 0 2.7 2.7');
+        addPath('M10.8 11.1A7 7 0 0 1 1 8s1.4-2.5 3.8-3.8');
+        addPath('M6.4 3.7A7 7 0 0 1 15 8a11.3 11.3 0 0 1-2.1 2.7');
+      } else {
+        addPath('M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z');
+        const c = document.createElementNS(svgNS, 'circle');
+        c.setAttribute('cx', '8');
+        c.setAttribute('cy', '8');
+        c.setAttribute('r', '2.2');
+        svg.appendChild(c);
+      }
+      toggle.replaceChildren(svg);
+    }
+  });
 
   async function connectFamilyMembers() {
     const info = await callFamily({ action: 'connect', ...familyConnectionFields() });
     familyView.members = info.members;
+    const defaultTag = el('family-url-default-tag');
+    if (defaultTag && el('family-url').value.trim()) defaultTag.hidden = false;
     renderFamilyMemberOptions();
     setFamilyStatus(t('family.connected'));
   }
@@ -4464,9 +4844,25 @@
       if (!result.ok) throw new Error(result.error);
     }));
   });
-  for (const id of ['family-range', 'family-scope', 'family-metric']) {
+  for (const id of ['family-range', 'family-scope']) {
     el(id)?.addEventListener('change', () => runFamilyAction(refreshFamilyData));
   }
+  el('family-metric')?.addEventListener('change', () => {
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+    else void runFamilyAction(refreshFamilyData);
+  });
+  el('family-pie-mode-quota')?.addEventListener('click', () => {
+    familyView.pieMode = 'quota';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
+  el('family-pie-mode-usage')?.addEventListener('click', () => {
+    familyView.pieMode = 'usage';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
+  el('family-quota-pool')?.addEventListener('change', event => {
+    familyView.selectedPool = event?.target?.value || el('family-quota-pool')?.value || '';
+    if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
+  });
   btnCtxSettings?.addEventListener('click', () => switchContextTab('settings'));
   btnCtxSettingsBack?.addEventListener('click', () => closeContextSettings());
 

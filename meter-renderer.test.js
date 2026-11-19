@@ -5579,6 +5579,7 @@ function htmlAwareRendererHarness(extraSandbox = null) {
             const av = am[2] ?? am[3] ?? am[4] ?? '';
             node.setAttribute(ak, av);
             if (ak === 'value') node.value = av;
+            if (ak === 'type') node.type = av;
             if (ak === 'hidden') node.hidden = true;
             if (ak === 'disabled') node.disabled = true;
             if (ak === 'style') {
@@ -6092,6 +6093,7 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
           ok: true,
           data: {
             serverUrl: 'https://antigravity-family.example',
+            hasDefaultServerUrl: true,
             hasSecret: true,
             memberId: 'm_caspian',
             deviceId: 'd_linux',
@@ -6123,6 +6125,17 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
           ok: true,
           data: {
             total: { calls: 15, totalTokens: 21000000, costUSD: 2.0, unpricedCalls: 2 },
+            familyWeekly: [
+              {
+                pool: 'Gemini Models',
+                usedPct: 11,
+                expiresAt: Date.now() + 3600000,
+                observedAt: 1795092000000,
+                estimates: [{ name: 'Caspian', pct: 11 }],
+                unattributedPct: 0,
+                basis: 'weighted'
+              }
+            ],
             quotaSnapshots: [
               { accountScopeKey: 'scope_1', usedPct: 11, remainingPct: 89 }
             ],
@@ -6181,7 +6194,7 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
                   },
                   {
                     deviceId: 'd_win',
-                    deviceName: 'FDNAN',
+                    deviceName: 'WinDesktop',
                     totalTokens: 0,
                     costUSD: 0,
                     accounts: [{ calls: 0, totalTokens: 0, costUSD: 0, unpricedCalls: 0 }]
@@ -6227,14 +6240,50 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     const memberRows = resultsBox.children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
     assert.equal(memberRows.length, 2);
     // Neon 2/5 calls * (2M*2 + 3M*0.1 + 1M*10)/1e6 = 0.4 * 14.3 = $5.72 > Larry $2.00
-    assert.match(collectText(memberRows[0].children[0]), /^Caspian · \$5\.7200 · 74\.1%/);
-    assert.match(collectText(memberRows[1].children[0]), /^Larry · \$2\.0000 · 25\.9%/);
+    assert.match(collectText(memberRows[0].children[0]), /^Caspian \$5\.7200 · 74\.1%/);
+    assert.match(collectText(memberRows[1].children[0]), /^Larry \$2\.0000 · 25\.9%/);
 
     // 验证包含设备分组（含 0 Token 设备）和模型估算标记
     const caspianDetailText = collectText(memberRows[0]);
     assert.match(caspianDetailText, /caspian-linux/);
-    assert.match(caspianDetailText, /FDNAN/);
+    assert.match(caspianDetailText, /WinDesktop/);
     assert.match(caspianDetailText, /Orchestrator \(Neon\) \(估算\)/);
+
+    // 验证紫色环形饼图（周额度占比 -> 11% 共享池已用，零成员无误分 5.5%）及模式切换
+    const pieCard = h.elements.get('family-pie-card');
+    assert.equal(pieCard.hidden, false);
+    assert.match(collectText(h.elements.get('family-pie-center')), /^11% 共享池已用$/);
+    const pieLegendText = collectText(h.elements.get('family-pie-legend'));
+    assert.match(pieLegendText, /Caspian 11%/);
+    assert.match(pieLegendText, /Larry 0%/);
+    assert.match(pieLegendText, /剩余额度 89%/);
+    assert.ok(h.elements.get('family-pie-svg-wrap').querySelectorAll('circle').length >= 2);
+
+    h.elements.get('family-pie-mode-usage').click();
+    assert.match(collectText(h.elements.get('family-pie-center')), /^\$7\.72 家庭合计$/);
+    const usageLegendText = collectText(h.elements.get('family-pie-legend'));
+    assert.match(usageLegendText, /Caspian 74\.1% \$5\.7200/);
+    assert.match(usageLegendText, /Larry 25\.9% \$2\.0000/);
+
+    // 验证默认服务器地址显示、密钥可视化开关、粘贴 JSON 自动导入连接
+    assert.equal(h.elements.get('family-url').value, 'https://antigravity-family.example');
+    assert.equal(h.elements.get('family-url-default-tag').hidden, false);
+    const secretInput = h.elements.get('family-secret');
+    const secretToggle = h.elements.get('family-secret-toggle');
+    assert.equal(secretInput.type, 'password');
+    secretToggle.click();
+    assert.equal(secretInput.type, 'text');
+    assert.equal(secretToggle.getAttribute('aria-pressed'), 'true');
+    secretToggle.click();
+    assert.equal(secretInput.type, 'password');
+
+    const inviteInput = h.elements.get('family-invite');
+    inviteInput.value = JSON.stringify({ serverUrl: 'https://new-family.example', familySecret: 'secret_0123456789abcdef_xyz' });
+    inviteInput.trigger('input');
+    for (let i = 0; i < 6; i++) await flush();
+    assert.equal(h.elements.get('family-url').value, 'https://new-family.example');
+    assert.equal(secretInput.value, 'secret_0123456789abcdef_xyz');
+    assert.equal(inviteInput.value, '');
 
     // 4. 切换为原始总 Token 口径，排序反转为 Larry (15,000,000) 在前
     const metricSelect = h.elements.get('family-metric');
@@ -6242,8 +6291,8 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     metricSelect.trigger('change');
     for (let i = 0; i < 4; i++) await flush();
     const tokenRows = resultsBox.children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
-    assert.match(collectText(tokenRows[0].children[0]), /^Larry · 15,000,000 Token · 71\.4%/);
-    assert.match(collectText(tokenRows[1].children[0]), /^Caspian · 6,000,000 Token · 28\.6%/);
+    assert.match(collectText(tokenRows[0].children[0]), /^Larry 15,000,000 Token · 71\.4%/);
+    assert.match(collectText(tokenRows[1].children[0]), /^Caspian 6,000,000 Token · 28\.6%/);
   } finally {
     try { api.dispose(); } catch {}
   }

@@ -52,7 +52,11 @@ function cleanLabel(value, length, label, required = false) {
 }
 
 function normalizeConnection(input, current) {
-  const serverUrl = serverOrigin(input.serverUrl ?? current.serverUrl);
+  const rawServerUrl = (typeof input.serverUrl === 'string' && input.serverUrl.trim())
+    || current.serverUrl
+    || current.defaultServerUrl
+    || '';
+  const serverUrl = serverOrigin(rawServerUrl);
   const secret = input.familySecret || (serverUrl === current.serverUrl ? current.familySecret : '');
   if (typeof secret !== 'string' || !/^[!-~]{24,512}$/.test(secret)) throw new Error('Enter a valid family secret');
   return { serverUrl, familySecret: secret };
@@ -134,7 +138,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
   const configPath = path.join(stateDir, 'family_sync_config.json');
   const syncPath = path.join(stateDir, 'family_sync_state.json');
   const accountPath = path.join(stateDir, 'accounts_v1.json');
-  const defaults = { enabled: false, serverUrl: '', familySecret: '', memberId: '', deviceId: '',
+  const defaults = { enabled: false, serverUrl: '', defaultServerUrl: '', familySecret: '', memberId: '', deviceId: '',
     deviceName: os.hostname().replace(/[^\p{L}\p{N} ._-]/gu, '-').slice(0, 64) || 'Desktop',
     accountRules: {}, since: null, revision: 0 };
   let watcher;
@@ -176,12 +180,16 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
 
   function view() {
     const cfg = getConfig();
-    const { familySecret, accountRules, revision, ...publicConfig } = cfg;
+    const { familySecret, accountRules, revision, defaultServerUrl, ...publicConfig } = cfg;
+    const effectiveServerUrl = cfg.serverUrl || defaultServerUrl || '';
     const states = loadStates();
     const syncState = states.destinations[uploadKey(cfg)] ?? {};
     const calls = ledgerCalls();
     return {
-      ...publicConfig, hasSecret: Boolean(familySecret),
+      ...publicConfig,
+      serverUrl: effectiveServerUrl,
+      hasDefaultServerUrl: Boolean(effectiveServerUrl),
+      hasSecret: Boolean(familySecret),
       lastSyncAt: syncState.lastSyncAt ?? null, lastError: syncState.lastError ?? '',
       accounts: readAccounts(cfg, calls),
       pendingCount: Object.entries(calls).filter(([id, call]) =>
@@ -245,7 +253,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
       }
       accountRules[key] = { mode: 'shared', alias: accountRules[key]?.alias ?? '' };
     }
-    const next = { ...cfg, ...connection, deviceId, deviceName, memberId, enabled,
+    const next = { ...cfg, ...connection, defaultServerUrl: connection.serverUrl, deviceId, deviceName, memberId, enabled,
       since: changedServer || cfg.since == null ? now() : cfg.since,
       accountRules, revision: cfg.revision + 1 };
     if (changedServer || !cfg.deviceId || memberId !== cfg.memberId || deviceName !== cfg.deviceName) {
@@ -416,6 +424,15 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
     watcher = null;
   }
 
+  async function rememberServerUrl(url) {
+    if (!url) return;
+    await exclusive(() => {
+      const current = getConfig();
+      if (current.defaultServerUrl === url) return;
+      write(configPath, { ...current, defaultServerUrl: url });
+    }, true).catch(() => {});
+  }
+
   async function action(input = {}, origin) {
     try {
       switch (input?.action) {
@@ -423,14 +440,18 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
         case 'connect': {
           const current = getConfig();
           const cfg = { ...current, ...normalizeConnection(input, current) };
-          return { ok: true, data: await api(cfg, 'members') };
+          const res = await api(cfg, 'members');
+          await rememberServerUrl(cfg.serverUrl);
+          return { ok: true, data: res };
         }
         case 'createMember': {
           const current = getConfig();
           const cfg = { ...current, ...normalizeConnection(input, current) };
-          return { ok: true, data: await api(cfg, 'members', { method: 'POST', body: {
+          const res = await api(cfg, 'members', { method: 'POST', body: {
             name: cleanLabel(input.name, 64, 'member name', true)
-          } }) };
+          } });
+          await rememberServerUrl(cfg.serverUrl);
+          return { ok: true, data: res };
         }
         case 'save':
           await exclusive(() => save(input));
@@ -446,7 +467,10 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
         case 'dashboard': {
           const cfg = getConfig();
           const query = new URLSearchParams({
-            range: input.range || 'today', scope: input.scope || 'shared', tzOffset: input.tzOffset ?? 0
+            range: input.range || 'today',
+            scope: input.scope || 'shared',
+            tzOffset: input.tzOffset ?? 0,
+            familyWeekly: '1'
           });
           return { ok: true, data: await api(cfg, 'dashboard?' + query) };
         }

@@ -1856,68 +1856,166 @@
       <div id="model-usage-legend" class="model-usage-legend"></div>
     </div>
 
-    <!-- 家庭组多人用量与加权对比视图 -->
+    <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
-      <div class="ctx-settings-card family-card">
-        <strong id="family-device-status"></strong>
-        <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
-        <small id="family-sync-error" class="family-error"></small>
-        <div class="family-controls">
-          <button type="button" id="family-sync" class="family-button" data-i18n="family.sync" disabled>立即同步</button>
-          <a id="family-web" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+      <div class="family-panel-card family-hero-card">
+        <div class="family-hero-top">
+          <div class="family-hero-meta">
+            <div class="family-hero-title-row">
+              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
+              <strong id="family-device-status"></strong>
+            </div>
+            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
+            <small id="family-sync-error" class="family-error"></small>
+          </div>
+          <div class="family-controls">
+            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
+            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+          </div>
         </div>
         <p id="family-feedback" role="status"></p>
       </div>
-      <div class="ctx-settings-card family-card">
-        <div class="family-controls">
-          <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
-            <option value="5h" data-i18n="family.5h">近 5 小时</option>
-            <option value="today" data-i18n="family.today" selected>今日</option>
-            <option value="7d" data-i18n="family.7d">近 7 天</option>
-            <option value="month" data-i18n="family.month">本月</option>
-            <option value="all" data-i18n="family.all">全部</option>
-          </select>
-          <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
-            <option value="shared" data-i18n="family.mode.shared">家庭统计</option>
-            <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
-          </select>
-          <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
-            <option value="effectiveUSD" data-i18n="family.weighted" selected>等效价值（模型加权）</option>
-            <option value="costUSD" data-i18n="family.cost">仅已定价 API 费用</option>
-            <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
-          </select>
+
+      <div class="family-panel-card">
+        <div class="family-filter-row">
+          <div class="family-controls">
+            <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
+              <option value="5h" data-i18n="family.5h">近 5 小时</option>
+              <option value="today" data-i18n="family.today" selected>今日</option>
+              <option value="7d" data-i18n="family.7d">近 7 天</option>
+              <option value="month" data-i18n="family.month">本月</option>
+              <option value="all" data-i18n="family.all">全部</option>
+            </select>
+            <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
+              <option value="shared" data-i18n="family.mode.shared" selected>家庭统计</option>
+              <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
+            </select>
+            <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
+              <option value="effectiveUSD" data-i18n="family.weighted" selected>等效价值（模型加权）</option>
+              <option value="costUSD" data-i18n="family.cost">仅已定价 API 费用</option>
+              <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
+            </select>
+          </div>
         </div>
+
+        <div id="family-pie-card" class="family-pie-card" hidden>
+          <div class="family-pie-hdr">
+            <div class="family-pie-title-wrap">
+              <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
+              <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
+            </div>
+            <div class="source-switch-bar family-pie-ctrls">
+              <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
+              <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
+            </div>
+          </div>
+          <div class="family-pie-body">
+            <div class="family-donut-wrap">
+              <div id="family-pie-svg-wrap"></div>
+              <div id="family-pie-center" class="family-donut-center">
+                <strong>—</strong>
+                <span></span>
+              </div>
+            </div>
+            <div id="family-pie-legend" class="family-pie-legend"></div>
+          </div>
+          <small id="family-pie-note" class="family-pie-note"></small>
+        </div>
+
         <div id="family-results" class="family-card"></div>
       </div>
 
-      <div class="ctx-settings-card family-card">
-        <strong data-i18n="family.rules">本机账号规则</strong>
+      <div class="family-panel-card">
+        <div class="family-hero-title-row">
+          <strong data-i18n="family.rules">本机账号规则</strong>
+          <small data-i18n="family.rulesGuide">区分多账号：设为「家庭统计」计入共享池；「私人 · 仅本机」绝不上传</small>
+        </div>
         <p id="family-pending"></p>
         <div id="family-accounts" class="family-card"></div>
       </div>
-      <details id="family-settings" class="ctx-settings-card">
-        <summary data-i18n="family.settings">连接、成员与补传</summary>
-        <div class="family-card family-settings-body">
-          <label><span data-i18n="family.invite">加入配置 JSON</span><textarea id="family-invite" rows="2" autocomplete="off"></textarea></label>
-          <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
-          <label><span data-i18n="family.url">服务器地址</span><input type="url" id="family-url" autocomplete="off"></label>
-          <label><span data-i18n="family.secret">家庭组密钥</span><input type="password" id="family-secret" autocomplete="off"></label>
-          <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
-          <label><span data-i18n="family.pickMember">选择成员</span><select id="family-member"></select></label>
-          <div class="family-controls">
-            <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" aria-label="新成员姓名">
-            <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
+
+      <details id="family-settings" class="family-panel-card">
+        <summary class="family-settings-summary">
+          <span data-i18n="family.settings">连接、成员与补传（向导）</span>
+          <span id="family-setup-badge" class="family-status-pill" data-i18n="family.setupTodo">待配置 · 3 步快速加入</span>
+        </summary>
+        <div class="family-settings-body">
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">1</span>
+              <span data-i18n="family.step1Title">导入或连接家庭服务器</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step1Hint">最简单方式：直接导入管理员发来的 family-join.json；导入或填写一次后，本机将自动记住服务器地址。</small>
+            <div class="family-controls">
+              <input id="family-file" type="file" accept=".json,application/json" hidden>
+              <button type="button" id="family-pick-file" class="family-button family-btn-primary" data-i18n="family.pickFile">选择 JSON 文件一键导入</button>
+              <button type="button" id="family-paste-import" class="family-button" data-i18n="family.pasteImport">从剪贴板一键导入</button>
+            </div>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.invite">或直接粘贴配置 JSON（粘贴后自动导入）</span>
+              <textarea id="family-invite" rows="2" autocomplete="off" data-i18n-placeholder="family.invitePlaceholder" placeholder='粘贴 {"serverUrl":"https://...","familySecret":"..."}'></textarea>
+            </label>
+            <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
+            <div class="family-form-grid">
+              <label class="family-field">
+                <span class="family-field-lbl">
+                  <span data-i18n="family.url">服务器地址</span>
+                  <span id="family-url-default-tag" class="family-status-pill is-on" data-i18n="family.defaultUrlTag" hidden>本机默认</span>
+                </span>
+                <input type="url" id="family-url" autocomplete="off" data-i18n-placeholder="family.urlPlaceholder" placeholder="https://your-family-server.example">
+              </label>
+              <label class="family-field">
+                <span class="family-field-lbl" data-i18n="family.secret">家庭组密钥</span>
+                <div class="family-secret-wrap">
+                  <input type="password" id="family-secret" autocomplete="off" data-i18n-placeholder="family.secretPlaceholder" placeholder="输入家庭组密钥">
+                  <button type="button" id="family-secret-toggle" class="family-eye-btn" aria-pressed="false" data-i18n-aria="family.secretShow" data-i18n-title="family.secretShow" aria-label="显示或隐藏密钥" title="显示或隐藏密钥">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"></path>
+                      <circle cx="8" cy="8" r="2.2"></circle>
+                    </svg>
+                  </button>
+                </div>
+              </label>
+            </div>
+            <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
           </div>
-          <label><span data-i18n="family.device">设备名称</span><input id="family-device" maxlength="64"></label>
-          <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报</span></label>
-          <button type="button" id="family-save" class="family-button" data-i18n="family.save">保存</button>
-          <div class="family-controls">
-            <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
-              <option value="7d" data-i18n="family.7d">近 7 天</option>
-              <option value="30d" data-i18n="family.30d">近 30 天</option>
-              <option value="all" data-i18n="family.all">全部</option>
-            </select>
-            <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
+
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">2</span>
+              <span data-i18n="family.step2Title">绑定你的身份与设备</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step2Hint">同一位成员在不同电脑选择相同姓名，用量会自动合并计算；首次加入可在右侧新建名字。</small>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.pickMember">选择你的成员身份</span>
+              <select id="family-member"></select>
+            </label>
+            <div class="family-controls">
+              <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" data-i18n-placeholder="family.newMember" aria-label="新成员姓名" placeholder="首次加入？输入成员姓名">
+              <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
+            </div>
+            <label class="family-field">
+              <span class="family-field-lbl" data-i18n="family.device">本机设备名称（用于区分你的电脑）</span>
+              <input id="family-device" maxlength="64">
+            </label>
+            <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报（后台自动同步用量）</span></label>
+            <button type="button" id="family-save" class="family-button family-btn-primary" data-i18n="family.saveStep2">保存设置并开始同步</button>
+          </div>
+
+          <div class="family-step-card">
+            <div class="family-step-head">
+              <span class="family-step-num">3</span>
+              <span data-i18n="family.step3Title">补传历史账本（可选）</span>
+            </div>
+            <small class="family-step-hint" data-i18n="family.step3Hint">如果之前已经在本地使用过 Antigravity，可选择时间范围一次性补传已记账的历史用量。</small>
+            <div class="family-controls">
+              <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
+                <option value="7d" data-i18n="family.7d" selected>近 7 天</option>
+                <option value="30d" data-i18n="family.30d">近 30 天</option>
+                <option value="all" data-i18n="family.all">全部</option>
+              </select>
+              <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
+            </div>
           </div>
         </div>
       </details>
