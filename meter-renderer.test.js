@@ -35,6 +35,13 @@ function harness(scanSession = session(), extraSandbox = null) {
         },
         contains(c) {
           return (attrs.get('class') || '').split(/\s+/).includes(c);
+        },
+        toggle(c, force) {
+          const has = this.contains(c);
+          const next = force === undefined ? !has : Boolean(force);
+          if (next) this.add(c);
+          else this.remove(c);
+          return next;
         }
       },
       addEventListener(type, fn) {
@@ -5519,6 +5526,10 @@ function htmlAwareRendererHarness(extraSandbox = null) {
       value: '',
       checked: false,
       disabled: false,
+      dataset: {},
+      get childElementCount() {
+        return this.children.length;
+      },
       get options() {
         return this.children.filter(c => String(c.tagName).toUpperCase() === 'OPTION');
       },
@@ -5552,9 +5563,11 @@ function htmlAwareRendererHarness(extraSandbox = null) {
           const attrStr = m[3] || '';
           const selfClose = m[4] === '/' || VOID_TAGS.has(tName);
           if (isClose) {
-            while (stack.length > 1) {
-              const popped = stack.pop();
-              if (popped.tagName === tName) break;
+            if (!VOID_TAGS.has(tName) && stack.some((s, idx) => idx > 0 && s.tagName === tName)) {
+              while (stack.length > 1) {
+                const popped = stack.pop();
+                if (popped.tagName === tName) break;
+              }
             }
             continue;
           }
@@ -5575,6 +5588,11 @@ function htmlAwareRendererHarness(extraSandbox = null) {
           }
           const parent = stack[stack.length - 1];
           parent.appendChild(node);
+          if (node.tagName === 'OPTION' && parent.tagName === 'SELECT') {
+            if (node.getAttribute('selected') !== null || parent.value === '') {
+              parent.value = node.value;
+            }
+          }
           if (node.id) elements.set(node.id, node);
           if (!selfClose) stack.push(node);
         }
@@ -5595,6 +5613,13 @@ function htmlAwareRendererHarness(extraSandbox = null) {
         },
         contains(c) {
           return (attrs.get('class') || '').split(/\s+/).includes(c);
+        },
+        toggle(c, force) {
+          const has = this.contains(c);
+          const next = force === undefined ? !has : Boolean(force);
+          if (next) this.add(c);
+          else this.remove(c);
+          return next;
         }
       },
       addEventListener(type, fn) {
@@ -5630,6 +5655,20 @@ function htmlAwareRendererHarness(extraSandbox = null) {
           const xId = x.id || x.getAttribute?.('id');
           if (xId) { docElements.set(xId, x); elements.set(xId, x); }
         }
+      },
+      append(...nodes) {
+        for (const x of nodes) {
+          if (typeof x === 'string') {
+            this.textContent += x;
+          } else if (x) {
+            this.appendChild(x);
+          }
+        }
+      },
+      contains(target) {
+        if (!target) return false;
+        if (target === this) return true;
+        return this.children.some(c => c.contains?.(target));
       },
       insertBefore(x, ref) {
         if (!x) return;
@@ -5670,6 +5709,8 @@ function htmlAwareRendererHarness(extraSandbox = null) {
             ok = n.id === sel.slice(1);
           } else if (/^input\[type="date"\]$/i.test(sel)) {
             ok = n.tagName === 'INPUT' && n.getAttribute?.('type') === 'date';
+          } else if (/^details\[open\]$/i.test(sel)) {
+            ok = n.tagName === 'DETAILS' && Boolean(n.open);
           } else {
             ok = n.tagName === sel.toUpperCase();
           }
@@ -6010,6 +6051,199 @@ test('v0.8.8 三语货币参考规则（en 纯 USD / zh-CN USD+CNY / zh-TW 四�
     h.elements.get('btn-custom-plan-save').click();
     const lastSave = h.savedSettings[h.savedSettings.length - 1];
     assert.equal(lastSave?.customPlan?.validEndDate, todayYmd);
+  } finally {
+    try { api.dispose(); } catch {}
+  }
+});
+
+test('家庭组看板位于 Token 用量面板，按加权等效价值对比且不渲染冗余额度池卡片', async () => {
+  const h = htmlAwareRendererHarness();
+  const api = h.sandbox.__AGContextMeter;
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const collectText = (node) => {
+    if (!node) return '';
+    return [node.textContent || '', ...(node.children || []).map(collectText)].filter(Boolean).join(' ');
+  };
+  try {
+    // 1. 家庭组入口已从上下文面板移除，并迁入 Token 用量面板
+    assert.equal(h.elements.has('tab-ctx-family'), false);
+    assert.equal(h.elements.has('pane-ctx-family'), false);
+    assert.equal(h.shadow.querySelector('#tab-ctx-family'), null);
+    assert.equal(h.shadow.querySelector('#pane-ctx-family'), null);
+
+    const familyBtn = h.elements.get('tok-view-family');
+    const familyView = h.elements.get('family-usage-view');
+    assert.ok(familyBtn);
+    assert.ok(familyView);
+    let ancestor = familyView.parentElement;
+    let insideTokensPanel = false;
+    while (ancestor) {
+      if (ancestor.id === 'panel-tokens') { insideTokensPanel = true; break; }
+      ancestor = ancestor.parentElement;
+    }
+    assert.equal(insideTokensPanel, true);
+    assert.equal(h.elements.get('family-metric').value, 'effectiveUSD');
+
+    const familyCalls = [];
+    h.sandbox.window.contextMeterAPI.familyAction = async (payload) => {
+      familyCalls.push(payload);
+      if (payload.action === 'overview') {
+        return {
+          ok: true,
+          data: {
+            serverUrl: 'https://antigravity-family.example',
+            hasSecret: true,
+            memberId: 'm_caspian',
+            deviceId: 'd_linux',
+            deviceName: 'caspian-linux',
+            enabled: true,
+            lastSyncAt: 1795092000000,
+            lastError: '',
+            pendingCount: 0,
+            undatedCount: 0,
+            accounts: [
+              { key: 'acct_shared', label: 'shared@gmail.com', alias: '共享池', mode: 'shared', active: true }
+            ]
+          }
+        };
+      }
+      if (payload.action === 'connect') {
+        return {
+          ok: true,
+          data: {
+            members: [
+              { id: 'm_caspian', name: 'Caspian', archived: false },
+              { id: 'm_larry', name: 'Larry', archived: false }
+            ]
+          }
+        };
+      }
+      if (payload.action === 'dashboard') {
+        return {
+          ok: true,
+          data: {
+            total: { calls: 15, totalTokens: 21000000, costUSD: 2.0, unpricedCalls: 2 },
+            quotaSnapshots: [
+              { accountScopeKey: 'scope_1', usedPct: 11, remainingPct: 89 }
+            ],
+            members: [
+              {
+                id: 'm_larry',
+                name: 'Larry',
+                calls: 10,
+                totalTokens: 15000000,
+                inputTokens: 1000000,
+                cacheReadTokens: 13000000,
+                outputTokens: 1000000,
+                thinkingTokens: 0,
+                costUSD: 2.0,
+                unpricedCalls: 0,
+                devices: [
+                  {
+                    deviceId: 'd_mac',
+                    deviceName: 'Larry Mac',
+                    totalTokens: 15000000,
+                    costUSD: 2.0,
+                    accounts: [{ calls: 10, totalTokens: 15000000, costUSD: 2.0, unpricedCalls: 0 }]
+                  }
+                ],
+                models: [
+                  {
+                    model: 'Gemini 4 Flash',
+                    calls: 10,
+                    totalTokens: 15000000,
+                    inputTokens: 1000000,
+                    cacheReadTokens: 13000000,
+                    outputTokens: 1000000,
+                    costUSD: 2.0,
+                    unpricedCalls: 0
+                  }
+                ]
+              },
+              {
+                id: 'm_caspian',
+                name: 'Caspian',
+                calls: 5,
+                totalTokens: 6000000,
+                inputTokens: 2000000,
+                cacheReadTokens: 3000000,
+                outputTokens: 1000000,
+                thinkingTokens: 200000,
+                costUSD: 0,
+                unpricedCalls: 2,
+                devices: [
+                  {
+                    deviceId: 'd_linux',
+                    deviceName: 'caspian-linux',
+                    totalTokens: 6000000,
+                    costUSD: 0,
+                    accounts: [{ calls: 5, totalTokens: 6000000, inputTokens: 2000000, cacheReadTokens: 3000000, outputTokens: 1000000, costUSD: 0, unpricedCalls: 2 }]
+                  },
+                  {
+                    deviceId: 'd_win',
+                    deviceName: 'FDNAN',
+                    totalTokens: 0,
+                    costUSD: 0,
+                    accounts: [{ calls: 0, totalTokens: 0, costUSD: 0, unpricedCalls: 0 }]
+                  }
+                ],
+                models: [
+                  {
+                    model: 'Orchestrator (Neon)',
+                    calls: 5,
+                    totalTokens: 6000000,
+                    inputTokens: 2000000,
+                    cacheReadTokens: 3000000,
+                    outputTokens: 1000000,
+                    costUSD: 0,
+                    unpricedCalls: 2
+                  }
+                ]
+              }
+            ]
+          }
+        };
+      }
+      return { ok: false, error: 'unexpected action' };
+    };
+
+    // 2. 打开 Token 面板并切换到家庭组视图
+    h.elements.get('badge-tokens').click();
+    familyBtn.click();
+    for (let i = 0; i < 6; i++) await flush();
+
+    assert.equal(h.elements.get('family-usage-view').style.display, 'grid');
+    assert.equal(h.elements.get('tokens-main-view').style.display, 'none');
+    assert.equal(h.elements.get('cost-estimate-card').style.display, 'none');
+    assert.equal(h.elements.get('model-usage-view').style.display, 'none');
+    assert.equal(h.elements.get('token-source-bar').style.display, 'none');
+    assert.equal(h.elements.get('token-account-bar').style.display, 'none');
+    assert.equal(h.elements.get('panel-tokens-title').textContent, '家庭组用量看板');
+    assert.deepEqual(familyCalls.map(c => c.action), ['overview', 'connect', 'dashboard']);
+
+    // 3. 验证无四池额度卡片，且默认按加权等效价值（Caspian $5.72 vs Larry $2.00）排序展示
+    const resultsBox = h.elements.get('family-results');
+    assert.equal(resultsBox.querySelectorAll('.family-quota').length, 0);
+    const memberRows = resultsBox.children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
+    assert.equal(memberRows.length, 2);
+    // Neon 2/5 calls * (2M*2 + 3M*0.1 + 1M*10)/1e6 = 0.4 * 14.3 = $5.72 > Larry $2.00
+    assert.match(collectText(memberRows[0].children[0]), /^Caspian · \$5\.7200 · 74\.1%/);
+    assert.match(collectText(memberRows[1].children[0]), /^Larry · \$2\.0000 · 25\.9%/);
+
+    // 验证包含设备分组（含 0 Token 设备）和模型估算标记
+    const caspianDetailText = collectText(memberRows[0]);
+    assert.match(caspianDetailText, /caspian-linux/);
+    assert.match(caspianDetailText, /FDNAN/);
+    assert.match(caspianDetailText, /Orchestrator \(Neon\) \(估算\)/);
+
+    // 4. 切换为原始总 Token 口径，排序反转为 Larry (15,000,000) 在前
+    const metricSelect = h.elements.get('family-metric');
+    metricSelect.value = 'totalTokens';
+    metricSelect.trigger('change');
+    for (let i = 0; i < 4; i++) await flush();
+    const tokenRows = resultsBox.children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
+    assert.match(collectText(tokenRows[0].children[0]), /^Larry · 15,000,000 Token · 71\.4%/);
+    assert.match(collectText(tokenRows[1].children[0]), /^Caspian · 6,000,000 Token · 28\.6%/);
   } finally {
     try { api.dispose(); } catch {}
   }

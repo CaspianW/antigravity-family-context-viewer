@@ -22,8 +22,11 @@
         const openPanel = (pQuota && !pQuota.hidden) ? 'quota'
           : ((pTokens && !pTokens.hidden) ? 'tokens'
             : ((pCtx && !pCtx.hidden) ? 'context' : 'none'));
-        const activeTab = ['session', 'models', 'speed', 'settings', 'family'].find(
+        const activeTab = ['session', 'models', 'speed', 'settings'].find(
           k => prevRoot.getElementById(`tab-ctx-${k}`)?.classList?.contains('active')
+        ) || null;
+        const activeTokenTab = ['tokens', 'models', 'cost', 'family'].find(
+          k => prevRoot.getElementById(`tok-view-${k}`)?.classList?.contains('active')
         ) || null;
         const scrollTops = {};
         for (const sId of ['panel', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
@@ -45,6 +48,7 @@
           capturedAt: Date.now(),
           openPanel,
           activeContextTab: activeTab,
+          activeTokenView: activeTokenTab,
           isContextSettingsView: activeTab === 'settings',
           scrollTops,
           openDrawers,
@@ -1878,7 +1882,7 @@
     .ag-vendor-dot{width:7px;height:7px;border-radius:999px;display:inline-block;flex-shrink:0;background:var(--ag-text-muted)}
     .ag-dropdown-badge{font-size:9.5px;padding:0 5px;border-radius:9px;background:rgba(56,189,248,0.14);color:var(--ag-link,#38bdf8);border:1px solid rgba(56,189,248,0.3);margin-left:4px;flex-shrink:0}
 
-    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
+    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
     .ctx-tab-btn{display:flex;align-items:center;justify-content:center;min-width:0;border:1px solid transparent;background:transparent;color:var(--ag-text-muted);font-size:11.5px;font-weight:500;padding:5px 4px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background-color .15s ease,color .15s ease,border-color .15s ease,transform .05s ease}
     .ctx-tab-btn:hover{color:var(--ag-text-primary);background:rgba(255,255,255,0.05)}
     .ctx-tab-btn:active{transform:scale(0.97);background:rgba(255,255,255,0.08)}
@@ -2529,10 +2533,11 @@
       outline:none;border-color:#a78bfa;box-shadow:0 0 0 2px rgba(139,92,246,0.28);
     }
 
+    .family-usage-view{display:grid;gap:8px;margin-top:4px}
     .family-card{display:grid;gap:8px;min-width:0}
     .family-card p,.family-row p{margin:0}
     .family-card p:empty,.family-card small:empty{display:none}
-    .family-card small,.family-row p{color:var(--ag-text-muted)}
+    .family-card small,.family-row p,.family-subline{color:var(--ag-text-muted)}
     .family-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
     .family-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:6px;border-top:1px solid var(--ag-border-subcard);padding-top:7px}
     .family-account strong{grid-column:1/-1;overflow-wrap:anywhere}
@@ -2541,14 +2546,18 @@
     .family-settings-body{padding-top:10px}
     .family-settings-body label{display:grid;gap:3px}
     .family-settings-body label.family-check{display:flex;align-items:center;gap:6px}
-    #pane-ctx-family :is(input,select,textarea,.family-button){min-width:0;box-sizing:border-box;max-width:100%;background:var(--ag-bg-subcard);color:var(--ag-text-primary);padding:4px 6px;border:1px solid var(--ag-border-subcard);border-radius:5px;font:inherit}
-    #pane-ctx-family .family-button{cursor:pointer;width:fit-content}
-    #pane-ctx-family .family-button:disabled{opacity:.5;cursor:default}
-    #pane-ctx-family a{color:var(--ag-link)}
-    #pane-ctx-family .family-error{color:var(--ag-bad,#f06f68)}
-    #pane-ctx-family progress{display:block;width:100%;height:8px;accent-color:var(--ag-link);margin:3px 0 5px}
-    .family-quota{overflow-wrap:anywhere;display:grid;gap:3px;padding-bottom:5px;border-bottom:1px solid var(--ag-border-subcard)}
-    .family-row{padding-bottom:3px;overflow-wrap:anywhere}
+    #family-usage-view :is(input,select,textarea,.family-button){min-width:0;box-sizing:border-box;max-width:100%;background:var(--ag-bg-subcard);color:var(--ag-text-primary);padding:4px 6px;border:1px solid var(--ag-border-subcard);border-radius:5px;font:inherit}
+    #family-usage-view .family-button{cursor:pointer;width:fit-content}
+    #family-usage-view .family-button:disabled{opacity:.5;cursor:default}
+    #family-usage-view a{color:var(--ag-link)}
+    #family-usage-view .family-error{color:var(--ag-bad,#f06f68)}
+    #family-usage-view progress{display:block;width:100%;height:8px;accent-color:var(--ag-link);margin:3px 0 5px}
+    .family-row{padding-bottom:6px;overflow-wrap:anywhere;border-bottom:1px solid var(--ag-border-subcard)}
+    .family-row:last-child{border-bottom:none;padding-bottom:0}
+    .family-row summary{cursor:pointer}
+    .family-row-detail{display:grid;gap:3px;padding:6px 0 2px 10px;border-left:2px solid var(--ag-border-subcard);margin-top:4px;font-size:11px}
+    .family-sub-title{font-weight:600;color:var(--ag-text-secondary);margin-top:4px}
+    .family-subline{display:flex;justify-content:space-between;gap:8px;font-size:11px}
   </style>
 
   <!-- 顶部基本单元 0: 模型额度圆环入口（工具组最左侧） -->
@@ -2706,8 +2715,6 @@
         data-ctx-tab="models" data-i18n="tab.models">模型设置</button>
       <button id="tab-ctx-speed" class="ctx-tab-btn" type="button" role="tab" aria-selected="false" data-ctx-tab="speed"
         data-i18n="tab.speed">速度对比</button>
-      <button id="tab-ctx-family" class="ctx-tab-btn" type="button" role="tab" aria-selected="false"
-        data-ctx-tab="family" data-i18n="tab.family">家庭组</button>
       <button id="tab-ctx-settings" class="ctx-tab-btn" type="button" role="tab" aria-selected="false"
         data-ctx-tab="settings" data-i18n="tab.settings">配置</button>
     </div>
@@ -3355,71 +3362,6 @@
         主动测试：未接通。目前没有可靠的指定模型调用入口，暂时只能使用日常对话的实测记录。</div>
     </div>
 
-    <div id="pane-ctx-family" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-family" hidden>
-      <div class="ctx-settings-card family-card">
-        <strong id="family-device-status"></strong>
-        <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
-        <small id="family-sync-error" class="family-error"></small>
-        <div class="family-controls">
-          <button type="button" id="family-sync" class="family-button" data-i18n="family.sync" disabled>立即同步</button>
-          <a id="family-web" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
-        </div>
-        <p id="family-feedback" role="status"></p>
-      </div>
-      <div class="ctx-settings-card family-card">
-        <div class="family-controls">
-          <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
-            <option value="5h" data-i18n="family.5h">近 5 小时</option>
-            <option value="today" data-i18n="family.today" selected>今日</option>
-            <option value="7d" data-i18n="family.7d">近 7 天</option>
-            <option value="month" data-i18n="family.month">本月</option>
-            <option value="all" data-i18n="family.all">全部</option>
-          </select>
-          <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
-            <option value="shared" data-i18n="family.mode.shared">家庭统计</option>
-            <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
-          </select>
-          <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
-            <option value="totalTokens" data-i18n="family.tokens">总 Token</option>
-            <option value="costUSD" data-i18n="family.cost">API 参考费用</option>
-          </select>
-        </div>
-        <div id="family-results" class="family-card"></div>
-      </div>
-
-      <div class="ctx-settings-card family-card">
-        <strong data-i18n="family.rules">本机账号规则</strong>
-        <p id="family-pending"></p>
-        <div id="family-accounts" class="family-card"></div>
-      </div>
-      <details id="family-settings" class="ctx-settings-card">
-        <summary data-i18n="family.settings">连接、成员与补传</summary>
-        <div class="family-card family-settings-body">
-          <label><span data-i18n="family.invite">加入配置 JSON</span><textarea id="family-invite" rows="2" autocomplete="off"></textarea></label>
-          <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
-          <label><span data-i18n="family.url">服务器地址</span><input type="url" id="family-url" autocomplete="off"></label>
-          <label><span data-i18n="family.secret">家庭组密钥</span><input type="password" id="family-secret" autocomplete="off"></label>
-          <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
-          <label><span data-i18n="family.pickMember">选择成员</span><select id="family-member"></select></label>
-          <div class="family-controls">
-            <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" aria-label="新成员姓名">
-            <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
-          </div>
-          <label><span data-i18n="family.device">设备名称</span><input id="family-device" maxlength="64"></label>
-          <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报</span></label>
-          <button type="button" id="family-save" class="family-button" data-i18n="family.save">保存</button>
-          <div class="family-controls">
-            <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
-              <option value="7d" data-i18n="family.7d">近 7 天</option>
-              <option value="30d" data-i18n="family.30d">近 30 天</option>
-              <option value="all" data-i18n="family.all">全部</option>
-            </select>
-            <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
-          </div>
-        </div>
-      </details>
-    </div>
-
     <!-- 设置与系统配置 (第四分页: 配置 / setting) -->
     <div id="pane-ctx-settings" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-settings" hidden>
       <!-- 1. 一键推荐配置与总览（默认不自动应用，需用户预览勾选并确认） -->
@@ -3862,7 +3804,7 @@
 
   <div id="view-tokens">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
-      <div class="source-switch-bar">
+      <div id="token-source-bar" class="source-switch-bar">
         <span style="font-size:10.5px;color:var(--ag-text-muted);padding:0 4px"
           data-i18n="tokens.sourceLabel">来源:</span>
         <button id="src-tab-all" class="switch-pill-btn active" type="button" data-i18n="tokens.src.all">全部</button>
@@ -3874,6 +3816,7 @@
           统计</button>
         <button id="tok-view-models" class="switch-pill-btn" type="button" data-i18n="tokens.view.models">按模型</button>
         <button id="tok-view-cost" class="switch-pill-btn" type="button" data-i18n="tokens.view.cost">API 参考金额</button>
+        <button id="tok-view-family" class="switch-pill-btn" type="button" data-i18n="tab.family">家庭组</button>
       </div>
     </div>
 
@@ -4473,6 +4416,73 @@
 
       <div id="model-usage-empty" class="model-usage-empty" style="display:none" data-i18n="modelsUsage.empty">当前时间窗暂无 Token 用量记录</div>
       <div id="model-usage-legend" class="model-usage-legend"></div>
+    </div>
+
+    <!-- 家庭组多人用量与加权对比视图 -->
+    <div id="family-usage-view" class="family-usage-view" style="display:none">
+      <div class="ctx-settings-card family-card">
+        <strong id="family-device-status"></strong>
+        <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
+        <small id="family-sync-error" class="family-error"></small>
+        <div class="family-controls">
+          <button type="button" id="family-sync" class="family-button" data-i18n="family.sync" disabled>立即同步</button>
+          <a id="family-web" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+        </div>
+        <p id="family-feedback" role="status"></p>
+      </div>
+      <div class="ctx-settings-card family-card">
+        <div class="family-controls">
+          <select id="family-range" data-i18n-aria="family.range" aria-label="时间范围">
+            <option value="5h" data-i18n="family.5h">近 5 小时</option>
+            <option value="today" data-i18n="family.today" selected>今日</option>
+            <option value="7d" data-i18n="family.7d">近 7 天</option>
+            <option value="month" data-i18n="family.month">本月</option>
+            <option value="all" data-i18n="family.all">全部</option>
+          </select>
+          <select id="family-scope" data-i18n-aria="family.scope" aria-label="统计范围">
+            <option value="shared" data-i18n="family.mode.shared">家庭统计</option>
+            <option value="personal" data-i18n="family.mode.personal_separate">独立统计 · 家庭成员可见</option>
+          </select>
+          <select id="family-metric" data-i18n-aria="family.metric" aria-label="占比口径">
+            <option value="effectiveUSD" data-i18n="family.weighted" selected>等效价值（模型加权）</option>
+            <option value="costUSD" data-i18n="family.cost">仅已定价 API 费用</option>
+            <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
+          </select>
+        </div>
+        <div id="family-results" class="family-card"></div>
+      </div>
+
+      <div class="ctx-settings-card family-card">
+        <strong data-i18n="family.rules">本机账号规则</strong>
+        <p id="family-pending"></p>
+        <div id="family-accounts" class="family-card"></div>
+      </div>
+      <details id="family-settings" class="ctx-settings-card">
+        <summary data-i18n="family.settings">连接、成员与补传</summary>
+        <div class="family-card family-settings-body">
+          <label><span data-i18n="family.invite">加入配置 JSON</span><textarea id="family-invite" rows="2" autocomplete="off"></textarea></label>
+          <button type="button" id="family-import" class="family-button" data-i18n="family.import">导入并连接</button>
+          <label><span data-i18n="family.url">服务器地址</span><input type="url" id="family-url" autocomplete="off"></label>
+          <label><span data-i18n="family.secret">家庭组密钥</span><input type="password" id="family-secret" autocomplete="off"></label>
+          <button type="button" id="family-connect" class="family-button" data-i18n="family.connect">连接并载入成员</button>
+          <label><span data-i18n="family.pickMember">选择成员</span><select id="family-member"></select></label>
+          <div class="family-controls">
+            <input id="family-new" maxlength="64" data-i18n-aria="family.newMember" aria-label="新成员姓名">
+            <button type="button" id="family-create" class="family-button" data-i18n="family.create">添加成员</button>
+          </div>
+          <label><span data-i18n="family.device">设备名称</span><input id="family-device" maxlength="64"></label>
+          <label class="family-check"><input id="family-enabled" type="checkbox"><span data-i18n="family.enable">启用自动上报</span></label>
+          <button type="button" id="family-save" class="family-button" data-i18n="family.save">保存</button>
+          <div class="family-controls">
+            <select id="family-backfill-range" data-i18n-aria="family.range" aria-label="时间范围">
+              <option value="7d" data-i18n="family.7d">近 7 天</option>
+              <option value="30d" data-i18n="family.30d">近 30 天</option>
+              <option value="all" data-i18n="family.all">全部</option>
+            </select>
+            <button type="button" id="family-backfill" class="family-button" data-i18n="family.backfill" disabled>补传历史</button>
+          </div>
+        </div>
+      </details>
     </div>
 
     <!-- 专属 Token 统计页（包含卡片统计、热力图与调色抽屉，费用模式下完全不渲染） -->
@@ -5211,8 +5221,17 @@ const PANEL_I18N = {
   'family.range': { 'zh-CN': "时间范围", 'zh-TW': "時間範圍", en: "Time range" },
   'family.scope': { 'zh-CN': "统计范围", 'zh-TW': "統計範圍", en: "Usage scope" },
   'family.metric': { 'zh-CN': "占比口径", 'zh-TW': "占比基準", en: "Share by" },
-  'family.tokens': { 'zh-CN': "总 Token", 'zh-TW': "總 Token", en: "Total tokens" },
-  'family.cost': { 'zh-CN': "API 参考费用", 'zh-TW': "API 參考費用", en: "API cost estimate" },
+  'family.tokens': { 'zh-CN': "原始总 Token", 'zh-TW': "原始總 Token", en: "Raw total tokens" },
+  'family.cost': { 'zh-CN': "仅已定价 API 费用", 'zh-TW': "僅已定價 API 費用", en: "Priced API cost only" },
+  'family.weighted': { 'zh-CN': "等效价值（模型加权）", 'zh-TW': "等效價值（模型加權）", en: "Weighted value (by model)" },
+  'family.weightedNote': { 'zh-CN': "按各模型输入/缓存/输出价差折算；含 {n} 次未定价调用按 $2/$0.1/$10 基准估算（约 ${est}）。", 'zh-TW': "依各模型輸入/快取/輸出價差折算；含 {n} 次未定價呼叫按 $2/$0.1/$10 基準估算（約 ${est}）。", en: "Weighted by model rates; {n} unpriced calls estimated at $2/$0.1/$10 baseline (~${est})." },
+  'family.pricedOnlyNote': { 'zh-CN': "{n} 次调用暂无公开费率（仅统计已定价模型）。", 'zh-TW': "{n} 次呼叫暫無公開費率（僅統計已定價模型）。", en: "{n} calls have no published rate (priced models only)." },
+  'family.weightedPricedNote': { 'zh-CN': "已按各模型官方 API 费率加权折算，可跨模型横向对比。", 'zh-TW': "已依各模型官方 API 費率加權折算，可跨模型橫向對比。", en: "Weighted by official per-model API rates for cross-model comparison." },
+  'family.devicesSub': { 'zh-CN': "设备分布", 'zh-TW': "裝置分布", en: "Devices" },
+  'family.modelsSub': { 'zh-CN': "模型分布", 'zh-TW': "模型分布", en: "Models" },
+  'family.estTag': { 'zh-CN': "估算", 'zh-TW': "估算", en: "est." },
+  'family.tokenSummary': { 'zh-CN': "输入 {in} · 缓存 {cache} · 输出 {out} · 思考 {think}", 'zh-TW': "輸入 {in} · 快取 {cache} · 輸出 {out} · 思考 {think}", en: "In {in} · Cache {cache} · Out {out} · Think {think}" },
+  'tokens.titleFamily': { 'zh-CN': "家庭组用量看板", 'zh-TW': "家庭群組用量看板", en: "Family Group Usage" },
   'family.5h': { 'zh-CN': "近 5 小时", 'zh-TW': "近 5 小時", en: "Last 5 hours" },
   'family.today': { 'zh-CN': "今日", 'zh-TW': "今日", en: "Today" },
   'family.fiveHourQuota': { 'zh-CN': '5 小时额度', 'zh-TW': '5 小時額度', en: '5-hour quota' },
@@ -11413,15 +11432,19 @@ function formatPeriodCalendarLabel(currentPeriod) {
       syncHostStackingElevation(true);
       positionFloatingPanels();
       pTokens.hidden = false;
-      renderActiveHeatView(true);
-      const hasCachedHistory = Boolean(ANTIGRAVITY_TOKEN_DATA.updatedAt || ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens);
-      if (!hasCachedHistory || !lastHistorySync || (Date.now() - lastHistorySync) > 15000) {
-        void syncTokenHistoryFromHost(false);
-      }
-      if (!accountsUiState?.overview && typeof refreshAccountsOverview === 'function') {
-        void refreshAccountsOverview({ silent: true });
+      if (activeTokenView === 'family') {
+        void refreshFamilyView(!familyView.config);
       } else {
-        syncTokenAccountFilterOptions?.(ANTIGRAVITY_TOKEN_DATA.rawPayload);
+        renderActiveHeatView(true);
+        const hasCachedHistory = Boolean(ANTIGRAVITY_TOKEN_DATA.updatedAt || ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens);
+        if (!hasCachedHistory || !lastHistorySync || (Date.now() - lastHistorySync) > 15000) {
+          void syncTokenHistoryFromHost(false);
+        }
+        if (!accountsUiState?.overview && typeof refreshAccountsOverview === 'function') {
+          void refreshAccountsOverview({ silent: true });
+        } else {
+          syncTokenAccountFilterOptions?.(ANTIGRAVITY_TOKEN_DATA.rawPayload);
+        }
       }
     } else if (target === 'quota') {
       hideContextTooltip();
@@ -11459,8 +11482,6 @@ function formatPeriodCalendarLabel(currentPeriod) {
         void refreshUnlockStatus();
       } else if (activeContextTab === 'speed' && !isContextSettingsView) {
         renderSpeedComparisonTab?.();
-      } else if (activeContextTab === 'family') {
-        void refreshFamilyView(!familyView.config);
       }
       if (isContextSettingsView) {
         void refreshModulesDisplay();
@@ -13884,8 +13905,15 @@ function closeAllDropdowns(exceptWrap = null) {
   el('src-tab-desktop')?.addEventListener('click', () => switchTokenSource('desktop'));
   el('src-tab-cli')?.addEventListener('click', () => switchTokenSource('cli'));
 
-  // 视图切换（Token 统计 / API 等值估算）
+  // 视图切换（Token 统计 / 按模型 / API 等值估算 / 家庭组）
   let activeTokenView = 'tokens';
+  const familyView = {
+    config: null,
+    members: [],
+    busy: false,
+    epoch: 0,
+    refreshTimer: null
+  };
 
   // 费用面板紧凑摘要与展开详情切换
   let costDetailsExpanded = false;
@@ -14364,13 +14392,20 @@ function closeAllDropdowns(exceptWrap = null) {
     setPillActive(el('tok-view-tokens'), v === 'tokens');
     setPillActive(el('tok-view-models'), v === 'models');
     setPillActive(el('tok-view-cost'), v === 'cost');
+    setPillActive(el('tok-view-family'), v === 'family');
     const costCard = el('cost-estimate-card');
     const modelView = el('model-usage-view');
+    const familyUsageView = el('family-usage-view');
     const tokensMain = el('tokens-main-view');
     const statCards = el('token-stat-cards');
     const planBar = el('plan-summary-bar');
+    const tokenSourceBar = el('token-source-bar');
+    const tokenAccountBar = el('token-account-bar');
     const titleTokens = el('panel-tokens-title');
     const pTokens = el('panel-tokens');
+
+    if (tokenSourceBar) tokenSourceBar.style.display = v === 'family' ? 'none' : '';
+    if (tokenAccountBar) tokenAccountBar.style.display = v === 'family' ? 'none' : '';
 
     if (costCard) {
       costCard.style.display = v === 'cost' ? 'block' : 'none';
@@ -14381,6 +14416,15 @@ function closeAllDropdowns(exceptWrap = null) {
       if (v === 'models') {
         modelView.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
         renderModelUsageView();
+      }
+    }
+    if (familyUsageView) {
+      familyUsageView.style.display = v === 'family' ? 'grid' : 'none';
+      if (v === 'family') {
+        familyUsageView.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
+        void refreshFamilyView(!familyView.config);
+      } else {
+        clearTimeout(familyView.refreshTimer);
       }
     }
     if (tokensMain) {
@@ -14394,7 +14438,9 @@ function closeAllDropdowns(exceptWrap = null) {
         ? t('tokens.titleCost')
         : v === 'models'
           ? t('tokens.titleModels')
-          : t('tokens.title');
+          : v === 'family'
+            ? t('tokens.titleFamily')
+            : t('tokens.title');
     }
 
     if (pTokens) {
@@ -14412,6 +14458,7 @@ function closeAllDropdowns(exceptWrap = null) {
   el('tok-view-tokens')?.addEventListener('click', () => switchTokenView('tokens'));
   el('tok-view-models')?.addEventListener('click', () => switchTokenView('models'));
   el('tok-view-cost')?.addEventListener('click', () => switchTokenView('cost'));
+  el('tok-view-family')?.addEventListener('click', () => switchTokenView('family'));
   el('model-period-7d')?.addEventListener('click', () => {
     modelUsagePeriodDays = 7;
     modelUsageOffsetDays = 0;
@@ -14625,8 +14672,6 @@ function closeAllDropdowns(exceptWrap = null) {
   const btnTabModels = el('tab-ctx-models');
   const btnTabSpeed = el('tab-ctx-speed');
   const btnTabSettings = el('tab-ctx-settings');
-  const btnTabFamily = el('tab-ctx-family');
-  const paneFamily = el('pane-ctx-family');
   const paneSession = el('pane-ctx-session');
   const paneModels = el('pane-ctx-models');
   const paneSpeed = el('pane-ctx-speed');
@@ -14748,7 +14793,7 @@ function closeAllDropdowns(exceptWrap = null) {
   let activeContextTab = 'session';
   try {
     const savedTab = localStorage?.getItem(CTX_ACTIVE_TAB_KEY);
-    if (savedTab === 'session' || savedTab === 'models' || savedTab === 'speed' || savedTab === 'family') {
+    if (savedTab === 'session' || savedTab === 'models' || savedTab === 'speed') {
       activeContextTab = savedTab;
     }
   } catch { }
@@ -15912,9 +15957,6 @@ function closeAllDropdowns(exceptWrap = null) {
     if (paneSession) paneSession.hidden = activeContextTab !== 'session';
     if (paneModels) paneModels.hidden = activeContextTab !== 'models';
     if (paneSpeed) paneSpeed.hidden = activeContextTab !== 'speed';
-    if (paneFamily) paneFamily.hidden = activeContextTab !== 'family';
-    setPillActive(btnTabFamily, activeContextTab === 'family');
-    btnTabFamily?.setAttribute('aria-selected', String(activeContextTab === 'family'));
 
     setPillActive(btnTabSession, activeContextTab === 'session');
     setPillActive(btnTabModels, activeContextTab === 'models');
@@ -15929,7 +15971,7 @@ function closeAllDropdowns(exceptWrap = null) {
   let prevTabBeforeSettings = 'models';
 
   function switchContextTab(tabName) {
-    if (tabName !== 'session' && tabName !== 'models' && tabName !== 'speed' && tabName !== 'settings' && tabName !== 'family') return;
+    if (tabName !== 'session' && tabName !== 'models' && tabName !== 'speed' && tabName !== 'settings') return;
     if (activeContextTab !== 'settings') {
       prevTabBeforeSettings = activeContextTab;
     }
@@ -15945,8 +15987,6 @@ function closeAllDropdowns(exceptWrap = null) {
     } else if (tabName === 'speed') {
       // 速度对比页只读取已有本地记录，绝不发起任何请求或 IPC
       renderSpeedComparisonTab();
-    } else if (tabName === 'family') {
-      void refreshFamilyView(!familyView.config);
     } else if (tabName === 'settings') {
       void refreshModulesDisplay();
       if (!currentUnlockStatus && !unlockStatusFetchError && typeof refreshUnlockStatus === 'function') {
@@ -15975,14 +16015,72 @@ function closeAllDropdowns(exceptWrap = null) {
   btnTabModels?.addEventListener('click', () => switchContextTab('models'));
   btnTabSpeed?.addEventListener('click', () => switchContextTab('speed'));
   btnTabSettings?.addEventListener('click', () => switchContextTab('settings'));
-  btnTabFamily?.addEventListener('click', () => switchContextTab('family'));
-  const familyView = {
-    config: null,
-    members: [],
-    busy: false,
-    epoch: 0,
-    refreshTimer: null
+
+  const FAMILY_MODE_I18N = {
+    '': 'family.mode.hold',
+    hold: 'family.mode.hold',
+    shared: 'family.mode.shared',
+    personal_local_only: 'family.mode.personal_local_only',
+    personal_separate: 'family.mode.personal_separate'
   };
+  function familyModeText(mode) {
+    return t(FAMILY_MODE_I18N[mode] || 'family.mode.hold');
+  }
+
+  // 对尚未公开官方 API 费率的模型（如 Neon / 占位模型），按 Gemini 4 Pro 基准档 ($2/$0.1/$10 per 1M) 做输入/缓存/输出加权估算
+  const FAMILY_FALLBACK_RATES = { inputPerM: 2.0, cachePerM: 0.1, outputPerM: 10.0 };
+  function computeFamilyRowWeightedCost(row) {
+    const calls = Number(row?.calls || 0);
+    const unpricedCalls = Number(row?.unpricedCalls || 0);
+    const pricedUSD = Number(row?.costUSD || 0);
+    if (!calls || unpricedCalls <= 0) {
+      return { effectiveUSD: pricedUSD, estimatedUSD: 0, hasEstimate: false };
+    }
+    const ratio = Math.min(1, Math.max(0, unpricedCalls / calls));
+    const inTok = Number(row?.inputTokens || 0) * ratio;
+    const cacheTok = Number(row?.cacheReadTokens || 0) * ratio;
+    const outTok = Number(row?.outputTokens || 0) * ratio;
+    const estimatedUSD = (
+      (inTok * FAMILY_FALLBACK_RATES.inputPerM) +
+      (cacheTok * FAMILY_FALLBACK_RATES.cachePerM) +
+      (outTok * FAMILY_FALLBACK_RATES.outputPerM)
+    ) / 1e6;
+    return {
+      effectiveUSD: pricedUSD + estimatedUSD,
+      estimatedUSD,
+      hasEstimate: estimatedUSD > 0
+    };
+  }
+
+  function computeFamilyMemberWeighted(member) {
+    const models = Array.isArray(member?.models) ? member.models : [];
+    if (!models.length) return computeFamilyRowWeightedCost(member);
+    let effectiveUSD = 0;
+    let estimatedUSD = 0;
+    let hasEstimate = false;
+    for (const m of models) {
+      const w = computeFamilyRowWeightedCost(m);
+      effectiveUSD += w.effectiveUSD;
+      estimatedUSD += w.estimatedUSD;
+      if (w.hasEstimate) hasEstimate = true;
+    }
+    return { effectiveUSD, estimatedUSD, hasEstimate };
+  }
+
+  function computeFamilyDeviceWeighted(device) {
+    const accts = Array.isArray(device?.accounts) ? device.accounts : [];
+    if (!accts.length) return computeFamilyRowWeightedCost(device);
+    let effectiveUSD = 0;
+    let estimatedUSD = 0;
+    let hasEstimate = false;
+    for (const a of accts) {
+      const w = computeFamilyRowWeightedCost(a);
+      effectiveUSD += w.effectiveUSD;
+      estimatedUSD += w.estimatedUSD;
+      if (w.hasEstimate) hasEstimate = true;
+    }
+    return { effectiveUSD, estimatedUSD, hasEstimate };
+  }
 
   async function callFamily(payload) {
     const ipc = window.contextMeterAPI?.familyAction;
@@ -16043,7 +16141,7 @@ function closeAllDropdowns(exceptWrap = null) {
     familyView.config = config;
     const member = familyView.members.find(row => row.id === config.memberId);
     const active = config.accounts.find(account => account.active);
-    const activeLabel = active ? (active.alias || active.label) + ' · ' + t('family.mode.' + (active.mode || 'hold')) : '';
+    const activeLabel = active ? (active.alias || active.label) + ' · ' + familyModeText(active.mode) : '';
     el('family-device-status').textContent = [
       member?.name, config.deviceName, t(config.enabled ? 'family.on' : 'family.off'), activeLabel
     ].filter(Boolean).join(' · ');
@@ -16083,7 +16181,7 @@ function closeAllDropdowns(exceptWrap = null) {
       const modes = ['', 'shared', 'personal_local_only', 'personal_separate'];
       const mode = familyNode('select');
       mode.setAttribute('aria-label', t('family.accountMode'));
-      mode.append(...modes.map(value => familyOption(value, t('family.mode.' + (value || 'hold')))));
+      mode.append(...modes.map(value => familyOption(value, familyModeText(value))));
       mode.value = account.mode;
       const save = familyNode('button', t('family.save'), 'family-button');
       save.type = 'button';
@@ -16114,36 +16212,88 @@ function closeAllDropdowns(exceptWrap = null) {
     const box = el('family-results');
     const expanded = new Set(Array.from(box.querySelectorAll('details[open]'), item => item.dataset.member));
     box.replaceChildren();
-    for (const quota of data.scope === 'shared' ? data.quotaSnapshots : []) {
-      const card = familyNode('div', null, 'family-quota');
-      card.append(familyNode('strong', quota.accountAlias || '•••' + quota.accountScopeKey.slice(-6)),
-        familyNode('small', [quota.memberName, quota.deviceName, new Date(quota.observedAt).toLocaleString()].join(' · ')));
-      for (const window of quota.windows) {
-        const reset = window.resetAt ? ' · ' + t('family.resetAt', { time: new Date(window.resetAt).toLocaleString() }) : '';
-        card.append(familyNode('span', window.pool + ' · ' + t(window.window === '5h' ? 'family.fiveHourQuota' : 'family.weekly') +
-          ' · ' + window.remainingPct + '%' + reset), familyProgress(window.remainingPct));
-      }
-      box.append(card);
+    const total = data.total || { calls: 0, totalTokens: 0, costUSD: 0, unpricedCalls: 0 };
+    const enriched = (data.members || []).map(member => {
+      const w = computeFamilyMemberWeighted(member);
+      return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
+    });
+    const totalEffectiveUSD = enriched.reduce((sum, m) => sum + m.effectiveUSD, 0);
+    const totalEstimatedUSD = enriched.reduce((sum, m) => sum + m.estimatedUSD, 0);
+
+    const metric = el('family-metric').value || 'effectiveUSD';
+    const isWeighted = metric === 'effectiveUSD';
+    const isPricedOnly = metric === 'costUSD';
+    const headlineVal = isWeighted
+      ? ' · ≈ $' + totalEffectiveUSD.toFixed(2)
+      : isPricedOnly
+        ? ' · $' + Number(total.costUSD || 0).toFixed(2)
+        : '';
+    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
+    if (isWeighted && total.calls > 0) {
+      box.append(familyNode('small', total.unpricedCalls > 0
+        ? t('family.weightedNote', { n: fmt(total.unpricedCalls), est: totalEstimatedUSD.toFixed(2) })
+        : t('family.weightedPricedNote')));
+    } else if (isPricedOnly && total.unpricedCalls) {
+      box.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
     }
-    const total = data.total;
-    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) })));
-    if (total.unpricedCalls) box.append(familyNode('small', t('family.unpriced', { n: total.unpricedCalls })));
     if (!total.calls) box.append(familyNode('p', t('family.empty')));
-    const metric = el('family-metric').value;
-    const costs = metric === 'costUSD';
-    const formatMetric = row => costs ? '$' + Number(row.costUSD).toFixed(4) : fmt(row.totalTokens) + ' Token';
-    for (const member of [...data.members].sort((a, b) => b[metric] - a[metric])) {
+
+    const formatMetric = row => (isWeighted || isPricedOnly)
+      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
+      : fmt(row.totalTokens) + ' Token';
+    const denom = isWeighted ? totalEffectiveUSD : (isPricedOnly ? Number(total.costUSD || 0) : Number(total.totalTokens || 0));
+
+    for (const member of [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0))) {
       const details = familyNode('details', null, 'family-row');
       details.dataset.member = member.id;
       details.open = expanded.has(member.id);
-      const share = (costs ? member.costShare : member.tokenShare) * 100;
-      const displayShare = costs && !total.costUSD ? '—' : share.toFixed(1) + '%';
+      const val = Number(member[metric] || 0);
+      const share = denom > 0 ? (val / denom) * 100 : 0;
+      const displayShare = denom <= 0 ? '—' : share.toFixed(1) + '%';
       const summary = familyNode('summary');
-      summary.append(familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare), familyProgress(share));
+      summary.append(
+        familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare),
+        familyProgress(share)
+      );
       details.append(summary);
-      for (const device of member.devices) {
-        details.append(familyNode('p', device.deviceName + ' · ' + formatMetric(device)));
+      details.append(familyNode('small', t('family.tokenSummary', {
+        in: fmt(member.inputTokens || 0),
+        cache: fmt(member.cacheReadTokens || 0),
+        out: fmt(member.outputTokens || 0),
+        think: fmt(member.thinkingTokens || 0)
+      })));
+
+      const detailBox = familyNode('div', null, 'family-row-detail');
+      if (Array.isArray(member.devices) && member.devices.length) {
+        detailBox.append(familyNode('div', t('family.devicesSub'), 'family-sub-title'));
+        for (const device of member.devices) {
+          const dw = computeFamilyDeviceWeighted(device);
+          const devRow = { ...device, effectiveUSD: dw.effectiveUSD };
+          const dLine = familyNode('div', null, 'family-subline');
+          dLine.append(
+            familyNode('span', device.deviceName),
+            familyNode('span', formatMetric(devRow) + ' · ' + fmt(device.totalTokens || 0) + ' Token')
+          );
+          detailBox.append(dLine);
+        }
       }
+      if (Array.isArray(member.models) && member.models.length) {
+        detailBox.append(familyNode('div', t('family.modelsSub'), 'family-sub-title'));
+        const sortedModels = [...member.models].map(m => {
+          const mw = computeFamilyRowWeightedCost(m);
+          return { ...m, effectiveUSD: mw.effectiveUSD, hasEstimate: mw.hasEstimate };
+        }).sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0));
+        for (const m of sortedModels) {
+          const mLine = familyNode('div', null, 'family-subline');
+          const nameLabel = m.model + (m.hasEstimate && isWeighted ? ' (' + t('family.estTag') + ')' : '');
+          mLine.append(
+            familyNode('span', nameLabel),
+            familyNode('span', formatMetric(m) + ' · ' + fmt(m.totalTokens || 0))
+          );
+          detailBox.append(mLine);
+        }
+      }
+      if (detailBox.childElementCount) details.append(detailBox);
       box.append(details);
     }
   }
@@ -16160,7 +16310,7 @@ function closeAllDropdowns(exceptWrap = null) {
 
   async function refreshFamilyView(resetFields = false) {
     clearTimeout(familyView.refreshTimer);
-    if (!el('pane-ctx-family') || state.disposed || activeContextTab !== 'family' || el('panel')?.hidden) return;
+    if (!el('family-usage-view') || state.disposed || activeTokenView !== 'family' || el('panel-tokens')?.hidden) return;
     try {
       if (!familyView.busy) {
         const config = await callFamily({ action: 'overview' });
@@ -28983,6 +29133,7 @@ var cumLockedKey = null;
       capturedAt: Date.now(),
       openPanel,
       activeContextTab,
+      activeTokenView,
       isContextSettingsView,
       browsePoolKey: quotaState.browsePoolKey || null,
       scrollTops,
@@ -29033,7 +29184,9 @@ var cumLockedKey = null;
     }
     if (saved.openPanel && saved.openPanel !== 'none') {
       showPanel(saved.openPanel);
-      if (saved.openPanel === 'context' && saved.activeContextTab) {
+      if (saved.openPanel === 'tokens' && saved.activeTokenView) {
+        switchTokenView(saved.activeTokenView);
+      } else if (saved.openPanel === 'context' && saved.activeContextTab) {
         switchContextTab(saved.activeContextTab);
       } else if (saved.openPanel === 'context' && saved.isContextSettingsView) {
         switchContextTab('settings');

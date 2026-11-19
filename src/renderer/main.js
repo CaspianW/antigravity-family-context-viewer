@@ -19,8 +19,11 @@
         const openPanel = (pQuota && !pQuota.hidden) ? 'quota'
           : ((pTokens && !pTokens.hidden) ? 'tokens'
             : ((pCtx && !pCtx.hidden) ? 'context' : 'none'));
-        const activeTab = ['session', 'models', 'speed', 'settings', 'family'].find(
+        const activeTab = ['session', 'models', 'speed', 'settings'].find(
           k => prevRoot.getElementById(`tab-ctx-${k}`)?.classList?.contains('active')
+        ) || null;
+        const activeTokenTab = ['tokens', 'models', 'cost', 'family'].find(
+          k => prevRoot.getElementById(`tok-view-${k}`)?.classList?.contains('active')
         ) || null;
         const scrollTops = {};
         for (const sId of ['panel', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
@@ -42,6 +45,7 @@
           capturedAt: Date.now(),
           openPanel,
           activeContextTab: activeTab,
+          activeTokenView: activeTokenTab,
           isContextSettingsView: activeTab === 'settings',
           scrollTops,
           openDrawers,
@@ -1290,15 +1294,19 @@
       syncHostStackingElevation(true);
       positionFloatingPanels();
       pTokens.hidden = false;
-      renderActiveHeatView(true);
-      const hasCachedHistory = Boolean(ANTIGRAVITY_TOKEN_DATA.updatedAt || ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens);
-      if (!hasCachedHistory || !lastHistorySync || (Date.now() - lastHistorySync) > 15000) {
-        void syncTokenHistoryFromHost(false);
-      }
-      if (!accountsUiState?.overview && typeof refreshAccountsOverview === 'function') {
-        void refreshAccountsOverview({ silent: true });
+      if (activeTokenView === 'family') {
+        void refreshFamilyView(!familyView.config);
       } else {
-        syncTokenAccountFilterOptions?.(ANTIGRAVITY_TOKEN_DATA.rawPayload);
+        renderActiveHeatView(true);
+        const hasCachedHistory = Boolean(ANTIGRAVITY_TOKEN_DATA.updatedAt || ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens);
+        if (!hasCachedHistory || !lastHistorySync || (Date.now() - lastHistorySync) > 15000) {
+          void syncTokenHistoryFromHost(false);
+        }
+        if (!accountsUiState?.overview && typeof refreshAccountsOverview === 'function') {
+          void refreshAccountsOverview({ silent: true });
+        } else {
+          syncTokenAccountFilterOptions?.(ANTIGRAVITY_TOKEN_DATA.rawPayload);
+        }
       }
     } else if (target === 'quota') {
       hideContextTooltip();
@@ -1336,8 +1344,6 @@
         void refreshUnlockStatus();
       } else if (activeContextTab === 'speed' && !isContextSettingsView) {
         renderSpeedComparisonTab?.();
-      } else if (activeContextTab === 'family') {
-        void refreshFamilyView(!familyView.config);
       }
       if (isContextSettingsView) {
         void refreshModulesDisplay();
@@ -1961,8 +1967,15 @@
   el('src-tab-desktop')?.addEventListener('click', () => switchTokenSource('desktop'));
   el('src-tab-cli')?.addEventListener('click', () => switchTokenSource('cli'));
 
-  // 视图切换（Token 统计 / API 等值估算）
+  // 视图切换（Token 统计 / 按模型 / API 等值估算 / 家庭组）
   let activeTokenView = 'tokens';
+  const familyView = {
+    config: null,
+    members: [],
+    busy: false,
+    epoch: 0,
+    refreshTimer: null
+  };
 
   // 费用面板紧凑摘要与展开详情切换
   let costDetailsExpanded = false;
@@ -2441,13 +2454,20 @@
     setPillActive(el('tok-view-tokens'), v === 'tokens');
     setPillActive(el('tok-view-models'), v === 'models');
     setPillActive(el('tok-view-cost'), v === 'cost');
+    setPillActive(el('tok-view-family'), v === 'family');
     const costCard = el('cost-estimate-card');
     const modelView = el('model-usage-view');
+    const familyUsageView = el('family-usage-view');
     const tokensMain = el('tokens-main-view');
     const statCards = el('token-stat-cards');
     const planBar = el('plan-summary-bar');
+    const tokenSourceBar = el('token-source-bar');
+    const tokenAccountBar = el('token-account-bar');
     const titleTokens = el('panel-tokens-title');
     const pTokens = el('panel-tokens');
+
+    if (tokenSourceBar) tokenSourceBar.style.display = v === 'family' ? 'none' : '';
+    if (tokenAccountBar) tokenAccountBar.style.display = v === 'family' ? 'none' : '';
 
     if (costCard) {
       costCard.style.display = v === 'cost' ? 'block' : 'none';
@@ -2458,6 +2478,15 @@
       if (v === 'models') {
         modelView.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
         renderModelUsageView();
+      }
+    }
+    if (familyUsageView) {
+      familyUsageView.style.display = v === 'family' ? 'grid' : 'none';
+      if (v === 'family') {
+        familyUsageView.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
+        void refreshFamilyView(!familyView.config);
+      } else {
+        clearTimeout(familyView.refreshTimer);
       }
     }
     if (tokensMain) {
@@ -2471,7 +2500,9 @@
         ? t('tokens.titleCost')
         : v === 'models'
           ? t('tokens.titleModels')
-          : t('tokens.title');
+          : v === 'family'
+            ? t('tokens.titleFamily')
+            : t('tokens.title');
     }
 
     if (pTokens) {
@@ -2489,6 +2520,7 @@
   el('tok-view-tokens')?.addEventListener('click', () => switchTokenView('tokens'));
   el('tok-view-models')?.addEventListener('click', () => switchTokenView('models'));
   el('tok-view-cost')?.addEventListener('click', () => switchTokenView('cost'));
+  el('tok-view-family')?.addEventListener('click', () => switchTokenView('family'));
   el('model-period-7d')?.addEventListener('click', () => {
     modelUsagePeriodDays = 7;
     modelUsageOffsetDays = 0;
@@ -2702,8 +2734,6 @@
   const btnTabModels = el('tab-ctx-models');
   const btnTabSpeed = el('tab-ctx-speed');
   const btnTabSettings = el('tab-ctx-settings');
-  const btnTabFamily = el('tab-ctx-family');
-  const paneFamily = el('pane-ctx-family');
   const paneSession = el('pane-ctx-session');
   const paneModels = el('pane-ctx-models');
   const paneSpeed = el('pane-ctx-speed');
@@ -2825,7 +2855,7 @@
   let activeContextTab = 'session';
   try {
     const savedTab = localStorage?.getItem(CTX_ACTIVE_TAB_KEY);
-    if (savedTab === 'session' || savedTab === 'models' || savedTab === 'speed' || savedTab === 'family') {
+    if (savedTab === 'session' || savedTab === 'models' || savedTab === 'speed') {
       activeContextTab = savedTab;
     }
   } catch { }
@@ -3989,9 +4019,6 @@
     if (paneSession) paneSession.hidden = activeContextTab !== 'session';
     if (paneModels) paneModels.hidden = activeContextTab !== 'models';
     if (paneSpeed) paneSpeed.hidden = activeContextTab !== 'speed';
-    if (paneFamily) paneFamily.hidden = activeContextTab !== 'family';
-    setPillActive(btnTabFamily, activeContextTab === 'family');
-    btnTabFamily?.setAttribute('aria-selected', String(activeContextTab === 'family'));
 
     setPillActive(btnTabSession, activeContextTab === 'session');
     setPillActive(btnTabModels, activeContextTab === 'models');
@@ -4006,7 +4033,7 @@
   let prevTabBeforeSettings = 'models';
 
   function switchContextTab(tabName) {
-    if (tabName !== 'session' && tabName !== 'models' && tabName !== 'speed' && tabName !== 'settings' && tabName !== 'family') return;
+    if (tabName !== 'session' && tabName !== 'models' && tabName !== 'speed' && tabName !== 'settings') return;
     if (activeContextTab !== 'settings') {
       prevTabBeforeSettings = activeContextTab;
     }
@@ -4022,8 +4049,6 @@
     } else if (tabName === 'speed') {
       // 速度对比页只读取已有本地记录，绝不发起任何请求或 IPC
       renderSpeedComparisonTab();
-    } else if (tabName === 'family') {
-      void refreshFamilyView(!familyView.config);
     } else if (tabName === 'settings') {
       void refreshModulesDisplay();
       if (!currentUnlockStatus && !unlockStatusFetchError && typeof refreshUnlockStatus === 'function') {
@@ -4052,14 +4077,72 @@
   btnTabModels?.addEventListener('click', () => switchContextTab('models'));
   btnTabSpeed?.addEventListener('click', () => switchContextTab('speed'));
   btnTabSettings?.addEventListener('click', () => switchContextTab('settings'));
-  btnTabFamily?.addEventListener('click', () => switchContextTab('family'));
-  const familyView = {
-    config: null,
-    members: [],
-    busy: false,
-    epoch: 0,
-    refreshTimer: null
+
+  const FAMILY_MODE_I18N = {
+    '': 'family.mode.hold',
+    hold: 'family.mode.hold',
+    shared: 'family.mode.shared',
+    personal_local_only: 'family.mode.personal_local_only',
+    personal_separate: 'family.mode.personal_separate'
   };
+  function familyModeText(mode) {
+    return t(FAMILY_MODE_I18N[mode] || 'family.mode.hold');
+  }
+
+  // 对尚未公开官方 API 费率的模型（如 Neon / 占位模型），按 Gemini 4 Pro 基准档 ($2/$0.1/$10 per 1M) 做输入/缓存/输出加权估算
+  const FAMILY_FALLBACK_RATES = { inputPerM: 2.0, cachePerM: 0.1, outputPerM: 10.0 };
+  function computeFamilyRowWeightedCost(row) {
+    const calls = Number(row?.calls || 0);
+    const unpricedCalls = Number(row?.unpricedCalls || 0);
+    const pricedUSD = Number(row?.costUSD || 0);
+    if (!calls || unpricedCalls <= 0) {
+      return { effectiveUSD: pricedUSD, estimatedUSD: 0, hasEstimate: false };
+    }
+    const ratio = Math.min(1, Math.max(0, unpricedCalls / calls));
+    const inTok = Number(row?.inputTokens || 0) * ratio;
+    const cacheTok = Number(row?.cacheReadTokens || 0) * ratio;
+    const outTok = Number(row?.outputTokens || 0) * ratio;
+    const estimatedUSD = (
+      (inTok * FAMILY_FALLBACK_RATES.inputPerM) +
+      (cacheTok * FAMILY_FALLBACK_RATES.cachePerM) +
+      (outTok * FAMILY_FALLBACK_RATES.outputPerM)
+    ) / 1e6;
+    return {
+      effectiveUSD: pricedUSD + estimatedUSD,
+      estimatedUSD,
+      hasEstimate: estimatedUSD > 0
+    };
+  }
+
+  function computeFamilyMemberWeighted(member) {
+    const models = Array.isArray(member?.models) ? member.models : [];
+    if (!models.length) return computeFamilyRowWeightedCost(member);
+    let effectiveUSD = 0;
+    let estimatedUSD = 0;
+    let hasEstimate = false;
+    for (const m of models) {
+      const w = computeFamilyRowWeightedCost(m);
+      effectiveUSD += w.effectiveUSD;
+      estimatedUSD += w.estimatedUSD;
+      if (w.hasEstimate) hasEstimate = true;
+    }
+    return { effectiveUSD, estimatedUSD, hasEstimate };
+  }
+
+  function computeFamilyDeviceWeighted(device) {
+    const accts = Array.isArray(device?.accounts) ? device.accounts : [];
+    if (!accts.length) return computeFamilyRowWeightedCost(device);
+    let effectiveUSD = 0;
+    let estimatedUSD = 0;
+    let hasEstimate = false;
+    for (const a of accts) {
+      const w = computeFamilyRowWeightedCost(a);
+      effectiveUSD += w.effectiveUSD;
+      estimatedUSD += w.estimatedUSD;
+      if (w.hasEstimate) hasEstimate = true;
+    }
+    return { effectiveUSD, estimatedUSD, hasEstimate };
+  }
 
   async function callFamily(payload) {
     const ipc = window.contextMeterAPI?.familyAction;
@@ -4120,7 +4203,7 @@
     familyView.config = config;
     const member = familyView.members.find(row => row.id === config.memberId);
     const active = config.accounts.find(account => account.active);
-    const activeLabel = active ? (active.alias || active.label) + ' · ' + t('family.mode.' + (active.mode || 'hold')) : '';
+    const activeLabel = active ? (active.alias || active.label) + ' · ' + familyModeText(active.mode) : '';
     el('family-device-status').textContent = [
       member?.name, config.deviceName, t(config.enabled ? 'family.on' : 'family.off'), activeLabel
     ].filter(Boolean).join(' · ');
@@ -4160,7 +4243,7 @@
       const modes = ['', 'shared', 'personal_local_only', 'personal_separate'];
       const mode = familyNode('select');
       mode.setAttribute('aria-label', t('family.accountMode'));
-      mode.append(...modes.map(value => familyOption(value, t('family.mode.' + (value || 'hold')))));
+      mode.append(...modes.map(value => familyOption(value, familyModeText(value))));
       mode.value = account.mode;
       const save = familyNode('button', t('family.save'), 'family-button');
       save.type = 'button';
@@ -4191,36 +4274,88 @@
     const box = el('family-results');
     const expanded = new Set(Array.from(box.querySelectorAll('details[open]'), item => item.dataset.member));
     box.replaceChildren();
-    for (const quota of data.scope === 'shared' ? data.quotaSnapshots : []) {
-      const card = familyNode('div', null, 'family-quota');
-      card.append(familyNode('strong', quota.accountAlias || '•••' + quota.accountScopeKey.slice(-6)),
-        familyNode('small', [quota.memberName, quota.deviceName, new Date(quota.observedAt).toLocaleString()].join(' · ')));
-      for (const window of quota.windows) {
-        const reset = window.resetAt ? ' · ' + t('family.resetAt', { time: new Date(window.resetAt).toLocaleString() }) : '';
-        card.append(familyNode('span', window.pool + ' · ' + t(window.window === '5h' ? 'family.fiveHourQuota' : 'family.weekly') +
-          ' · ' + window.remainingPct + '%' + reset), familyProgress(window.remainingPct));
-      }
-      box.append(card);
+    const total = data.total || { calls: 0, totalTokens: 0, costUSD: 0, unpricedCalls: 0 };
+    const enriched = (data.members || []).map(member => {
+      const w = computeFamilyMemberWeighted(member);
+      return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
+    });
+    const totalEffectiveUSD = enriched.reduce((sum, m) => sum + m.effectiveUSD, 0);
+    const totalEstimatedUSD = enriched.reduce((sum, m) => sum + m.estimatedUSD, 0);
+
+    const metric = el('family-metric').value || 'effectiveUSD';
+    const isWeighted = metric === 'effectiveUSD';
+    const isPricedOnly = metric === 'costUSD';
+    const headlineVal = isWeighted
+      ? ' · ≈ $' + totalEffectiveUSD.toFixed(2)
+      : isPricedOnly
+        ? ' · $' + Number(total.costUSD || 0).toFixed(2)
+        : '';
+    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) }) + headlineVal));
+    if (isWeighted && total.calls > 0) {
+      box.append(familyNode('small', total.unpricedCalls > 0
+        ? t('family.weightedNote', { n: fmt(total.unpricedCalls), est: totalEstimatedUSD.toFixed(2) })
+        : t('family.weightedPricedNote')));
+    } else if (isPricedOnly && total.unpricedCalls) {
+      box.append(familyNode('small', t('family.pricedOnlyNote', { n: fmt(total.unpricedCalls) })));
     }
-    const total = data.total;
-    box.append(familyNode('strong', t('family.total', { tokens: fmt(total.totalTokens), n: fmt(total.calls) })));
-    if (total.unpricedCalls) box.append(familyNode('small', t('family.unpriced', { n: total.unpricedCalls })));
     if (!total.calls) box.append(familyNode('p', t('family.empty')));
-    const metric = el('family-metric').value;
-    const costs = metric === 'costUSD';
-    const formatMetric = row => costs ? '$' + Number(row.costUSD).toFixed(4) : fmt(row.totalTokens) + ' Token';
-    for (const member of [...data.members].sort((a, b) => b[metric] - a[metric])) {
+
+    const formatMetric = row => (isWeighted || isPricedOnly)
+      ? '$' + Number(isWeighted ? row.effectiveUSD : row.costUSD).toFixed(4)
+      : fmt(row.totalTokens) + ' Token';
+    const denom = isWeighted ? totalEffectiveUSD : (isPricedOnly ? Number(total.costUSD || 0) : Number(total.totalTokens || 0));
+
+    for (const member of [...enriched].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0))) {
       const details = familyNode('details', null, 'family-row');
       details.dataset.member = member.id;
       details.open = expanded.has(member.id);
-      const share = (costs ? member.costShare : member.tokenShare) * 100;
-      const displayShare = costs && !total.costUSD ? '—' : share.toFixed(1) + '%';
+      const val = Number(member[metric] || 0);
+      const share = denom > 0 ? (val / denom) * 100 : 0;
+      const displayShare = denom <= 0 ? '—' : share.toFixed(1) + '%';
       const summary = familyNode('summary');
-      summary.append(familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare), familyProgress(share));
+      summary.append(
+        familyNode('span', member.name + ' · ' + formatMetric(member) + ' · ' + displayShare),
+        familyProgress(share)
+      );
       details.append(summary);
-      for (const device of member.devices) {
-        details.append(familyNode('p', device.deviceName + ' · ' + formatMetric(device)));
+      details.append(familyNode('small', t('family.tokenSummary', {
+        in: fmt(member.inputTokens || 0),
+        cache: fmt(member.cacheReadTokens || 0),
+        out: fmt(member.outputTokens || 0),
+        think: fmt(member.thinkingTokens || 0)
+      })));
+
+      const detailBox = familyNode('div', null, 'family-row-detail');
+      if (Array.isArray(member.devices) && member.devices.length) {
+        detailBox.append(familyNode('div', t('family.devicesSub'), 'family-sub-title'));
+        for (const device of member.devices) {
+          const dw = computeFamilyDeviceWeighted(device);
+          const devRow = { ...device, effectiveUSD: dw.effectiveUSD };
+          const dLine = familyNode('div', null, 'family-subline');
+          dLine.append(
+            familyNode('span', device.deviceName),
+            familyNode('span', formatMetric(devRow) + ' · ' + fmt(device.totalTokens || 0) + ' Token')
+          );
+          detailBox.append(dLine);
+        }
       }
+      if (Array.isArray(member.models) && member.models.length) {
+        detailBox.append(familyNode('div', t('family.modelsSub'), 'family-sub-title'));
+        const sortedModels = [...member.models].map(m => {
+          const mw = computeFamilyRowWeightedCost(m);
+          return { ...m, effectiveUSD: mw.effectiveUSD, hasEstimate: mw.hasEstimate };
+        }).sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0));
+        for (const m of sortedModels) {
+          const mLine = familyNode('div', null, 'family-subline');
+          const nameLabel = m.model + (m.hasEstimate && isWeighted ? ' (' + t('family.estTag') + ')' : '');
+          mLine.append(
+            familyNode('span', nameLabel),
+            familyNode('span', formatMetric(m) + ' · ' + fmt(m.totalTokens || 0))
+          );
+          detailBox.append(mLine);
+        }
+      }
+      if (detailBox.childElementCount) details.append(detailBox);
       box.append(details);
     }
   }
@@ -4237,7 +4372,7 @@
 
   async function refreshFamilyView(resetFields = false) {
     clearTimeout(familyView.refreshTimer);
-    if (!el('pane-ctx-family') || state.disposed || activeContextTab !== 'family' || el('panel')?.hidden) return;
+    if (!el('family-usage-view') || state.disposed || activeTokenView !== 'family' || el('panel-tokens')?.hidden) return;
     try {
       if (!familyView.busy) {
         const config = await callFamily({ action: 'overview' });
@@ -15648,6 +15783,7 @@
       capturedAt: Date.now(),
       openPanel,
       activeContextTab,
+      activeTokenView,
       isContextSettingsView,
       browsePoolKey: quotaState.browsePoolKey || null,
       scrollTops,
@@ -15698,7 +15834,9 @@
     }
     if (saved.openPanel && saved.openPanel !== 'none') {
       showPanel(saved.openPanel);
-      if (saved.openPanel === 'context' && saved.activeContextTab) {
+      if (saved.openPanel === 'tokens' && saved.activeTokenView) {
+        switchTokenView(saved.activeTokenView);
+      } else if (saved.openPanel === 'context' && saved.activeContextTab) {
         switchContextTab(saved.activeContextTab);
       } else if (saved.openPanel === 'context' && saved.isContextSettingsView) {
         switchContextTab('settings');

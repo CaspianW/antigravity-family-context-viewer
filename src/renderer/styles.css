@@ -1718,7 +1718,7 @@
     .ag-vendor-dot{width:7px;height:7px;border-radius:999px;display:inline-block;flex-shrink:0;background:var(--ag-text-muted)}
     .ag-dropdown-badge{font-size:9.5px;padding:0 5px;border-radius:9px;background:rgba(56,189,248,0.14);color:var(--ag-link,#38bdf8);border:1px solid rgba(56,189,248,0.3);margin-left:4px;flex-shrink:0}
 
-    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
+    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
     .ctx-tab-btn{display:flex;align-items:center;justify-content:center;min-width:0;border:1px solid transparent;background:transparent;color:var(--ag-text-muted);font-size:11.5px;font-weight:500;padding:5px 4px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background-color .15s ease,color .15s ease,border-color .15s ease,transform .05s ease}
     .ctx-tab-btn:hover{color:var(--ag-text-primary);background:rgba(255,255,255,0.05)}
     .ctx-tab-btn:active{transform:scale(0.97);background:rgba(255,255,255,0.08)}
@@ -2369,10 +2369,11 @@
       outline:none;border-color:#a78bfa;box-shadow:0 0 0 2px rgba(139,92,246,0.28);
     }
 
+    .family-usage-view{display:grid;gap:8px;margin-top:4px}
     .family-card{display:grid;gap:8px;min-width:0}
     .family-card p,.family-row p{margin:0}
     .family-card p:empty,.family-card small:empty{display:none}
-    .family-card small,.family-row p{color:var(--ag-text-muted)}
+    .family-card small,.family-row p,.family-subline{color:var(--ag-text-muted)}
     .family-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
     .family-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:6px;border-top:1px solid var(--ag-border-subcard);padding-top:7px}
     .family-account strong{grid-column:1/-1;overflow-wrap:anywhere}
@@ -2381,11 +2382,15 @@
     .family-settings-body{padding-top:10px}
     .family-settings-body label{display:grid;gap:3px}
     .family-settings-body label.family-check{display:flex;align-items:center;gap:6px}
-    #pane-ctx-family :is(input,select,textarea,.family-button){min-width:0;box-sizing:border-box;max-width:100%;background:var(--ag-bg-subcard);color:var(--ag-text-primary);padding:4px 6px;border:1px solid var(--ag-border-subcard);border-radius:5px;font:inherit}
-    #pane-ctx-family .family-button{cursor:pointer;width:fit-content}
-    #pane-ctx-family .family-button:disabled{opacity:.5;cursor:default}
-    #pane-ctx-family a{color:var(--ag-link)}
-    #pane-ctx-family .family-error{color:var(--ag-bad,#f06f68)}
-    #pane-ctx-family progress{display:block;width:100%;height:8px;accent-color:var(--ag-link);margin:3px 0 5px}
-    .family-quota{overflow-wrap:anywhere;display:grid;gap:3px;padding-bottom:5px;border-bottom:1px solid var(--ag-border-subcard)}
-    .family-row{padding-bottom:3px;overflow-wrap:anywhere}
+    #family-usage-view :is(input,select,textarea,.family-button){min-width:0;box-sizing:border-box;max-width:100%;background:var(--ag-bg-subcard);color:var(--ag-text-primary);padding:4px 6px;border:1px solid var(--ag-border-subcard);border-radius:5px;font:inherit}
+    #family-usage-view .family-button{cursor:pointer;width:fit-content}
+    #family-usage-view .family-button:disabled{opacity:.5;cursor:default}
+    #family-usage-view a{color:var(--ag-link)}
+    #family-usage-view .family-error{color:var(--ag-bad,#f06f68)}
+    #family-usage-view progress{display:block;width:100%;height:8px;accent-color:var(--ag-link);margin:3px 0 5px}
+    .family-row{padding-bottom:6px;overflow-wrap:anywhere;border-bottom:1px solid var(--ag-border-subcard)}
+    .family-row:last-child{border-bottom:none;padding-bottom:0}
+    .family-row summary{cursor:pointer}
+    .family-row-detail{display:grid;gap:3px;padding:6px 0 2px 10px;border-left:2px solid var(--ag-border-subcard);margin-top:4px;font-size:11px}
+    .family-sub-title{font-weight:600;color:var(--ag-text-secondary);margin-top:4px}
+    .family-subline{display:flex;justify-content:space-between;gap:8px;font-size:11px}
