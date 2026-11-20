@@ -16588,7 +16588,9 @@ function closeAllDropdowns(exceptWrap = null) {
     familyView.config = config;
     const member = familyView.members.find(row => row.id === config.memberId);
     const active = config.accounts.find(account => account.active);
-    const activeLabel = active ? (active.alias || active.label) + ' · ' + familyModeText(active.mode) : '';
+    const activeLabel = active
+      ? ((active.alias && active.alias !== config.deviceName ? active.alias : active.label) + ' · ' + familyModeText(active.mode))
+      : '';
     const statusPill = el('family-enabled-pill');
     if (statusPill) {
       statusPill.textContent = t(config.enabled ? 'family.on' : 'family.off');
@@ -16768,19 +16770,22 @@ function closeAllDropdowns(exceptWrap = null) {
     if (!card) return;
     card.hidden = false;
     const nowMs = Date.now();
+    const curRange = el('family-range')?.value || 'today';
+    const hasTrueWeeklyMembers = (Array.isArray(data?.weeklyMembers) && data.weeklyMembers.length > 0) || curRange === '7d';
     const weeklySource = (Array.isArray(data?.weeklyMembers) && data.weeklyMembers.length)
       ? data.weeklyMembers.map(member => {
           const w = computeFamilyMemberWeighted(member);
           return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
         })
-      : enriched;
+      : (curRange === '7d' ? enriched : []);
+    const displayMembers = weeklySource.length ? weeklySource : enriched;
     const snapStats = collectWeeklySnapshotStats(data);
     const serverPools = (Array.isArray(data?.familyWeekly) ? data.familyWeekly : [])
       .filter(p => p && (!p.expiresAt || p.expiresAt > nowMs));
     const scopeVal = el('family-scope')?.value || 'shared';
     const weeklyPools = scopeVal === 'personal'
       ? []
-      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, weeklySource));
+      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, displayMembers));
     const canQuotaMode = weeklyPools.length > 0;
     const effectiveMode = (familyView.pieMode === 'usage' || !canQuotaMode) ? 'usage' : 'quota';
 
@@ -16835,7 +16840,7 @@ function closeAllDropdowns(exceptWrap = null) {
         estimates = [];
         unattr = 0;
         effectiveBasis = null;
-      } else if (poolObj?.basis !== 'cost' && weightedSum > 0) {
+      } else if (hasTrueWeeklyMembers && poolObj?.basis !== 'cost' && weightedSum > 0) {
         estimates = weightedScores.map(item => ({
           name: item.name,
           pct: Number(((item.val / weightedSum) * usedPct).toFixed(2))
@@ -16850,10 +16855,10 @@ function closeAllDropdowns(exceptWrap = null) {
 
       const byMemberName = new Map(estimates.map(item => [item.name, Number(item.pct || 0)]));
       const memberNames = new Set([
-        ...weeklySource.filter(m => !m.archived).map(m => m.name),
+        ...displayMembers.filter(m => !m.archived).map(m => m.name),
         ...byMemberName.keys()
       ]);
-      const idByName = new Map(weeklySource.map(m => [m.name, m.id || m.name]));
+      const idByName = new Map(displayMembers.map(m => [m.name, m.id || m.name]));
       slices = [...memberNames].sort((a, b) => a.localeCompare(b)).map((name, idx) => ({
         key: 'm:' + name,
         label: name,
@@ -17113,10 +17118,24 @@ function closeAllDropdowns(exceptWrap = null) {
   async function refreshFamilyData() {
     if (!familyView.config?.deviceId) return;
     const epoch = ++familyView.epoch;
+    const reqRange = el('family-range').value;
+    const reqScope = el('family-scope').value;
+    const tzOffset = -new Date().getTimezoneOffset();
     const data = await callFamily({
-      action: 'dashboard', range: el('family-range').value,
-      scope: el('family-scope').value, tzOffset: -new Date().getTimezoneOffset()
+      action: 'dashboard', range: reqRange,
+      scope: reqScope, tzOffset
     });
+    if (epoch !== familyView.epoch || state.disposed) return;
+    if (reqScope !== 'personal' && reqRange !== '7d' && (!Array.isArray(data?.weeklyMembers) || !data.weeklyMembers.length)) {
+      const weekRes = await callFamily({
+        action: 'dashboard', range: '7d',
+        scope: reqScope, tzOffset
+      }).catch(() => null);
+      if (epoch !== familyView.epoch || state.disposed) return;
+      if (Array.isArray(weekRes?.members) && weekRes.members.length) {
+        data.weeklyMembers = weekRes.members;
+      }
+    }
     if (epoch === familyView.epoch && !state.disposed) renderFamilyDashboard(data);
   }
 
@@ -17126,7 +17145,7 @@ function closeAllDropdowns(exceptWrap = null) {
     try {
       if (!familyView.busy) {
         const config = await callFamily({ action: 'overview' });
-        if (resetFields && config.deviceId) {
+        if ((resetFields || !familyView.members.length) && config.deviceId) {
           const result = await callFamily({ action: 'connect' }).catch(() => null);
           if (result) familyView.members = result.members;
         }

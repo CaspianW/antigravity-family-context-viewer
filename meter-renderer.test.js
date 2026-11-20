@@ -6222,6 +6222,34 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
                   }
                 ]
               }
+            ],
+            weeklyMembers: [
+              {
+                id: 'm_larry',
+                name: 'Larry',
+                calls: 10,
+                totalTokens: 15000000,
+                inputTokens: 1000000,
+                cacheReadTokens: 13000000,
+                outputTokens: 1000000,
+                thinkingTokens: 0,
+                costUSD: 2.0,
+                unpricedCalls: 0,
+                models: [{ model: 'Gemini 4 Flash', calls: 10, inputTokens: 1000000, cacheReadTokens: 13000000, outputTokens: 1000000, costUSD: 2.0, unpricedCalls: 0 }]
+              },
+              {
+                id: 'm_caspian',
+                name: 'Caspian',
+                calls: 5,
+                totalTokens: 6000000,
+                inputTokens: 2000000,
+                cacheReadTokens: 3000000,
+                outputTokens: 1000000,
+                thinkingTokens: 200000,
+                costUSD: 0,
+                unpricedCalls: 2,
+                models: [{ model: 'Orchestrator (Neon)', calls: 5, inputTokens: 2000000, cacheReadTokens: 3000000, outputTokens: 1000000, costUSD: 0, unpricedCalls: 2 }]
+              }
             ]
           }
         };
@@ -6495,5 +6523,193 @@ test('一键压缩上下文与剩余百分比自动压缩：配置保存、忙�
     assert.match(hFallback.elements.get('compact-status-msg').textContent, /\/compact/);
   } finally {
     hFallback.sandbox.__AGContextMeter.dispose();
+  }
+});
+
+test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止用今日占比覆盖服务端周额度', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const collectText = (node) => {
+    if (!node) return '';
+    return [node.textContent || '', ...(node.children || []).map(collectText)].filter(Boolean).join(' ');
+  };
+
+  const todayMembers = [
+    {
+      id: 'm_fdnan',
+      name: 'FDNAN',
+      calls: 15,
+      totalTokens: 6000000,
+      costUSD: 15.05,
+      unpricedCalls: 0,
+      models: [{ model: 'Gemini 4 Hydrogen (Orchestrator)', calls: 15, inputTokens: 2000000, cacheReadTokens: 3000000, outputTokens: 1000000, costUSD: 15.05, unpricedCalls: 0 }]
+    },
+    {
+      id: 'm_larry',
+      name: 'Larry',
+      calls: 10,
+      totalTokens: 5000000,
+      costUSD: 12.59,
+      unpricedCalls: 0,
+      models: [{ model: 'Orchestrator (Carbon)', calls: 10, inputTokens: 2000000, cacheReadTokens: 2000000, outputTokens: 1000000, costUSD: 12.59, unpricedCalls: 0 }]
+    },
+    {
+      id: 'm_jackson',
+      name: 'JacksonMo',
+      calls: 5,
+      totalTokens: 2000000,
+      costUSD: 5.80,
+      unpricedCalls: 0,
+      models: [{ model: 'Orchestrator (Carbon)', calls: 5, inputTokens: 1000000, cacheReadTokens: 500000, outputTokens: 500000, costUSD: 5.80, unpricedCalls: 0 }]
+    }
+  ];
+  const weekMembers = [
+    {
+      id: 'm_fdnan',
+      name: 'FDNAN',
+      calls: 30,
+      totalTokens: 10000000,
+      costUSD: 15.17,
+      unpricedCalls: 0,
+      models: [{ model: 'Gemini 4 Hydrogen (Orchestrator)', calls: 30, inputTokens: 3000000, cacheReadTokens: 5000000, outputTokens: 2000000, costUSD: 15.17, unpricedCalls: 0 }]
+    },
+    {
+      id: 'm_larry',
+      name: 'Larry',
+      calls: 50,
+      totalTokens: 20000000,
+      costUSD: 36.95,
+      unpricedCalls: 0,
+      models: [{ model: 'Orchestrator (Carbon)', calls: 50, inputTokens: 6000000, cacheReadTokens: 10000000, outputTokens: 4000000, costUSD: 36.95, unpricedCalls: 0 }]
+    },
+    {
+      id: 'm_jackson',
+      name: 'JacksonMo',
+      calls: 10,
+      totalTokens: 3000000,
+      costUSD: 5.80,
+      unpricedCalls: 0,
+      models: [{ model: 'Orchestrator (Carbon)', calls: 10, inputTokens: 1000000, cacheReadTokens: 1500000, outputTokens: 500000, costUSD: 5.80, unpricedCalls: 0 }]
+    }
+  ];
+
+  // Case A: 宿主机未重启导致 dashboard(range=today) 不返回 weeklyMembers，前端自动补查 range=7d 并保持别名与设备去重
+  let fail7d = false;
+  const h = htmlAwareRendererHarness();
+  const api = h.sandbox.__AGContextMeter;
+  const calls = [];
+  try {
+    h.sandbox.window.contextMeterAPI.familyAction = async (payload) => {
+      calls.push(payload);
+      if (payload.action === 'overview') {
+        return {
+          ok: true,
+          data: {
+            serverUrl: 'https://antigravity-family.example',
+            hasDefaultServerUrl: true,
+            hasSecret: true,
+            memberId: 'm_fdnan',
+            deviceId: 'd_ubuntu',
+            deviceName: 'Ubuntu',
+            enabled: true,
+            lastSyncAt: 1795175066490,
+            lastError: '',
+            pendingCount: 0,
+            undatedCount: 0,
+            accounts: [
+              { key: 'acct_bs', label: 'user•••@example.com', alias: 'Ubuntu', mode: 'shared', active: true }
+            ]
+          }
+        };
+      }
+      if (payload.action === 'connect') {
+        return {
+          ok: true,
+          data: {
+            members: [
+              { id: 'm_fdnan', name: 'FDNAN', archived: false },
+              { id: 'm_larry', name: 'Larry', archived: false },
+              { id: 'm_jackson', name: 'JacksonMo', archived: false }
+            ]
+          }
+        };
+      }
+      if (payload.action === 'dashboard') {
+        if (payload.range === '7d') {
+          if (fail7d) return { ok: false, error: '7d fetch unavailable' };
+          return {
+            ok: true,
+            data: {
+              total: { calls: 90, totalTokens: 33000000, costUSD: 57.92, unpricedCalls: 0 },
+              members: weekMembers,
+              familyWeekly: [
+                {
+                  pool: 'Gemini Models',
+                  usedPct: 29.4,
+                  expiresAt: Date.now() + 3600000,
+                  observedAt: 1795175514553,
+                  estimates: [{ name: 'Larry', pct: 17.5 }, { name: 'FDNAN', pct: 9.4 }, { name: 'JacksonMo', pct: 2.5 }],
+                  unattributedPct: 0,
+                  basis: 'weighted'
+                }
+              ],
+              quotaSnapshots: []
+            }
+          };
+        }
+        return {
+          ok: true,
+          data: {
+            total: { calls: 30, totalTokens: 13000000, costUSD: 33.44, unpricedCalls: 0 },
+            members: todayMembers,
+            familyWeekly: [
+              {
+                pool: 'Gemini Models',
+                usedPct: 29.4,
+                expiresAt: Date.now() + 3600000,
+                observedAt: 1795175514553,
+                estimates: [{ name: 'Larry', pct: 17.5 }, { name: 'FDNAN', pct: 9.4 }, { name: 'JacksonMo', pct: 2.5 }],
+                unattributedPct: 0,
+                basis: 'weighted'
+              }
+            ],
+            quotaSnapshots: []
+          }
+        };
+      }
+      return { ok: false, error: 'unexpected action' };
+    };
+
+    h.elements.get('badge-tokens').click();
+    h.elements.get('tok-view-family').click();
+    for (let i = 0; i < 8; i++) await flush();
+
+    // 验证状态栏不会重复出现 Ubuntu · Ubuntu
+    assert.equal(h.elements.get('family-device-status').textContent, 'FDNAN · Ubuntu · user•••@example.com · 家庭统计');
+
+    // 验证补查了 7d 数据
+    const dashRanges = calls.filter(c => c.action === 'dashboard').map(c => c.range);
+    assert.deepEqual(dashRanges, ['today', '7d']);
+
+    // 下方“今日”柱状列表保持今日口径：FDNAN ($15.05) 在前，Larry ($12.59, 37.6%) 在后
+    const rows = h.elements.get('family-results').children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
+    assert.match(collectText(rows[0].children[0]), /^FDNAN \$15\.0500 · 45\.0%/);
+    assert.match(collectText(rows[1].children[0]), /^Larry \$12\.5900 · 37\.6%/);
+
+    // 上方“共享周额度分布”饼图使用 7d 加权估算：Larry 18.8% > FDNAN 7.7% > JacksonMo 2.9%
+    const legendTextA = collectText(h.elements.get('family-pie-legend'));
+    assert.match(legendTextA, /Larry 18\.8%/);
+    assert.match(legendTextA, /FDNAN 7\.7%/);
+    assert.match(legendTextA, /JacksonMo 2\.9%/);
+
+    // Case B: 即使补查 7d 失败，也绝不用“今日”数据覆盖服务端已提供的周额度估算
+    fail7d = true;
+    h.elements.get('family-range').trigger('change');
+    for (let i = 0; i < 8; i++) await flush();
+    const legendTextB = collectText(h.elements.get('family-pie-legend'));
+    assert.match(legendTextB, /Larry 17\.5%/);
+    assert.match(legendTextB, /FDNAN 9\.4%/);
+    assert.match(legendTextB, /JacksonMo 2\.5%/);
+  } finally {
+    try { api.dispose(); } catch {}
   }
 });
