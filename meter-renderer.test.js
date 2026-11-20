@@ -6243,14 +6243,14 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     assert.equal(h.elements.get('panel-tokens-title').textContent, '家庭组用量看板');
     assert.deepEqual(familyCalls.map(c => c.action), ['overview', 'connect', 'dashboard']);
 
-    // 3. 验证无四池额度卡片，且默认按加权等效价值（Caspian $5.72 vs Larry $2.00）排序展示
+    // 3. 验证无四池额度卡片，且默认按加权等效价值（Caspian $2.86 vs Larry $2.00）排序展示
     const resultsBox = h.elements.get('family-results');
     assert.equal(resultsBox.querySelectorAll('.family-quota').length, 0);
     const memberRows = resultsBox.children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
     assert.equal(memberRows.length, 2);
-    // Neon 2/5 calls * (2M*2 + 3M*0.1 + 1M*10)/1e6 = 0.4 * 14.3 = $5.72 > Larry $2.00
-    assert.match(collectText(memberRows[0].children[0]), /^Caspian \$5\.7200 · 74\.1%/);
-    assert.match(collectText(memberRows[1].children[0]), /^Larry \$2\.0000 · 25\.9%/);
+    // Neon 2/5 calls * (2M*1 + 3M*0.05 + 1M*5)/1e6 = 0.4 * 7.15 = $2.86 > Larry $2.00
+    assert.match(collectText(memberRows[0].children[0]), /^Caspian \$2\.8600 · 58\.8%/);
+    assert.match(collectText(memberRows[1].children[0]), /^Larry \$2\.0000 · 41\.2%/);
 
     // 验证包含设备分组（含 0 Token 设备）和模型估算标记
     const caspianDetailText = collectText(memberRows[0]);
@@ -6263,18 +6263,18 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     assert.equal(pieCard.hidden, false);
     assert.match(collectText(h.elements.get('family-pie-center')), /^18\.1% 共享池已用$/);
     const pieLegendText = collectText(h.elements.get('family-pie-legend'));
-    // Caspian weighted $5.72 / $7.72 = 74.09% -> 13.4%; Larry $2.00 / $7.72 = 25.91% -> 4.7%
-    assert.match(pieLegendText, /Caspian 13\.4%/);
-    assert.match(pieLegendText, /Larry 4\.7%/);
+    // Caspian weighted $2.86 / $4.86 = 58.85% -> 10.65 -> 10.7%; Larry $2.00 / $4.86 = 41.15% -> 7.45 -> 7.5%
+    assert.match(pieLegendText, /Caspian 10\.7%/);
+    assert.match(pieLegendText, /Larry 7\.5%/);
     assert.match(pieLegendText, /剩余额度 81\.9%/);
     assert.match(collectText(h.elements.get('family-pie-note')), /各端上报 17\.2%~18\.1%.*最高已用 18\.1%.*加权等效价值/);
     assert.ok(h.elements.get('family-pie-svg-wrap').querySelectorAll('circle').length >= 3);
 
     h.elements.get('family-pie-mode-usage').click();
-    assert.match(collectText(h.elements.get('family-pie-center')), /^\$7\.72 家庭合计$/);
+    assert.match(collectText(h.elements.get('family-pie-center')), /^\$4\.86 家庭合计$/);
     const usageLegendText = collectText(h.elements.get('family-pie-legend'));
-    assert.match(usageLegendText, /Caspian 74\.1% \$5\.7200/);
-    assert.match(usageLegendText, /Larry 25\.9% \$2\.0000/);
+    assert.match(usageLegendText, /Caspian 58\.8% \$2\.8600/);
+    assert.match(usageLegendText, /Larry 41\.2% \$2\.0000/);
 
     // 验证默认服务器地址显示、密钥可视化开关、粘贴 JSON 自动导入连接
     assert.equal(h.elements.get('family-url').value, 'https://antigravity-family.example');

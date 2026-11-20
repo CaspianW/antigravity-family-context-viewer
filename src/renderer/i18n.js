@@ -136,7 +136,7 @@ const PANEL_I18N = {
   'family.tokens': { 'zh-CN': "原始总 Token", 'zh-TW': "原始總 Token", en: "Raw total tokens" },
   'family.cost': { 'zh-CN': "仅已定价 API 费用", 'zh-TW': "僅已定價 API 費用", en: "Priced API cost only" },
   'family.weighted': { 'zh-CN': "等效价值（模型加权）", 'zh-TW': "等效價值（模型加權）", en: "Weighted value (by model)" },
-  'family.weightedNote': { 'zh-CN': "按各模型输入/缓存/输出价差折算；含 {n} 次未定价调用按 $2/$0.1/$10 基准估算（约 ${est}）。", 'zh-TW': "依各模型輸入/快取/輸出價差折算；含 {n} 次未定價呼叫按 $2/$0.1/$10 基準估算（約 ${est}）。", en: "Weighted by model rates; {n} unpriced calls estimated at $2/$0.1/$10 baseline (~${est})." },
+  'family.weightedNote': { 'zh-CN': "按各模型输入/缓存/输出价差折算；含 {n} 次未定价调用按 $1/$0.05/$5 基准估算（约 ${est}）。", 'zh-TW': "依各模型輸入/快取/輸出價差折算；含 {n} 次未定價呼叫按 $1/$0.05/$5 基準估算（約 ${est}）。", en: "Weighted by model rates; {n} unpriced calls estimated at $1/$0.05/$5 baseline (~${est})." },
   'family.pricedOnlyNote': { 'zh-CN': "{n} 次调用暂无公开费率（仅统计已定价模型）。", 'zh-TW': "{n} 次呼叫暫無公開費率（僅統計已定價模型）。", en: "{n} calls have no published rate (priced models only)." },
   'family.weightedPricedNote': { 'zh-CN': "已按各模型官方 API 费率加权折算，可跨模型横向对比。", 'zh-TW': "已依各模型官方 API 費率加權折算，可跨模型橫向對比。", en: "Weighted by official per-model API rates for cross-model comparison." },
   'family.devicesSub': { 'zh-CN': "设备分布", 'zh-TW': "裝置分布", en: "Devices" },

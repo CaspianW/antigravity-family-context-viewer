@@ -4093,8 +4093,8 @@
     return t(FAMILY_MODE_I18N[mode] || 'family.mode.hold');
   }
 
-  // 对尚未公开官方 API 费率的模型（如 Neon / 占位模型），按 Gemini 4 Pro 基准档 ($2/$0.1/$10 per 1M) 做输入/缓存/输出加权估算
-  const FAMILY_FALLBACK_RATES = { inputPerM: 2.0, cachePerM: 0.1, outputPerM: 10.0 };
+  // 对尚未公开官方 API 费率的模型（如 Neon / 占位模型），按 Carbon 半价 ($1/$0.05/$5 per 1M) 做输入/缓存/输出加权估算
+  const FAMILY_FALLBACK_RATES = { inputPerM: 1.0, cachePerM: 0.05, outputPerM: 5.0 };
   function computeFamilyRowWeightedCost(row) {
     const calls = Number(row?.calls || 0);
     const unpricedCalls = Number(row?.unpricedCalls || 0);
