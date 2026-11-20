@@ -2811,12 +2811,36 @@ function repairAndMigrateAccountLedger({
 }
 
 /**
- * 查询某账号在某模型共享池与指定时间区间内的本地实测消耗（专供 ELV-57 配额变化对照使用）
+ * 将模型名称、模型 ID 或共享池键归类为配额大类 ('gemini' | 'claude' | null)
  */
-function summarizeAccountWindowUsage({ agDir, ledgerPath, accountScopeKey, poolKey, startMs, endMs } = {}) {
-  const targetDir = ledgerPath || agDir;
-  const ledger = loadPricingLedger(targetDir);
-  const calls = ledger?.calls && typeof ledger.calls === 'object' ? Object.values(ledger.calls) : [];
+function classifyQuotaFamily(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'shared_3p_pool' || /claude|anthropic|sonnet|opus|haiku|gpt|openai|3p/.test(s)) {
+    return 'claude';
+  }
+  if (s.startsWith('shared_gemini') || /gemini|hydrogen|carbon|argon|neon|flash|orchestrator|bison|palm/.test(s)) {
+    return 'gemini';
+  }
+  if (typeof getSharedQuotaGroupKey === 'function') {
+    const k = String(getSharedQuotaGroupKey(raw) || '');
+    if (k === 'shared_3p_pool') return 'claude';
+    if (k.startsWith('shared_gemini')) return 'gemini';
+  }
+  return null;
+}
+
+/**
+ * 查询某账号在某模型共享池（或大类 family）与指定时间区间内的本地实测消耗
+ */
+function summarizeAccountWindowUsage({ agDir, ledgerPath, accountScopeKey, poolKey, family, startMs, endMs, ledgerCalls } = {}) {
+  const calls = Array.isArray(ledgerCalls)
+    ? ledgerCalls
+    : (() => {
+        const targetDir = ledgerPath || agDir;
+        const ledger = loadPricingLedger(targetDir);
+        return ledger?.calls && typeof ledger.calls === 'object' ? Object.values(ledger.calls) : [];
+      })();
   const start = Number(startMs) || 0;
   const end = Number(endMs) || Date.now();
   let requestCount = 0;
@@ -2829,11 +2853,18 @@ function summarizeAccountWindowUsage({ agDir, ledgerPath, accountScopeKey, poolK
 
   for (const call of calls) {
     if (!call || typeof call !== 'object') continue;
+    if (family) {
+      if (call.isKeepalive === true) continue;
+      if (typeof isSyntheticCall === 'function' && isSyntheticCall(call.callId || '', call)) continue;
+    }
     if (accountScopeKey && call.accountScopeKey !== accountScopeKey) continue;
     if (call.accountAttributionConfidence === 'unattributed') continue;
     const ts = getCallSortTimestamp(call) ?? Number(call.timestamp) ?? (call.created_at ? Date.parse(call.created_at) : NaN);
     if (!Number.isFinite(ts) || ts < start || ts > end) continue;
-    if (poolKey) {
+    if (family) {
+      const callFamily = classifyQuotaFamily([call.modelLabel, call.model, call.modelExactId, call.modelKey].filter(Boolean).join(' '));
+      if (callFamily !== family) continue;
+    } else if (poolKey) {
       const rawModel = call.modelExactId || extractModelString(call) || call.model || '';
       const sharedKey = typeof getSharedQuotaGroupKey === 'function' ? getSharedQuotaGroupKey(rawModel || call.modelLabel || '') : null;
       const singlePoolKey = typeof getModelPoolKey === 'function' ? getModelPoolKey(rawModel, call.modelLabel || '') : null;
@@ -8413,6 +8444,7 @@ module.exports = {
   resolveCallAccountAttribution,
   syncAccountLedgerPartitions,
   buildAccountUsageBreakdown,
+  classifyQuotaFamily,
   summarizeAccountWindowUsage,
   repairAndMigrateAccountLedger,
   loadPricingLedger,

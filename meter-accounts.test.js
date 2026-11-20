@@ -1031,22 +1031,27 @@ test('UI 深度回归: 8 处统一下拉规范、零用量账号归零、NoPerm 
     assert.doesNotMatch(elements.get('t-total-cost').textContent, /\$0\.00/);
     assert.match(elements.get('t-total-cost').textContent, /暂无此账号记录/);
 
-    // 3. 验证三语下无 NoPerm、英文模式下界面账号/保活/费用等动态文案无中文泄漏
+    // 3. 验证三语下无 NoPerm、英文模式下界面账号/周额度对照无中文泄漏，且已彻底移除保活协议块
+    const tplHtml = fs.readFileSync(path.join(__dirname, 'src/renderer/template.html'), 'utf8');
+    for (const removedId of ['keepalive-protocol-summary', 'keepalive-experiment-summary', 'keepalive-runtime-note', 'btn-keepalive-stop']) {
+      assert.equal(tplHtml.includes(removedId), false, `template.html 应已移除 ${removedId}`);
+      assert.equal(RENDERER_SOURCE.includes(`id="${removedId}"`), false, `meter-renderer.js 应已移除 ${removedId}`);
+    }
     await api.setPanelLanguage('en', { persist: false });
     assert.match(elements.get('t-total-cost').textContent, /No records for account/);
     const acctListJsonEn = JSON.stringify(elements.get('quota-accounts-list').children);
     assert.doesNotMatch(acctListJsonEn, /NoPerm/, '界面绝不能出现原始 NoPerm');
     assert.match(acctListJsonEn, /No model access/);
     assert.match(acctListJsonEn, /Quota fetch failed/);
-    assert.doesNotMatch(elements.get('keepalive-protocol-summary').textContent, /[\u4e00-\u9fa5]/);
-    assert.doesNotMatch(elements.get('keepalive-experiment-summary').textContent, /[\u4e00-\u9fa5]/);
-    assert.doesNotMatch(elements.get('keepalive-runtime-note').textContent, /[\u4e00-\u9fa5]/);
+    const compareJsonEn = JSON.stringify(elements.get('quota-compare-list').children);
+    assert.doesNotMatch(compareJsonEn, /[\u4e00-\u9fa5]/, '英文模式周额度对照不得泄漏中文');
     assert.doesNotMatch(elements.get('token-account-scope-note').textContent, /[\u4e00-\u9fa5]/);
 
     await api.setPanelLanguage('zh-TW', { persist: false });
     const acctListJsonTw = JSON.stringify(elements.get('quota-accounts-list').children);
     assert.match(acctListJsonTw, /無模型權限/);
-    assert.doesNotMatch(elements.get('keepalive-protocol-summary').textContent, /协议核查|默认关闭/);
+    const compareJsonTw = JSON.stringify(elements.get('quota-compare-list').children);
+    assert.doesNotMatch(compareJsonTw, /剩余|缓存|账号|周额度|暂无/);
 
     // 4. 模型括号档位去重验证（确认 splitModelDisplayAndEffort 集成效果）
     const dedup = core.splitModelDisplayAndEffort('Gemini 4 Hydrogen (High) (High)', 'High');
@@ -2249,5 +2254,228 @@ test('v0.8.8 非 CDP 切号与回滚对称: shared origin 更新、daemon hub �
     fs.rmSync(daemonDir, { recursive: true, force: true });
     fs.rmSync(agDir, { recursive: true, force: true });
     fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('按账号汇总 Gemini / Claude 周额度对照：忽略 5h 仅看 7d 并正确汇总多模型本地本周消耗', async () => {
+  const tmpDir = makeTempDir();
+  const stateDir = path.join(tmpDir, 'state');
+  const agDir = path.join(tmpDir, 'ag');
+  fs.mkdirSync(agDir, { recursive: true });
+  const ledgerPath = path.join(agDir, 'pricing_ledger_v1.json');
+
+  try {
+    const nowMs = Date.now();
+    const resetGemMs = nowMs + 3 * 86_400_000;
+    const resetClaudeMs = nowMs + 5 * 86_400_000;
+
+    // 写入多模型混合调用（Hydrogen + Neon + Carbon + Claude Sonnet），以及 1 条保活调用（必须过滤）和 1 条 10 天前过期调用
+    collector.recordModelCalls([
+      { callId: 'wk_gem_1', model: 'Gemini 4 Hydrogen (Orchestrator)', inputTokens: 10000, cacheReadTokens: 20000, outputTokens: 2000, timestamp: nowMs - 3600000 },
+      { callId: 'wk_gem_2', model: 'Orchestrator (Neon)', inputTokens: 5000, cacheReadTokens: 15000, outputTokens: 1000, timestamp: nowMs - 1800000 },
+      { callId: 'wk_gem_3', model: 'Gemini 4 Carbon (High)', inputTokens: 3000, cacheReadTokens: 7000, outputTokens: 500, timestamp: nowMs - 900000 },
+      { callId: 'wk_gem_ka', model: 'Gemini 4 Hydrogen (High)', inputTokens: 99999, cacheReadTokens: 0, outputTokens: 10, timestamp: nowMs - 500000, isKeepalive: true },
+      { callId: 'wk_gem_old', model: 'Gemini 4 Hydrogen (High)', inputTokens: 88888, cacheReadTokens: 0, outputTokens: 10, timestamp: nowMs - 10 * 86_400_000 },
+      { callId: 'wk_cl_1', model: 'Claude Sonnet 5.5', inputTokens: 4000, cacheReadTokens: 6000, outputTokens: 1000, timestamp: nowMs - 600000 }
+    ], { ledgerPath, confirmedAccountEmail: 'wk-a@example.com' });
+
+    const mgr = accountsMod.createAccountsManager({
+      stateDir,
+      credentialStore: makeMockCredStore(),
+      collector: {
+        loadPricingLedger: () => collector.loadPricingLedger(ledgerPath),
+        summarizeAccountWindowUsage: (q) => collector.summarizeAccountWindowUsage({ ...q, ledgerPath })
+      }
+    });
+    mgr.addAccountWithCredential({
+      email: 'wk-a@example.com',
+      accessToken: 'tokA',
+      refreshToken: 'refA',
+      expiresAt: new Date(nowMs + 3600000).toISOString()
+    });
+    mgr.addAccountWithCredential({
+      email: 'wk-b@example.com',
+      accessToken: 'tokB',
+      refreshToken: 'refB',
+      expiresAt: new Date(nowMs + 3600000).toISOString()
+    });
+
+    // 刻意将 5h 设为极低 (12%)，周额度设高 (68% Gemini / 90% Claude)，验证绝不误用 5h！
+    await mgr.refreshAccountQuota('wk-a@example.com', {
+      nowMs,
+      mockQuotaSnapshot: {
+        pools: [
+          {
+            poolKey: 'shared_gemini_argon',
+            title: 'Gemini 4 Argon',
+            buckets: [{ windowKey: 'weekly', windowShort: '7d', remainingFraction: 0.81, resetAtMs: resetGemMs }]
+          },
+          {
+            poolKey: 'shared_gemini_main',
+            title: 'Gemini Models',
+            buckets: [
+              { windowKey: '5h', windowShort: '5h', remainingFraction: 0.12, resetAtMs: nowMs + 3600000 },
+              { windowKey: 'weekly', windowShort: '7d', remainingFraction: 0.683, resetAtMs: resetGemMs }
+            ]
+          },
+          {
+            poolKey: 'shared_3p_pool',
+            title: 'Claude and GPT models',
+            buckets: [
+              { windowKey: '5h', windowShort: '5h', remainingFraction: 0.25, resetAtMs: nowMs + 3600000 },
+              { windowKey: 'weekly', windowShort: '7d', remainingFraction: 0.90, resetAtMs: resetClaudeMs }
+            ]
+          }
+        ]
+      }
+    });
+    await mgr.refreshAccountQuota('wk-b@example.com', {
+      nowMs,
+      mockQuotaSnapshot: {
+        pools: [
+          {
+            poolKey: 'shared_gemini_argon',
+            title: 'Gemini Models',
+            buckets: [
+              { windowKey: '5h', windowShort: '5h', remainingFraction: 0.40, resetAtMs: nowMs + 3600000 },
+              { windowKey: 'weekly', windowShort: '7d', remainingFraction: 0.55, resetAtMs: resetGemMs }
+            ]
+          },
+          {
+            poolKey: 'shared_3p_pool',
+            title: 'Claude and GPT models',
+            noPermission: true,
+            buckets: []
+          }
+        ]
+      }
+    });
+
+    const ov = mgr.getOverviewState();
+    assert.ok(Array.isArray(ov.accountWeeklyCompare));
+    assert.equal(ov.accountWeeklyCompare.length, 2);
+
+    const aCmp = ov.accountWeeklyCompare.find(x => x.email === 'wk-a@example.com');
+    assert.ok(aCmp);
+    assert.equal(aCmp.families.gemini.remainingPct, 68.3, 'Gemini 必须优先取 Gemini Models 的 7d 周额度，而非 5h 12%');
+    assert.equal(aCmp.families.gemini.usedPct, 31.7);
+    assert.equal(aCmp.families.gemini.requestCount, 3, '应聚合 Hydrogen + Neon + Carbon，排除保活与超期记录');
+    assert.equal(aCmp.families.gemini.uncachedInputTokens, 18000);
+    assert.equal(aCmp.families.gemini.cacheReadTokens, 42000);
+    assert.equal(aCmp.families.gemini.outputTokens, 3500);
+    assert.equal(aCmp.families.gemini.totalTokens, 63500);
+
+    assert.equal(aCmp.families.claude.remainingPct, 90);
+    assert.equal(aCmp.families.claude.usedPct, 10);
+    assert.equal(aCmp.families.claude.requestCount, 1);
+    assert.equal(aCmp.families.claude.totalTokens, 11000);
+
+    const bCmp = ov.accountWeeklyCompare.find(x => x.email === 'wk-b@example.com');
+    assert.ok(bCmp);
+    assert.equal(bCmp.families.gemini.remainingPct, 55);
+    assert.equal(bCmp.families.claude.noPermission, true);
+
+    // 验证渲染层每账号 1 张卡、每卡仅 Gemini / Claude 两行
+    const elements = new Map();
+    const makeNode = (id) => {
+      const attrs = new Map();
+      const clsSet = new Set();
+      const n = {
+        id: id || '',
+        style: { setProperty() {}, removeProperty() {}, getPropertyValue() { return ''; }, display: '' },
+        children: [],
+        options: [],
+        selectedOptions: [],
+        hidden: false,
+        disabled: false,
+        textContent: '',
+        value: '',
+        title: '',
+        className: '',
+        classList: {
+          add(c) { clsSet.add(c); n.className = Array.from(clsSet).join(' '); },
+          remove(c) { clsSet.delete(c); n.className = Array.from(clsSet).join(' '); },
+          contains(c) { return clsSet.has(c); }
+        },
+        addEventListener() {},
+        setAttribute(k, v) { attrs.set(k, String(v)); },
+        getAttribute(k) { return attrs.get(k) ?? null; },
+        removeAttribute(k) { attrs.delete(k); },
+        appendChild(c) { if (c) n.children.push(c); },
+        replaceChildren(...items) { n.children = items.filter(Boolean); },
+        remove() {},
+        contains() { return false; },
+        matches() { return false; },
+        closest() { return null; },
+        querySelector() { return null; },
+        querySelectorAll() { return []; },
+        getBoundingClientRect() { return { left: 100, top: 100, width: 140, height: 24, right: 240, bottom: 124 }; }
+      };
+      if (id) elements.set(id, n);
+      return n;
+    };
+    const host = makeNode('ag-host');
+    host.attachShadow = () => ({
+      set innerHTML(_v) {},
+      getElementById(id) { return elements.get(id) || makeNode(id); },
+      querySelectorAll() { return []; }
+    });
+    let first = true;
+    const vm = require('node:vm');
+    const sandbox = {
+      location: { protocol: 'https:', hostname: '127.0.0.1', pathname: '/c/22222222-2222-2222-2222-222222222222' },
+      document: {
+        createElement: () => (first ? (first = false, host) : makeNode()),
+        getElementById: id => elements.get(id) || null,
+        documentElement: { appendChild() {} },
+        addEventListener() {},
+        removeEventListener() {},
+        hidden: false
+      },
+      window: { __APP_CONFIG__: { csrfToken: 't' }, contextMeterAPI: {} },
+      matchMedia: () => ({ matches: false }),
+      __AGContextMeterCore: core,
+      AbortController,
+      Date,
+      setTimeout: () => 1,
+      clearTimeout() {},
+      setInterval: () => 1,
+      clearInterval() {},
+      localStorage: { getItem: () => null, setItem() {} },
+      fetch: async () => ({ ok: true, json: async () => ({}) }),
+      navigator: {},
+      console,
+      Math,
+      JSON
+    };
+    sandbox.window.document = sandbox.document;
+    sandbox.globalThis = sandbox;
+    const rebuiltSource = fs.readFileSync(path.join(__dirname, 'meter-renderer.js'), 'utf8');
+    vm.runInNewContext(rebuiltSource, sandbox);
+    const api = sandbox.__AGContextMeter;
+    try {
+      await api.setPanelLanguage('zh-CN', { persist: false });
+      api.setAccountsOverviewForTest(ov);
+      const cmpList = elements.get('quota-compare-list');
+      assert.equal(cmpList.children.length, 2, '每个账号应渲染一张周额度对照卡');
+      const cardA = cmpList.children.find(c => c.children?.[0]?.children?.[0]?.textContent?.includes('wk-a@example.com'));
+      assert.ok(cardA);
+      const famRowsA = cardA.children[1].children;
+      assert.equal(famRowsA.length, 2, '每个账号卡片下应仅展示 Gemini 和 Claude 两行');
+      assert.equal(famRowsA[0].getAttribute('data-quota-family'), 'gemini');
+      assert.equal(famRowsA[1].getAttribute('data-quota-family'), 'claude');
+      assert.match(famRowsA[0].children[0].children[1].textContent, /剩余 68\.3% · 已用 31\.7%/);
+      assert.match(famRowsA[0].children[2].textContent, /3 次.*63\.5K/);
+      assert.match(famRowsA[1].children[0].children[1].textContent, /剩余 90% · 已用 10%/);
+      assert.match(famRowsA[1].children[2].textContent, /1 次.*11K/);
+
+      const cardB = cmpList.children.find(c => c.children?.[0]?.children?.[0]?.textContent?.includes('wk-b@example.com'));
+      assert.ok(cardB);
+      assert.equal(cardB.children[1].children[1].children[0].children[1].textContent, '无模型权限');
+    } finally {
+      api.dispose();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

@@ -215,6 +215,72 @@ const DEFAULT_AUTO_SWITCH_CONFIG = Object.freeze({
   candidates: [] // email array
 });
 
+/**
+ * 将额度池对象或池键归类为配额大类 ('gemini' | 'claude' | null)
+ */
+function classifyQuotaPoolFamily(poolOrKey) {
+  const s = typeof poolOrKey === 'string'
+    ? poolOrKey.trim().toLowerCase()
+    : `${poolOrKey?.poolKey || ''} ${poolOrKey?.title || ''}`.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('shared_3p_pool') || /claude|anthropic|sonnet|opus|haiku|gpt|openai|3p/.test(s)) {
+    return 'claude';
+  }
+  if (s.includes('shared_gemini') || /gemini|hydrogen|carbon|argon|neon|flash|orchestrator/.test(s)) {
+    return 'gemini';
+  }
+  return null;
+}
+
+/**
+ * 提取账号某一大类（'gemini' | 'claude'）的代表性周额度 (7d) 信息
+ */
+function extractAccountFamilyWeeklyQuota(quotaSnapshot, family) {
+  const pools = Array.isArray(quotaSnapshot?.pools) ? quotaSnapshot.pools : [];
+  const matched = pools.filter(p => p && classifyQuotaPoolFamily(p) === family);
+  const findWeeklyBucket = (p) => (Array.isArray(p?.buckets) ? p.buckets : []).find(
+    b => b && (b.windowKey === 'weekly' || String(b.windowShort || '').toLowerCase() === '7d')
+  ) || null;
+
+  let chosen = null;
+  if (family === 'gemini') {
+    chosen = matched.find(p => String(p.title || '').trim().toLowerCase() === 'gemini models')
+      || matched.find(p => p.poolKey === 'shared_gemini_main')
+      || matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+      || matched[0]
+      || null;
+  } else {
+    chosen = matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+      || matched[0]
+      || null;
+  }
+
+  const weeklyBucket = chosen ? findWeeklyBucket(chosen) : null;
+  const noPermission = Boolean(chosen?.noPermission);
+  const rawFrac = (!noPermission && weeklyBucket && weeklyBucket.remainingFraction != null && Number.isFinite(Number(weeklyBucket.remainingFraction)))
+    ? Math.max(0, Math.min(1, Number(weeklyBucket.remainingFraction)))
+    : null;
+  const remainingPct = rawFrac != null ? Math.round(rawFrac * 1000) / 10 : null;
+  const usedPct = remainingPct != null ? Math.round((100 - remainingPct) * 10) / 10 : null;
+  const parsedIso = weeklyBucket?.resetTimeIso ? Date.parse(weeklyBucket.resetTimeIso) : NaN;
+  const resetAtMs = (Number.isFinite(Number(weeklyBucket?.resetAtMs)) && Number(weeklyBucket.resetAtMs) > 0)
+    ? Number(weeklyBucket.resetAtMs)
+    : (Number.isFinite(parsedIso) && parsedIso > 0 ? parsedIso : null);
+
+  return {
+    family,
+    poolKey: chosen?.poolKey || null,
+    poolTitle: chosen?.title || '',
+    noPermission,
+    remainingFraction: rawFrac,
+    remainingPct,
+    usedPct,
+    resetAtMs,
+    resetTimeIso: weeklyBucket?.resetTimeIso || null,
+    resetTimeText: weeklyBucket?.resetTimeText || ''
+  };
+}
+
 const DEFAULT_KEEPALIVE_CONFIG = Object.freeze({
   enabled: false,
   experimentApproved: false,
@@ -3174,6 +3240,98 @@ function createAccountsManager(options = {}) {
     return typeof ctx.switchFn === 'function' ? ctx.switchFn : switchActiveAccount;
   }
 
+  function buildAccountWeeklyCompare(store, accountsList, nowMs = Date.now()) {
+    const DAY_MS = 86_400_000;
+    let ledgerCalls;
+    if (collector && typeof collector.loadPricingLedger === 'function') {
+      try {
+        const ledger = collector.loadPricingLedger();
+        if (ledger?.calls && typeof ledger.calls === 'object') {
+          ledgerCalls = Object.values(ledger.calls);
+        }
+      } catch {
+        ledgerCalls = undefined;
+      }
+    }
+
+    const intervals = Array.isArray(store?.quotaIntervals) ? store.quotaIntervals : [];
+    const results = [];
+    for (const acc of (Array.isArray(accountsList) ? accountsList : [])) {
+      const families = {};
+      for (const family of ['gemini', 'claude']) {
+        const wq = extractAccountFamilyWeeklyQuota(acc.quotaSnapshot, family);
+        const hasValidReset = Number.isFinite(wq.resetAtMs) && wq.resetAtMs > nowMs && (wq.resetAtMs - nowMs) <= 8 * DAY_MS;
+        const windowStartMs = hasValidReset ? (wq.resetAtMs - 7 * DAY_MS) : (nowMs - 7 * DAY_MS);
+
+        let localStats = {
+          requestCount: 0,
+          uncachedInputTokens: 0,
+          cacheReadTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0
+        };
+        if (collector && typeof collector.summarizeAccountWindowUsage === 'function') {
+          try {
+            const queried = collector.summarizeAccountWindowUsage({
+              accountScopeKey: acc.accountScopeKey,
+              family,
+              startMs: windowStartMs,
+              endMs: nowMs,
+              ledgerCalls
+            });
+            if (queried && typeof queried === 'object') {
+              localStats = { ...localStats, ...queried };
+            }
+          } catch { }
+        }
+
+        const matchedIvs = intervals
+          .filter(iv => iv
+            && (iv.windowKey === 'weekly' || String(iv.windowShort || '').toLowerCase() === '7d')
+            && iv.accountScopeKey === acc.accountScopeKey
+            && classifyQuotaPoolFamily({ poolKey: iv.poolKey, title: iv.poolTitle }) === family
+            && Number(iv.endAtMs) >= windowStartMs)
+          .sort((a, b) => (Number(a.startAtMs || 0) - Number(b.startAtMs || 0)) || (Number(a.endAtMs || 0) - Number(b.endAtMs || 0)));
+
+        let lastResetIdx = -1;
+        for (let i = 0; i < matchedIvs.length; i++) {
+          if (matchedIvs[i].splitReason === 'quota_reset') lastResetIdx = i;
+        }
+        const segment = lastResetIdx >= 0 ? matchedIvs.slice(lastResetIdx) : matchedIvs;
+        const observedStartPct = segment.length > 0 && Number.isFinite(Number(segment[0].startRemainingPct))
+          ? Number(segment[0].startRemainingPct)
+          : null;
+        const observedDeltaPp = (wq.remainingPct != null && observedStartPct != null && Number.isFinite(observedStartPct))
+          ? Math.round((wq.remainingPct - observedStartPct) * 10) / 10
+          : null;
+
+        families[family] = {
+          ...wq,
+          windowStartMs,
+          windowEndMs: nowMs,
+          observedStartPct,
+          observedDeltaPp,
+          requestCount: localStats.requestCount || 0,
+          uncachedInputTokens: localStats.uncachedInputTokens || 0,
+          cacheReadTokens: localStats.cacheReadTokens || 0,
+          outputTokens: localStats.outputTokens || 0,
+          totalTokens: localStats.totalTokens || 0
+        };
+      }
+
+      results.push({
+        email: acc.email,
+        maskedEmail: acc.maskedEmail,
+        accountScopeKey: acc.accountScopeKey,
+        isActive: Boolean(acc.isActive),
+        tierId: acc.tierId || '',
+        lastQuotaUpdatedAtMs: acc.lastQuotaUpdatedAtMs || null,
+        families
+      });
+    }
+    return results;
+  }
+
   function getOverviewState() {
     const store = loadStore();
     const list = Object.values(store.accounts || {}).map(rec => sanitizeAccountForView(rec, store.activeAccountEmail));
@@ -3193,6 +3351,7 @@ function createAccountsManager(options = {}) {
       activeAccountScopeKey: store.activeAccountEmail ? buildAccountScopeKey(store.activeAccountEmail) : null,
       switchInProgress: isSwitchLockActive(),
       accounts: list,
+      accountWeeklyCompare: buildAccountWeeklyCompare(store, list),
       accountSessions,
       diagnosticsPath: path.join(stateDir, 'oauth_diagnostics.jsonl'),
       lastDiagnostics: (store.lastDiagnostics || []).slice(-10),
@@ -3556,6 +3715,8 @@ module.exports = {
   DEFAULT_AUTO_SWITCH_CONFIG,
   DEFAULT_KEEPALIVE_CONFIG,
   DEFAULT_SWITCH_VERIFY_TIMEOUT_MS,
+  classifyQuotaPoolFamily,
+  extractAccountFamilyWeeklyQuota,
   discoverDaemonHubOrigins,
   requestGetUserStatusDirect,
   normalizeEmail,

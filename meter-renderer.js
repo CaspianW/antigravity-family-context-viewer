@@ -1343,7 +1343,7 @@
       padding:7px 10px;border-radius:7px;margin-bottom:8px;font-size:11px;line-height:1.4;
       border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:var(--ag-text-primary);
     }
-    .quota-banner[hidden],.quota-cur-alert[hidden],.quota-cur-est[hidden],.quota-bucket-est[hidden],#quota-plan-tier-pill[hidden],#btn-quota-banner-restart[hidden],#btn-update-restart[hidden]{display:none !important}
+    .quota-banner[hidden],.quota-bucket-est[hidden],#quota-plan-tier-pill[hidden],#btn-quota-banner-restart[hidden],#btn-update-restart[hidden]{display:none !important}
     .quota-banner .switch-pill-btn{white-space:nowrap;flex-shrink:0}
     .quota-banner[data-tone="error"]{border-color:rgba(239,68,68,0.4);background:rgba(239,68,68,0.12)}
     .quota-times-grid{
@@ -1355,18 +1355,6 @@
     }
     .quota-time-label{font-size:10px;color:var(--ag-text-muted);margin-bottom:2px}
     .quota-time-val{font-size:10.5px;line-height:1.3;font-weight:600;color:var(--ag-text-primary);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .quota-current-card{
-      background:var(--ag-bg-card);border:1px solid var(--ag-border-card);
-      border-radius:8px;padding:10px 11px;margin-bottom:10px;
-    }
-    .quota-cur-model-name{font-size:13px;font-weight:600;color:var(--ag-text-primary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .quota-cur-pool-sub{font-size:10.5px;color:var(--ag-text-muted);margin-top:2px}
-    .quota-cur-est{font-size:10.5px;color:var(--ag-text-secondary);margin-top:3px;font-variant-numeric:tabular-nums}
-    .quota-cur-alert{
-      margin-top:7px;padding:6px 8px;border-radius:6px;font-size:11px;line-height:1.4;
-      background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.28);color:var(--ag-text-secondary);
-    }
-    .quota-cur-alert[data-kind="notice"]{background:rgba(24,144,255,0.08);border-color:rgba(24,144,255,0.26)}
     .quota-buckets-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
     .quota-bucket-row{display:flex;flex-direction:column;gap:3px}
     .quota-bucket-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;gap:6px}
@@ -2399,7 +2387,19 @@
       background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;
       padding:7px 9px;font-size:10.5px;display:flex;flex-direction:column;gap:4px;min-width:0;
     }
-    .quota-acct-card.is-active{border-color:rgba(59,130,246,0.45)}
+    .quota-acct-card.is-active,.quota-compare-card.is-active{border-color:rgba(59,130,246,0.45)}
+    .quota-compare-families{display:flex;flex-direction:column;gap:5px;margin-top:2px}
+    .quota-compare-fam-row{display:flex;flex-direction:column;gap:3px;padding:5px 7px;border-radius:6px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card)}
+    .quota-compare-fam-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+    .quota-compare-fam-name{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ag-text-primary);font-size:10.5px}
+    .quota-compare-fam-tag{font-size:9.5px;font-weight:500;padding:0 5px;border-radius:999px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-muted)}
+    .quota-compare-fam-pct{font-size:10.5px;font-weight:600;color:var(--ag-text-primary);font-variant-numeric:tabular-nums}
+    .quota-compare-bar-track{position:relative;width:100%;height:3.5px;border-radius:999px;background:var(--ag-track-bg);overflow:hidden}
+    .quota-compare-bar-fill{height:100%;border-radius:999px;background:#22c55e;transition:width .2s ease}
+    .quota-compare-bar-fill[data-status="low"]{background:#f59e0b}
+    .quota-compare-bar-fill[data-status="exhausted"]{background:#ef4444}
+    .quota-compare-bar-fill[data-status="no_permission"]{background:#a855f7}
+    .quota-compare-bar-fill[data-status="unknown"]{background:var(--ag-text-muted)}
     .quota-subcard-row{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;min-width:0}
     .quota-acct-email{font-weight:600;color:var(--ag-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
     .quota-acct-meta{color:var(--ag-text-muted);font-size:10px;overflow-wrap:anywhere}
@@ -5309,27 +5309,10 @@
       </div>
     </div>
 
-    <!-- 当前会话模型额度总览 -->
-    <div id="quota-current-card" class="quota-current-card">
-      <div class="key-header">
-        <div style="min-width:0;flex:1">
-          <div style="font-size:10.5px;color:var(--ag-text-muted)" data-i18n="quota.current.label">当前会话模型</div>
-          <div id="quota-cur-model" class="quota-cur-model-name">—</div>
-          <div id="quota-cur-pool" class="quota-cur-pool-sub"></div>
-          <div id="quota-cur-est" class="quota-cur-est" hidden></div>
-        </div>
-        <span id="quota-cur-status" class="key-pill pill-muted" data-i18n="quota.state.unknown">未知</span>
-      </div>
-      <div id="quota-cur-alert" class="quota-cur-alert" hidden></div>
-      <div id="quota-cur-buckets" class="quota-buckets-list"></div>
-    </div>
-
-    <!-- 共享额度池清单（支持浏览切换查看而不修改当前会话模型） -->
+    <!-- 共享额度池清单 -->
     <div class="quota-pools-header">
       <span style="font-size:11.5px;font-weight:600;color:var(--ag-text-secondary)"
         data-i18n="quota.pools.heading">共享额度池与模型分布</span>
-      <span id="quota-pools-browse-hint" style="font-size:10.5px;color:var(--ag-text-muted)"
-        data-i18n="quota.pools.browseHint">点击可查看详情（不切换当前会话模型）</span>
     </div>
     <div id="quota-pools-list" class="quota-pools-list"></div>
 
@@ -5423,28 +5406,14 @@
         </div>
       </div>
 
-      <!-- 本机消耗与共享账号额度变化对照 -->
+      <!-- 本机消耗与共享账号周额度对照 -->
       <div class="quota-subsec-header" style="margin-top:10px">
-        <span class="quota-subsec-title" data-i18n="quota.compareTitle">📊 本机消耗与共享账号额度对照</span>
+        <span class="quota-subsec-title" data-i18n="quota.compareTitle">📊 本机消耗与共享账号周额度对照</span>
       </div>
       <div id="quota-compare-note" class="quota-muted-note" style="margin-bottom:5px" data-i18n="quota.compareDisclaimer">
-        按同一账号与共享池统计。账面百分点下降受多设备使用、取整、重置与滚动恢复影响，不等同于本机单独消耗占比。
+        按账号汇总 Gemini / Claude 总周额度（7d）与本机本周期消耗。账面周余量受多设备共用、取整与滚动重置影响，仅供参考对照。
       </div>
       <div id="quota-compare-list" class="quota-compare-list"></div>
-
-      <!-- 模型 Prompt Cache 保活协议与保障 -->
-      <div class="quota-subsec-header" style="margin-top:10px">
-        <span class="quota-subsec-title" data-i18n="keepalive.title">🧊 模型缓存保活状态与协议核查</span>
-        <span id="keepalive-status-pill" class="key-pill pill-muted" data-i18n="accounts.keepaliveOff">默认关闭</span>
-      </div>
-      <div class="quota-subcard">
-        <div id="keepalive-protocol-summary" class="quota-muted-note"></div>
-        <div id="keepalive-experiment-summary" class="quota-muted-note" style="margin-top:4px"></div>
-        <div class="quota-subcard-row" style="margin-top:6px">
-          <span id="keepalive-runtime-note" class="quota-muted-note"></span>
-          <button id="btn-keepalive-stop" class="switch-pill-btn" type="button" hidden data-i18n="keepalive.stopBtn">立即停止保活</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -6998,11 +6967,9 @@ const PANEL_I18N = {
   'quota.time.reset': { 'zh-CN': '当前额度重置', 'zh-TW': '目前額度重設', en: 'Quota Reset' },
   'quota.time.paused': { 'zh-CN': '后台已暂停', 'zh-TW': '背景已暫停', en: 'Paused (bg)' },
   'quota.time.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-  'quota.current.label': { 'zh-CN': '当前会话模型', 'zh-TW': '目前工作階段模型', en: 'Active Session Model' },
   'quota.current.unmatched': { 'zh-CN': '暂未识别当前模型', 'zh-TW': '暫未識別目前模型', en: 'Active model not detected' },
   'quota.current.tag': { 'zh-CN': '当前使用', 'zh-TW': '目前使用', en: 'Active' },
   'quota.pools.heading': { 'zh-CN': '共享额度池与模型分布', 'zh-TW': '共享額度池與模型分佈', en: 'Shared Quota Pools' },
-  'quota.pools.browseHint': { 'zh-CN': '点击可查看详情（不切换当前会话模型）', 'zh-TW': '點擊可檢視詳情（不切換目前工作階段模型）', en: 'Click to inspect (session model unchanged)' },
   'quota.pools.empty': { 'zh-CN': '暂未获取到共享额度池数据，请点击刷新。', 'zh-TW': '暫未取得共享額度池資料，請點擊重新整理。', en: 'No shared quota pool data yet. Click Refresh.' },
   'quota.basisNote': { 'zh-CN': '百分比与重置时间来自宿主接口；「约剩余 Token」按本机输入+缓存+输出原始 Token 统计，受服务端计费权重、同池模型混用、他端消耗及周期采样覆盖度影响；校准过期或样本不足时不按有效推算展示。', 'zh-TW': '百分比與重設時間來自宿主介面；「約剩餘 Token」按本機輸入+快取+輸出原始 Token 統計，受伺服端計費權重、同池模型混用、他端消耗及週期採樣覆蓋度影響；校準過期或樣本不足時不按有效推算顯示。', en: 'Percentages & reset times come from host APIs. Estimated tokens (~) sum raw local input+cache+output tokens; billing weights, mixed models in one pool, external devices, and cycle coverage affect accuracy. Expired or invalidated calibrations are never shown as reliable.' },
   'quota.usageTip': { 'zh-CN': '💡 用量提示：使用前可先查看各池剩余额度，优先选择余量充足且适合当前任务的模型。', 'zh-TW': '💡 用量提示：使用前可先檢視各池剩餘額度，優先選擇餘量充足且適合目前任務的模型。', en: '💡 Usage tip: Check pool headroom before starting heavy work and pick an available model that fits the task.' },
@@ -7039,11 +7006,15 @@ const PANEL_I18N = {
   'accounts.thresholdLabel': { 'zh-CN': '阈值 (%)', 'zh-TW': '閾值 (%)', en: 'Threshold (%)' },
   'accounts.candidatesLabel': { 'zh-CN': '允许切入的候选账号：', 'zh-TW': '允許切入的候選帳號：', en: 'Candidate accounts allowed:' },
   'accounts.saveRule': { 'zh-CN': '保存切号规则', 'zh-TW': '儲存切號規則', en: 'Save Rule' },
-  'quota.compareTitle': { 'zh-CN': '📊 本机消耗与共享账号额度对照', 'zh-TW': '📊 本機消耗與共享帳號額度對照', en: '📊 Local Usage vs. Shared Quota Deltas' },
-  'quota.compareDisclaimer': { 'zh-CN': '按同一账号与共享池统计。账面百分点下降受多设备使用、取整、重置与滚动恢复影响，不等同于本机单独消耗占比。', 'zh-TW': '依同一帳號與共享池統計。帳面百分點下降受多裝置使用、取整、重置與滾動恢復影響，不等同於本機單獨消耗佔比。', en: 'Scoped per account & pool. Quota percentage-point changes reflect shared multi-device usage, rounding, resets, and rolling recovery — not solely local consumption.' },
-  'quota.compareEmpty': { 'zh-CN': '暂未累积同一账号前后两次配额采样对照区间（刷新配额后自动对比）。', 'zh-TW': '暫未累積同一帳號前後兩次配額採樣對照區間（重新整理配額後自動對比）。', en: 'No completed quota comparison intervals yet. Refresh quota to capture baseline & delta.' },
-  'keepalive.title': { 'zh-CN': '🧊 模型缓存保活状态与协议核查', 'zh-TW': '🧊 模型快取保活狀態與協定核查', en: '🧊 Prompt Cache Keepalive & Protocol Check' },
-  'keepalive.stopBtn': { 'zh-CN': '立即停止保活', 'zh-TW': '立即停止保活', en: 'Stop Keepalive Now' },
+  'quota.compareTitle': { 'zh-CN': '📊 本机消耗与共享账号周额度对照', 'zh-TW': '📊 本機消耗與共享帳號週額度對照', en: '📊 Local Usage vs. Weekly Account Quota' },
+  'quota.compareDisclaimer': { 'zh-CN': '按账号汇总 Gemini / Claude 总周额度（7d）与本机本周期消耗。账面周余量受多设备共用、取整与滚动重置影响，仅供参考对照。', 'zh-TW': '依帳號彙總 Gemini / Claude 總週額度（7d）與本機本週期消耗。帳面週餘量受多裝置共用、取整與滾動重設影響，僅供參考對照。', en: 'Weekly (7d) quota vs. local usage per account, grouped into Gemini and Claude totals. Shared multi-device usage, rounding, and resets affect remaining %.' },
+  'quota.compareEmpty': { 'zh-CN': '暂无已导入账号的周额度对照数据（刷新配额后自动显示）。', 'zh-TW': '暫無已匯入帳號的週額度對照資料（重新整理配額後自動顯示）。', en: 'No account weekly quota data yet. Refresh quota to populate.' },
+  'quota.compare.weeklyTag': { 'zh-CN': '周额度', 'zh-TW': '週額度', en: '7d' },
+  'quota.compare.remainingUsed': { 'zh-CN': '剩余 {rem}% · 已用 {used}%', 'zh-TW': '剩餘 {rem}% · 已用 {used}%', en: '{rem}% left · {used}% used' },
+  'quota.compare.noWeekly': { 'zh-CN': '暂无周额度', 'zh-TW': '暫無週額度', en: 'No weekly quota' },
+  'quota.compare.localUsage': { 'zh-CN': '本机本周：{reqs} 次 · 共 {total}（输入 {in} · 缓存 {cache} · 输出 {out}）', 'zh-TW': '本機本週：{reqs} 次 · 共 {total}（輸入 {in} · 快取 {cache} · 輸出 {out}）', en: 'Local (7d): {reqs} reqs · {total} total (In {in} · Cache {cache} · Out {out})' },
+  'quota.compare.localEmpty': { 'zh-CN': '本机本周：暂无消耗', 'zh-TW': '本機本週：暫無消耗', en: 'Local (7d): No usage' },
+  'quota.compare.resetAt': { 'zh-CN': '重置 {time}', 'zh-TW': '重設 {time}', en: 'Resets {time}' },
   'quota.est.mixedModels': { 'zh-CN': '同池混用模型', 'zh-TW': '同池混用模型', en: 'mixed pool models' },
   'quota.est.cycleUsed': { 'zh-CN': '本周期已记 {used}', 'zh-TW': '本週期已記 {used}', en: 'Cycle used {used}' },
   'quota.state.available': { 'zh-CN': '正常可用', 'zh-TW': '正常可用', en: 'Available' },
@@ -7116,11 +7087,6 @@ const PANEL_I18N = {
   'quota.split.quota_reset': { 'zh-CN': '额度重置', 'zh-TW': '額度重設', en: 'Quota reset' },
   'quota.split.rolling_recovery': { 'zh-CN': '滚动恢复', 'zh-TW': '滾動恢復', en: 'Rolling recovery' },
   'quota.split.sampling_gap': { 'zh-CN': '采样缺口切分', 'zh-TW': '採樣缺口切分', en: 'Sampling gap' },
-  'keepalive.protocolSummary': { 'zh-CN': '协议核查（Antigravity {ver}，已检查 {rpcs} 个 RPC）：在已检查的 RPC 与响应中未发现明确的服务端缓存续期或 TTL 接口，响应亦未见 cacheWriteTokens / cacheTtl；因此不展示虚构到期倒计时，缓存保活保持待验证与默认关闭。', 'zh-TW': '協定核查（Antigravity {ver}，已檢查 {rpcs} 個 RPC）：在已檢查的 RPC 與回應中未發現明確的伺服器端快取續期或 TTL 介面，回應亦未見 cacheWriteTokens / cacheTtl；因此不顯示虛構到期倒數，快取保活維持待驗證與預設關閉。', en: 'Protocol check (Antigravity {ver}, {rpcs} RPCs): No explicit server-side cache TTL or renewal endpoint was found in checked RPCs/responses, and cacheWriteTokens/cacheTtl are omitted; keepalive stays unverified & off.' },
-  'keepalive.experimentSummary': { 'zh-CN': '待确认最小对照实验（{model}，合计 {reqs} 次请求，相同约 20K 只读无工具前缀）：对照组 2 次（0m / 6m）对比实验组 3 次（0m / 4m 仅发 "ok" / 6m），预计总输出 60~150 tok；逐次采集 cacheReadTokens 并在异常/限流/切号/达上限时终止，等待维护者确认。', 'zh-TW': '待確認最小對照實驗（{model}，合計 {reqs} 次請求，相同約 20K 唯讀無工具前綴）：對照組 2 次（0m / 6m）對比實驗組 3 次（0m / 4m 僅發 "ok" / 6m），預計總輸出 60~150 tok；逐次採集 cacheReadTokens 並於異常/限流/切號/達上限時終止，等待維護者確認。', en: 'Pending A/B plan ({reqs} total reqs on {model}, identical ~20K fixed non-tool prefix): Control (2 reqs, 0/6m) vs Keepalive (3 reqs, 0/4m "ok"/6m); collects per-call cacheReadTokens, stops on error/429/switch/limit; awaiting maintainer sign-off.' },
-  'keepalive.blockedReason': { 'zh-CN': '拦截保护：{reason}', 'zh-TW': '攔截保護：{reason}', en: 'Blocked: {reason}' },
-  'keepalive.stopReason': { 'zh-CN': '最近状态：{reason}', 'zh-TW': '最近狀態：{reason}', en: 'Last state: {reason}' },
-  'keepalive.defaultNote': { 'zh-CN': '保活默认关闭，且切换账号/退出/达上限时自动终止。', 'zh-TW': '保活預設關閉，且切換帳號/結束/達上限時自動終止。', en: 'Keepalive disabled by default; stops on account switch, exit, or limit.' },
   'models.summary.pendingConfirm': { 'zh-CN': '待确认', 'zh-TW': '待確認', en: 'Pending' },
   'models.cap.metaUnknown': { 'zh-CN': '未知（待获取元数据）', 'zh-TW': '未知（待取得中繼資料）', en: 'Unknown (pending metadata)' },
   'models.cap.policyUnknown': { 'zh-CN': '未知（待读取运行策略）', 'zh-TW': '未知（待讀取執行策略）', en: 'Unknown (pending policy)' },
@@ -29359,63 +29325,6 @@ var cumLockedKey = null;
       if (tReset.title !== resetStr) tReset.title = resetStr;
     }
 
-    // 当前会话模型概览卡片
-    const curModelEl = el('quota-cur-model');
-    const curPoolEl = el('quota-cur-pool');
-    const curEstEl = el('quota-cur-est');
-    const curStatusEl = el('quota-cur-status');
-    const curAlertEl = el('quota-cur-alert');
-    const curBucketsEl = el('quota-cur-buckets');
-
-    const matchedPoolObj = view.pools.find(p => p.poolKey === view.currentModel?.poolKey);
-
-    if (curModelEl) {
-      setQuotaTextIfChanged(curModelEl, view.currentModel?.productLabel || t('quota.current.unmatched'));
-    }
-    if (curPoolEl) {
-      setQuotaTextIfChanged(curPoolEl, view.currentModel?.poolTitle ? `${view.currentModel.poolTitle}` : '');
-    }
-    if (curEstEl) {
-      const curEstText = !view.currentModel?.noPermission && matchedPoolObj?.primaryBucket?.tokenEstimate
-        ? formatBucketTokenEstimateLine(matchedPoolObj.primaryBucket.tokenEstimate)
-        : '';
-      if (curEstText) {
-        setQuotaHiddenIfChanged(curEstEl, false);
-        setQuotaTextIfChanged(curEstEl, curEstText);
-      } else {
-        setQuotaHiddenIfChanged(curEstEl, true);
-        setQuotaTextIfChanged(curEstEl, '');
-      }
-    }
-    if (curStatusEl) {
-      setQuotaClassIfChanged(curStatusEl, `key-pill ${getQuotaPillClass(view.activeStatus)}`);
-      setQuotaTextIfChanged(curStatusEl, getQuotaStatusLabelText(view.activeStatus));
-    }
-    if (curAlertEl) {
-      if (view.currentModel?.noPermission && view.currentModel?.unavailabilityReason) {
-        setQuotaHiddenIfChanged(curAlertEl, false);
-        setQuotaAttrIfChanged(curAlertEl, 'data-kind', 'noperm');
-        setQuotaTextIfChanged(curAlertEl, view.currentModel.unavailabilityReason);
-      } else if (
-        view.currentModel?.noticeText &&
-        !/^(?:new|beta|preview|updated|notice|recommended)$/i.test(String(view.currentModel.noticeText).trim())
-      ) {
-        setQuotaHiddenIfChanged(curAlertEl, false);
-        setQuotaAttrIfChanged(curAlertEl, 'data-kind', 'notice');
-        setQuotaTextIfChanged(curAlertEl, `Notice: ${view.currentModel.noticeText}`);
-      } else {
-        setQuotaHiddenIfChanged(curAlertEl, true);
-      }
-    }
-    if (curBucketsEl) {
-      renderQuotaBucketsContainer(
-        curBucketsEl,
-        matchedPoolObj?.buckets || [],
-        view.currentModel?.noPermission ? 'no_permission' : null,
-        { animate: shouldAnimate, nowMs, chargeTargets: view.currentModel?.noPermission ? null : chargeBarTargets }
-      );
-    }
-
     // 共享额度池列表（原地复用已有 DOM 卡片，禁止整块摧毁重排，兼顾轻量 mock DOM）
     const listEl = el('quota-pools-list');
     if (listEl) {
@@ -30012,24 +29921,155 @@ var cumLockedKey = null;
     }
   }
 
+  function classifyRendererQuotaFamily(raw) {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return null;
+    if (s.includes('shared_3p_pool') || /claude|anthropic|sonnet|opus|haiku|gpt|openai|3p/.test(s)) return 'claude';
+    if (s.includes('shared_gemini') || /gemini|hydrogen|carbon|argon|neon|flash|orchestrator|bison|palm/.test(s)) return 'gemini';
+    return null;
+  }
+
+  function formatWeeklyPctNum(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return '0';
+    const rounded = Math.round(n * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+
+  function formatWeeklyResetCompact(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    try {
+      const d = new Date(n);
+      if (Number.isNaN(d.getTime())) return '';
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mi = String(d.getMinutes()).padStart(2, '0');
+      return `${mm}/${dd} ${hh}:${mi}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function resolveAccountWeeklyCompareItems(ov) {
+    if (Array.isArray(ov?.accountWeeklyCompare)) return ov.accountWeeklyCompare;
+    const accts = Array.isArray(ov?.accounts) ? ov.accounts : [];
+    const intervals = Array.isArray(ov?.quotaIntervals) ? ov.quotaIntervals : [];
+    const nowMs = Date.now();
+    const DAY_MS = 86_400_000;
+    const toLocalDateKey = (ms) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const findWeeklyBucket = (p) => (Array.isArray(p?.buckets) ? p.buckets : []).find(
+      b => b && (b.windowKey === 'weekly' || String(b.windowShort || '').toLowerCase() === '7d')
+    ) || null;
+
+    return accts.map(acc => {
+      const pools = Array.isArray(acc?.quotaSnapshot?.pools) ? acc.quotaSnapshot.pools : [];
+      const acctUsage = acc?.accountScopeKey
+        ? ANTIGRAVITY_TOKEN_DATA.rawPayload?.usageByAccount?.[acc.accountScopeKey]
+        : null;
+      const families = {};
+      for (const family of ['gemini', 'claude']) {
+        const matched = pools.filter(p => p && classifyRendererQuotaFamily(`${p.poolKey || ''} ${p.title || ''}`) === family);
+        let chosen = null;
+        if (family === 'gemini') {
+          chosen = matched.find(p => String(p.title || '').trim().toLowerCase() === 'gemini models')
+            || matched.find(p => p.poolKey === 'shared_gemini_main')
+            || matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+            || matched[0]
+            || null;
+        } else {
+          chosen = matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+            || matched[0]
+            || null;
+        }
+        const weeklyBucket = chosen ? findWeeklyBucket(chosen) : null;
+        const noPermission = Boolean(chosen?.noPermission);
+        const rawFrac = (!noPermission && weeklyBucket && weeklyBucket.remainingFraction != null && Number.isFinite(Number(weeklyBucket.remainingFraction)))
+          ? Math.max(0, Math.min(1, Number(weeklyBucket.remainingFraction)))
+          : null;
+        const remainingPct = rawFrac != null ? Math.round(rawFrac * 1000) / 10 : null;
+        const usedPct = remainingPct != null ? Math.round((100 - remainingPct) * 10) / 10 : null;
+        const parsedIso = weeklyBucket?.resetTimeIso ? Date.parse(weeklyBucket.resetTimeIso) : NaN;
+        const resetAtMs = (Number.isFinite(Number(weeklyBucket?.resetAtMs)) && Number(weeklyBucket.resetAtMs) > 0)
+          ? Number(weeklyBucket.resetAtMs)
+          : (Number.isFinite(parsedIso) && parsedIso > 0 ? parsedIso : null);
+        const hasValidReset = Number.isFinite(resetAtMs) && resetAtMs > nowMs && (resetAtMs - nowMs) <= 8 * DAY_MS;
+        const windowStartMs = hasValidReset ? (resetAtMs - 7 * DAY_MS) : (nowMs - 7 * DAY_MS);
+
+        let requestCount = 0;
+        let uncachedInputTokens = 0;
+        let cacheReadTokens = 0;
+        let outputTokens = 0;
+        let totalTokens = 0;
+
+        const dailyModelAll = acctUsage?.dailyModelMapBySource?.all;
+        if (dailyModelAll && typeof dailyModelAll === 'object') {
+          const startDateKey = toLocalDateKey(windowStartMs);
+          for (const [dKey, byVariant] of Object.entries(dailyModelAll)) {
+            if (!dKey || dKey < startDateKey || !byVariant || typeof byVariant !== 'object') continue;
+            for (const [vKey, stats] of Object.entries(byVariant)) {
+              if (!stats || typeof stats !== 'object') continue;
+              const meta = acctUsage?.modelMetaByKey?.[vKey];
+              const fam = classifyRendererQuotaFamily(`${vKey} ${meta?.modelKey || ''} ${meta?.modelLabel || ''}`);
+              if (fam !== family) continue;
+              requestCount += Number(stats.steps || 0);
+              uncachedInputTokens += Number(stats.input || 0);
+              cacheReadTokens += Number(stats.cache || 0);
+              outputTokens += Number(stats.output || 0);
+              totalTokens += Number(stats.total || 0);
+            }
+          }
+        } else {
+          for (const iv of intervals) {
+            if (!iv || iv.accountScopeKey !== acc.accountScopeKey) continue;
+            if (iv.windowKey !== 'weekly' && String(iv.windowShort || '').toLowerCase() !== '7d') continue;
+            if (classifyRendererQuotaFamily(`${iv.poolKey || ''} ${iv.poolTitle || ''}`) !== family) continue;
+            if (Number.isFinite(Number(iv.endAtMs)) && Number(iv.endAtMs) < windowStartMs) continue;
+            requestCount += Number(iv.requestCount || 0);
+            uncachedInputTokens += Number(iv.uncachedInputTokens || 0);
+            cacheReadTokens += Number(iv.cacheReadTokens || 0);
+            outputTokens += Number(iv.outputTokens || 0);
+            totalTokens += Number(iv.totalTokens || 0);
+          }
+        }
+
+        families[family] = {
+          family,
+          poolKey: chosen?.poolKey || null,
+          poolTitle: chosen?.title || '',
+          noPermission,
+          remainingFraction: rawFrac,
+          remainingPct,
+          usedPct,
+          resetAtMs,
+          requestCount,
+          uncachedInputTokens,
+          cacheReadTokens,
+          outputTokens,
+          totalTokens
+        };
+      }
+      return {
+        email: acc.email,
+        maskedEmail: acc.maskedEmail,
+        accountScopeKey: acc.accountScopeKey,
+        isActive: Boolean(acc.isActive),
+        tierId: acc.tierId || '',
+        families
+      };
+    });
+  }
+
   function renderAccountsOverviewSection() {
     const ov = accountsUiState.overview || {
       accounts: [],
       autoSwitch: {},
       autoSwitchStatus: { state: 'disabled' },
-      keepalive: {},
-      keepaliveState: {},
-      quotaIntervals: [],
-      protocolEvidence: {
-        checkedVersion: '2.32.1',
-        rpcCountChecked: 375,
-        conclusion: '在已检查的 Antigravity 2.32.1 语言服务 375 个 RPC 和响应中，未发现明确的 Prompt Cache 续期或 TTL 接口，响应亦未见 cacheWriteTokens 或 cacheTtl；因此不展示虚构到期倒计时，缓存保活保持待验证/默认关闭。',
-        minimalExperimentPlan: {
-          targetModel: 'Gemini 4 Hydrogen (High)',
-          totalRequestsPlanned: 5,
-          groupB: '实验组（3 次请求，含 1 次 "ok" 心跳）对比对照组（2 次请求，无保活），约 20K 固定只读前缀、预计总输出 60~150 tok，待维护者确认后再发实验请求。'
-        }
-      }
+      quotaIntervals: []
     };
     const isEn = currentPanelLanguage === 'en';
     const isTw = currentPanelLanguage === 'zh-TW';
@@ -30230,89 +30270,117 @@ var cumLockedKey = null;
       }
     }
 
-    // 4. ELV-57 配额变化对照表
+    // 4. 按账号汇总周额度（仅分 Gemini / Claude 总池，仅看 7d 周额度）与本机本周消耗对照
     const cmpEl = el('quota-compare-list');
     if (cmpEl) {
       cmpEl.replaceChildren();
-      const intervals = Array.isArray(ov.quotaIntervals) ? ov.quotaIntervals.slice(0, 8) : [];
-      if (!intervals.length) {
+      const compareItems = resolveAccountWeeklyCompareItems(ov);
+      if (!compareItems.length) {
         const emp = document.createElement('div');
         emp.className = 'quota-muted-note';
         emp.textContent = t('quota.compareEmpty');
         cmpEl.appendChild(emp);
       } else {
-        for (const iv of intervals) {
+        for (const item of compareItems) {
           const card = document.createElement('div');
-          card.className = 'quota-compare-card';
-          const deltaLabel = iv.deltaPp < 0
-            ? (isEn ? `-${Math.abs(iv.deltaPp)} pp` : (isTw ? `下降 ${Math.abs(iv.deltaPp)} 個百分點` : `下降 ${Math.abs(iv.deltaPp)} 个百分点`))
-            : (iv.deltaPp > 0 ? (isEn ? `+${iv.deltaPp} pp` : (isTw ? `回升 ${iv.deltaPp} 個百分點` : `回升 ${iv.deltaPp} 个百分点`)) : (isEn ? '0 pp' : (isTw ? '無變化' : '无变化')));
-          const splitText = iv.splitReason
-            ? (t(`quota.split.${iv.splitReason}`) !== `quota.split.${iv.splitReason}` ? t(`quota.split.${iv.splitReason}`) : iv.splitReason)
-            : '';
-          const splitBadge = splitText ? ` [${splitText}]` : '';
-          const sTime = new Date(iv.startAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          const eTime = new Date(iv.endAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          card.className = `quota-compare-card${item.isActive ? ' is-active' : ''}`;
+
           const head = document.createElement('div');
           head.className = 'quota-subcard-row';
-          head.innerHTML = '';
-          const hLeft = document.createElement('strong');
-          hLeft.textContent = `${iv.poolTitle} (${iv.windowShort || iv.windowKey}) · ${iv.startRemainingPct}% → ${iv.endRemainingPct}% (${deltaLabel})`;
-          const hRight = document.createElement('span');
-          hRight.className = 'quota-acct-meta';
-          hRight.textContent = `${sTime}–${eTime}${splitBadge}`;
+          const hLeft = document.createElement('span');
+          hLeft.className = 'quota-acct-email';
+          hLeft.textContent = `${item.email}${item.tierId ? ` · ${item.tierId}` : ''}`;
+          hLeft.title = item.email || '';
           head.appendChild(hLeft);
-          head.appendChild(hRight);
-
-          const body = document.createElement('div');
-          body.className = 'quota-acct-meta';
-          body.textContent = isEn
-            ? `Account: ${iv.email} · Local reqs: ${iv.requestCount} | Uncached In: ${formatTokensK(iv.uncachedInputTokens)} · Cache Read: ${formatTokensK(iv.cacheReadTokens)} · Out: ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · Sampling gap split' : ''}`
-            : (isTw
-              ? `帳號: ${iv.email} · 本機請求 ${iv.requestCount} 次 | 未快取輸入 ${formatTokensK(iv.uncachedInputTokens)} · 快取讀取 ${formatTokensK(iv.cacheReadTokens)} · 輸出 ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · 含採樣缺口已切分' : ''}`
-              : `账号: ${iv.email} · 本机请求 ${iv.requestCount} 次 | 未缓存输入 ${formatTokensK(iv.uncachedInputTokens)} · 缓存读取 ${formatTokensK(iv.cacheReadTokens)} · 输出 ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · 含采样缺口已切分' : ''}`);
+          if (item.isActive) {
+            const activePill = document.createElement('span');
+            activePill.className = 'key-pill pill-good';
+            activePill.textContent = t('accounts.activeTag');
+            head.appendChild(activePill);
+          }
           card.appendChild(head);
-          card.appendChild(body);
+
+          const famList = document.createElement('div');
+          famList.className = 'quota-compare-families';
+          for (const [famKey, famLabel] of [['gemini', 'Gemini'], ['claude', 'Claude']]) {
+            const fam = item.families?.[famKey] || {};
+            const row = document.createElement('div');
+            row.className = 'quota-compare-fam-row';
+            row.setAttribute?.('data-quota-family', famKey);
+
+            const famHead = document.createElement('div');
+            famHead.className = 'quota-compare-fam-head';
+            const famNameWrap = document.createElement('span');
+            famNameWrap.className = 'quota-compare-fam-name';
+            const famNameTxt = document.createElement('span');
+            famNameTxt.textContent = famLabel;
+            const famTag = document.createElement('span');
+            famTag.className = 'quota-compare-fam-tag';
+            famTag.textContent = t('quota.compare.weeklyTag');
+            famNameWrap.appendChild(famNameTxt);
+            famNameWrap.appendChild(famTag);
+
+            const famPctEl = document.createElement('span');
+            famPctEl.className = 'quota-compare-fam-pct';
+            let statusKey = 'unknown';
+            let widthPct = 0;
+            if (fam.noPermission) {
+              famPctEl.textContent = t('accounts.poolNoAccess');
+              statusKey = 'no_permission';
+            } else if (fam.remainingPct != null && Number.isFinite(Number(fam.remainingPct))) {
+              const remNum = Math.max(0, Math.min(100, Number(fam.remainingPct)));
+              const usedNum = fam.usedPct != null && Number.isFinite(Number(fam.usedPct))
+                ? Math.max(0, Math.min(100, Number(fam.usedPct)))
+                : Math.round((100 - remNum) * 10) / 10;
+              famPctEl.textContent = t('quota.compare.remainingUsed', {
+                rem: formatWeeklyPctNum(remNum),
+                used: formatWeeklyPctNum(usedNum)
+              });
+              widthPct = remNum;
+              statusKey = remNum <= 0 ? 'exhausted' : (remNum <= 20 ? 'low' : 'available');
+            } else {
+              famPctEl.textContent = t('quota.compare.noWeekly');
+            }
+            famHead.appendChild(famNameWrap);
+            famHead.appendChild(famPctEl);
+            row.appendChild(famHead);
+
+            const track = document.createElement('div');
+            track.className = 'quota-compare-bar-track';
+            const fill = document.createElement('div');
+            fill.className = 'quota-compare-bar-fill';
+            fill.setAttribute?.('data-status', statusKey);
+            if (fill.style) fill.style.width = `${widthPct}%`;
+            track.appendChild(fill);
+            row.appendChild(track);
+
+            const meta = document.createElement('div');
+            meta.className = 'quota-acct-meta';
+            const reqs = Number(fam.requestCount || 0);
+            const totTok = Number(fam.totalTokens || 0);
+            const usageStr = (reqs > 0 || totTok > 0)
+              ? t('quota.compare.localUsage', {
+                reqs,
+                total: formatTokensK(totTok),
+                in: formatTokensK(fam.uncachedInputTokens || 0),
+                cache: formatTokensK(fam.cacheReadTokens || 0),
+                out: formatTokensK(fam.outputTokens || 0)
+              })
+              : t('quota.compare.localEmpty');
+            const resetStr = fam.resetAtMs ? formatWeeklyResetCompact(fam.resetAtMs) : '';
+            meta.textContent = resetStr
+              ? `${usageStr} · ${t('quota.compare.resetAt', { time: resetStr })}`
+              : usageStr;
+            row.appendChild(meta);
+
+            famList.appendChild(row);
+          }
+
+          card.appendChild(famList);
           cmpEl.appendChild(card);
         }
       }
     }
-
-    // 5. ELV-52 保活协议证据与安全控制
-    const kaPill = el('keepalive-status-pill');
-    const kaProto = el('keepalive-protocol-summary');
-    const kaExp = el('keepalive-experiment-summary');
-    const kaRun = el('keepalive-runtime-note');
-    const kaStopBtn = el('btn-keepalive-stop');
-    const ka = ov.keepalive || {};
-    const ks = ov.keepaliveState || {};
-    if (kaPill) {
-      kaPill.textContent = ks.running
-        ? (isEn ? 'Running' : (isTw ? '保活執行中' : '保活运行中'))
-        : (isEn ? 'Unverified · Off' : (isTw ? '待驗證 · 預設關閉' : '待验证 · 默认关闭'));
-      kaPill.className = `key-pill ${ks.running ? 'pill-warn' : 'pill-muted'}`;
-    }
-    if (kaProto && ov.protocolEvidence) {
-      kaProto.textContent = t('keepalive.protocolSummary', {
-        ver: ov.protocolEvidence.checkedVersion || '2.32.1',
-        rpcs: ov.protocolEvidence.rpcCountChecked || 375
-      });
-    }
-    if (kaExp && ov.protocolEvidence?.minimalExperimentPlan) {
-      const plan = ov.protocolEvidence.minimalExperimentPlan;
-      kaExp.textContent = t('keepalive.experimentSummary', {
-        reqs: plan.totalRequestsPlanned || 5,
-        model: plan.targetModel || 'Gemini 4 Hydrogen (High)'
-      });
-    }
-    if (kaRun) {
-      const blockedTxt = ks.blockedReason && typeof translateBackendText === 'function' ? translateBackendText(ks.blockedReason) : ks.blockedReason;
-      const stopTxt = ks.stopReason && typeof translateBackendText === 'function' ? translateBackendText(ks.stopReason) : ks.stopReason;
-      kaRun.textContent = blockedTxt
-        ? t('keepalive.blockedReason', { reason: blockedTxt })
-        : (stopTxt ? t('keepalive.stopReason', { reason: stopTxt }) : t('keepalive.defaultNote'));
-    }
-    if (kaStopBtn) kaStopBtn.hidden = !ks.running;
 
     syncTokenAccountFilterOptions(ANTIGRAVITY_TOKEN_DATA.rawPayload);
     if (accountsUiState.removeModal?.open) renderAccountRemoveModal();
@@ -30533,7 +30601,6 @@ var cumLockedKey = null;
   el('btn-acct-import-current')?.addEventListener('click', () => void performAccountAction('import_current'));
   el('btn-acct-import-tools')?.addEventListener('click', () => void performAccountAction('import_tools'));
   el('btn-acct-oauth-add')?.addEventListener('click', () => void performAccountAction('oauth_login'));
-  el('btn-keepalive-stop')?.addEventListener('click', () => void performAccountAction('stop_keepalive', { reason: 'manual_button' }));
   el('btn-save-auto-switch')?.addEventListener('click', () => {
     const enabled = Boolean(el('chk-auto-switch-enabled')?.checked);
     const poolKey = el('sel-auto-switch-pool')?.value || 'shared_gemini_main';
@@ -31205,8 +31272,7 @@ var cumLockedKey = null;
       feedbackTone: accountsUiState.feedbackTone || 'info',
       accountCount: el('quota-accounts-list')?.children?.length || 0,
       compareCount: el('quota-compare-list')?.children?.length || 0,
-      autoSwitchStatus: el('auto-switch-status-pill')?.textContent || '',
-      keepaliveStatus: el('keepalive-status-pill')?.textContent || ''
+      autoSwitchStatus: el('auto-switch-status-pill')?.textContent || ''
     }),
     isDisposedForTest: () => Boolean(state.disposed),
     dispose() {

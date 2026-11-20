@@ -801,7 +801,7 @@ test('刷新交互：原地 DOM 节点复用、不清空归零、220ms 平滑数
   const listEl = h.elements.get('quota-pools-list');
   assert.ok(listEl.children.length >= 3);
   const firstPoolCardBefore = listEl.children[0];
-  const curBucketsBefore = h.elements.get('quota-cur-buckets');
+  const curBucketsBefore = firstPoolCardBefore.children[2];
   const firstRowBefore = curBucketsBefore.children[0];
   const fillBefore = firstRowBefore.children[1].children[0];
   assert.equal(fillBefore.style.transform, 'scaleX(0.4506)');
@@ -1182,17 +1182,38 @@ test('实机回归保护：暗黑宿主切浅色不继承黑背景且过滤纯�
     userStatusRes,
     quotaSummaryRes
   }, nowMs);
-  assert.equal(h.elements.get('quota-cur-alert').hidden, true);
+  assert.equal(h.elements.get('quota-cur-model'), undefined, '已移除当前会话模型独立卡片节点');
+  const findChipNotice = (productLabel) => {
+    const poolsEl = h.elements.get('quota-pools-list');
+    for (const card of (poolsEl?.children || [])) {
+      const chipsBox = card.children?.[3];
+      for (const chip of (chipsBox?.children || [])) {
+        if (chip.children?.[0]?.textContent === productLabel) {
+          return (chip.children || []).find(c => String(c.className || '').includes('quota-chip-notice')) || null;
+        }
+      }
+    }
+    return null;
+  };
+  assert.equal(findChipNotice('Gemini 4 Hydrogen'), null, '装饰性 New 标签不应渲染 Notice 角标');
+  assert.equal(api.getModelQuotaStateForTest(nowMs).view.currentModel?.noticeText ?? null, null);
 
   api.setContextLatestForTest({ model: 'GPT-OSS 120B (Medium)', modelId: 'MODEL_OPENAI_GPT_OSS_120B_MEDIUM', actual: 1000, budget: 128000 });
-  assert.equal(h.elements.get('quota-cur-alert').hidden, false);
-  assert.equal(h.elements.get('quota-cur-alert').textContent, 'Notice: GPT-OSS will be removed from Antigravity on November 18, 2026.');
+  const gptNoticeChip = findChipNotice('GPT-OSS 120B');
+  assert.ok(gptNoticeChip, '真实模型通知应在共享池模型标签中显示 Notice 角标');
+  assert.equal(gptNoticeChip.title, 'GPT-OSS will be removed from Antigravity on November 18, 2026.');
+  assert.equal(api.getModelQuotaStateForTest(nowMs).view.currentModel?.noticeText, 'GPT-OSS will be removed from Antigravity on November 18, 2026.');
 
   // 4. UI 展示回归：异常或过期校准不得渲染为“实耗差值校准”，缺失完整周期覆盖不误显虚构数字
   api.setContextLatestForTest(
     { model: 'Gemini 4 Hydrogen (High)', modelId: 'MODEL_PLACEHOLDER_M28', actual: 1000, budget: 256000 },
     userStatusRes.userStatus.cascadeModelConfigData.clientModelConfigs
   );
+  const getGemPrimaryEstText = () => {
+    const poolsEl = h.elements.get('quota-pools-list');
+    const gemCard = (poolsEl?.children || []).find(c => c.getAttribute('data-pool-key') === 'shared_gemini_main');
+    return gemCard?.children?.[2]?.children?.[0]?.children?.[2]?.textContent || '';
+  };
   // 场景 A: 无本地历史且周期已消耗 55% (remainingFraction 0.45065)，本地 recentModelUsage 为空 -> externalDivergence -> incomplete_samples
   api.setQuotaSnapshotForTest({
     accountScopeKey: 'acct_ui_guard',
@@ -1200,8 +1221,8 @@ test('实机回归保护：暗黑宿主切浅色不继承黑背景且过滤纯�
     userStatusRes,
     quotaSummaryRes
   }, nowMs);
-  assert.match(h.elements.get('quota-cur-est').textContent, /检测到未采集消耗或采样失真/);
-  assert.doesNotMatch(h.elements.get('quota-cur-est').textContent, /实耗差值校准/);
+  assert.match(getGemPrimaryEstText(), /检测到未采集消耗或采样失真/);
+  assert.doesNotMatch(getGemPrimaryEstText(), /实耗差值校准/);
 
   // 场景 B: 预置先验有效 delta 校准，此时同周期大幅扣减 -> 渲染 stale_with_divergence 警告文案，绝不展示“实耗差值校准”
   h.sandbox.localStorage.setItem('ag_quota_token_cal_v2_acct_ui_guard2', JSON.stringify({
@@ -1225,8 +1246,8 @@ test('实机回归保护：暗黑宿主切浅色不继承黑背景且过滤纯�
     userStatusRes,
     quotaSummaryRes
   }, nowMs);
-  assert.match(h.elements.get('quota-cur-est').textContent, /历史校准不可靠（检测到未采集消耗）/);
-  assert.doesNotMatch(h.elements.get('quota-cur-est').textContent, /实耗差值校准/);
+  assert.match(getGemPrimaryEstText(), /历史校准不可靠（检测到未采集消耗）/);
+  assert.doesNotMatch(getGemPrimaryEstText(), /实耗差值校准/);
 
   api.dispose();
 });
@@ -1279,7 +1300,7 @@ test('核心估算回归：有效 cycle_estimated / delta_calibrated 不残留�
     const apiNoDom = hNoDom.sandbox.__AGContextMeter;
     apiNoDom.setQuotaSnapshotForTest({ accountScopeKey: 'acct_nodom', fetchedAtMs: nowMs, userStatusRes, quotaSummaryRes }, nowMs);
     assert.equal(apiNoDom.getModelQuotaStateForTest(nowMs).view.activeStatus, 'unknown');
-    assert.equal(hNoDom.elements.get('quota-cur-model').textContent, '暂未识别当前模型');
+    assert.equal(apiNoDom.getModelQuotaStateForTest(nowMs).view.currentModel, null);
     apiNoDom.dispose();
 
     // 2. 无 state.route（首页 /）但宿主页面有 [data-testid="model-selector-trigger"] 无括号显示 "Gemini 4 Hydrogen Medium"
@@ -1300,13 +1321,24 @@ test('核心估算回归：有效 cycle_estimated / delta_calibrated 不残留�
     hWithDom.sandbox.document.querySelectorAll = (sel) => (sel === '[data-testid="model-selector-trigger"]' ? [mockTrigger] : origQuerySelectorAll(sel));
     hWithDom.sandbox.document.querySelector = (sel) => (sel === '[data-testid="model-selector-trigger"]' ? mockTrigger : origQuerySelector(sel));
 
+    const getHighlightedChipLabel = (harness) => {
+      for (const card of (harness.elements.get('quota-pools-list')?.children || [])) {
+        for (const chip of (card.children?.[3]?.children || [])) {
+          if (chip.getAttribute('data-current-model') === 'true') {
+            return chip.children?.[0]?.textContent || '';
+          }
+        }
+      }
+      return '';
+    };
     const apiWithDom = hWithDom.sandbox.__AGContextMeter;
     apiWithDom.setQuotaSnapshotForTest({ accountScopeKey: 'acct_withdom', fetchedAtMs: nowMs, userStatusRes, quotaSummaryRes }, nowMs);
     // 通过宿主 DOM（无 route）强制触发一次 render()（如同首页初始化 render），验证识别为 Gemini 4 Hydrogen
     apiWithDom.setContextLatestForTest(null, userStatusRes.userStatus.cascadeModelConfigData.clientModelConfigs);
     const v1 = apiWithDom.getModelQuotaStateForTest(nowMs).view;
     assert.equal(v1.currentModel?.productKey, 'product:google:gemini-4-hydrogen');
-    assert.equal(hWithDom.elements.get('quota-cur-model').textContent, 'Gemini 4 Hydrogen');
+    assert.equal(v1.currentModel?.productLabel, 'Gemini 4 Hydrogen');
+    assert.equal(getHighlightedChipLabel(hWithDom), 'Gemini 4 Hydrogen');
     assert.notEqual(v1.activeStatus, 'unknown');
 
     // 切换宿主触发器为同池第二个模型 "Gemini 3.8 Flash Medium" 后再走一次 render，必须精准落到 Gemini 3.8 Flash 而非共享池第 0 项
@@ -1314,7 +1346,8 @@ test('核心估算回归：有效 cycle_estimated / delta_calibrated 不残留�
     apiWithDom.setContextLatestForTest(null, userStatusRes.userStatus.cascadeModelConfigData.clientModelConfigs);
     const v2 = apiWithDom.getModelQuotaStateForTest(nowMs).view;
     assert.equal(v2.currentModel?.productKey, 'product:google:gemini-3.8-flash');
-    assert.equal(hWithDom.elements.get('quota-cur-model').textContent, 'Gemini 3.8 Flash');
+    assert.equal(v2.currentModel?.productLabel, 'Gemini 3.8 Flash');
+    assert.equal(getHighlightedChipLabel(hWithDom), 'Gemini 3.8 Flash');
 
     apiWithDom.dispose();
   });
@@ -1370,7 +1403,7 @@ test('手动刷新动效与防闪烁回归：按钮/时间文字不抽动、无�
   assert.equal(btnRefresh.getAttribute('data-busy'), 'true');
   assert.equal(btnRefreshText.textContent, '刷新');
   assert.equal(tNext.textContent, initialNextText);
-  assert.notEqual(h.elements.get('quota-cur-model').textContent, '暂未识别当前模型');
+  assert.equal(api.getModelQuotaStateForTest(nowMs).view.currentModel?.productLabel, 'Gemini 4 Hydrogen');
 
   // 3. 首次手动刷新返回“数据未变化”同内容新快照 -> 触发已更新反馈、进度条不重建
   const sameViewSnap = api.getModelQuotaStateForTest(nowMs).view;
@@ -1406,10 +1439,10 @@ test('手动刷新动效与防闪烁回归：按钮/时间文字不抽动、无�
   api.showQuotaPanelForTest(true);
   const viewQuotaEl = h.elements.get('view-quota');
   viewQuotaEl.scrollTop = 148;
-  const curModelNode = h.elements.get('quota-cur-model');
+  const firstTitleNode = firstCardRef.children[0].children[0];
   let curModelTextWrites = 0;
-  let curModelRawText = curModelNode.textContent;
-  Object.defineProperty(curModelNode, 'textContent', {
+  let curModelRawText = firstTitleNode.textContent;
+  Object.defineProperty(firstTitleNode, 'textContent', {
     configurable: true,
     get: () => curModelRawText,
     set: v => { curModelTextWrites += 1; curModelRawText = String(v); }
@@ -1519,13 +1552,14 @@ test('额度进度条充能动画：仅手动刷新成功后按真实比例与�
     await h.flush();
   }
 
-  const curBuckets = h.elements.get('quota-cur-buckets');
+  const listEl = h.elements.get('quota-pools-list');
+  const gemCard = listEl.children.find(c => c.getAttribute('data-pool-key') === 'shared_gemini_main');
+  const curBuckets = gemCard.children[2];
   const curRow = curBuckets.children[0];
   const curTrack = curRow.children[1];
   const curFill = curTrack.children[0];
   const curStage = curTrack.children[1];
 
-  const listEl = h.elements.get('quota-pools-list');
   const pool3pCard = listEl.children.find(c => c.getAttribute('data-pool-key') === 'shared_3p_pool');
   const pool3pBuckets = pool3pCard.children[2];
   const zeroTrack = pool3pBuckets.children[0].children[1];
@@ -1667,7 +1701,8 @@ test('额度进度条充能动画：prefers-reduced-motion 降级为静态成功
     await h.flush();
   }
 
-  const curTrack = h.elements.get('quota-cur-buckets').children[0].children[1];
+  const gemCard = h.elements.get('quota-pools-list').children.find(c => c.getAttribute('data-pool-key') === 'shared_gemini_main');
+  const curTrack = gemCard.children[2].children[0].children[1];
   const curStage = curTrack.children[1];
 
   const changedSummary = JSON.parse(JSON.stringify(quotaSummaryRes));
@@ -2366,7 +2401,9 @@ test('ELV-83 全矩阵回归：Carbon/Hydrogen/Sonnet 权限校验、同账号�
 
     // 3a. 顶栏、额度看板、上下文模型列表三端全部一致（Carbon 86%, Hydrogen 94%, Sonnet 耗尽）
     assert.equal(h.elements.get('quota-badge-val').textContent, '86%');
-    assert.equal(h.elements.get('quota-cur-status').textContent, '正常可用');
+    assert.equal(api.getModelQuotaStateForTest().view.activeStatus, 'available');
+    const carbonPoolCard = () => h.elements.get('quota-pools-list').children.find(c => c.getAttribute('data-pool-key') === 'shared_gemini_carbon');
+    assert.match(carbonPoolCard().children[0].children[1].children[1].textContent, /正常可用/);
     assert.equal(h.elements.get('quota-banner').hidden, true);
     assert.equal(h.elements.get('btn-quota-banner-restart').hidden, true);
     assert.equal(chipVal(findChipByPart('carbon')), '86%');
@@ -2378,7 +2415,8 @@ test('ELV-83 全矩阵回归：Carbon/Hydrogen/Sonnet 权限校验、同账号�
     await api.refreshQuotaForTest(true);
     await h.flush();
     assert.equal(h.elements.get('quota-badge-val').textContent, '无权限');
-    assert.equal(h.elements.get('quota-cur-status').textContent, '权限不足');
+    assert.equal(api.getModelQuotaStateForTest().view.activeStatus, 'no_permission');
+    assert.match(carbonPoolCard().children[0].children[1].children[1].textContent, /权限不足/);
     assert.equal(chipVal(findChipByPart('carbon')), '无权限');
     assert.equal(chipVal(findChipByPart('hydrogen')), '无权限');
     assert.equal(h.elements.get('quota-banner').hidden, true, '版本已对齐且无待重启时，权限不足不得靠重启提示掩盖');
@@ -2632,4 +2670,13 @@ test('隔离额度请求遇到窗口未就绪、CSRF 缺失及 401/403 鉴权失
   assert.equal(authFailRes.errorKind, 'auth');
   assert.notEqual(authFailRes.snapshot.activeStatus, 'exhausted');
   assert.notEqual(authFailRes.snapshot.activeStatus, 'no_permission');
+});
+
+test('模型额度看板精简回归：已移除当前会话模型卡片与保活协议核查区块', () => {
+  const tpl = fs.readFileSync(path.join(__dirname, 'src/renderer/template.html'), 'utf8');
+  const built = fs.readFileSync(path.join(__dirname, 'meter-renderer.js'), 'utf8');
+  for (const deadId of ['quota-current-card', 'quota-cur-model', 'quota-pools-browse-hint', 'keepalive-protocol-summary', 'keepalive-experiment-summary', 'btn-keepalive-stop']) {
+    assert.equal(tpl.includes(deadId), false, `template.html 不应再包含 ${deadId}`);
+    assert.equal(built.includes(`id="${deadId}"`), false, `meter-renderer.js 不应再包含 ${deadId}`);
+  }
 });

@@ -15601,63 +15601,6 @@
       if (tReset.title !== resetStr) tReset.title = resetStr;
     }
 
-    // 当前会话模型概览卡片
-    const curModelEl = el('quota-cur-model');
-    const curPoolEl = el('quota-cur-pool');
-    const curEstEl = el('quota-cur-est');
-    const curStatusEl = el('quota-cur-status');
-    const curAlertEl = el('quota-cur-alert');
-    const curBucketsEl = el('quota-cur-buckets');
-
-    const matchedPoolObj = view.pools.find(p => p.poolKey === view.currentModel?.poolKey);
-
-    if (curModelEl) {
-      setQuotaTextIfChanged(curModelEl, view.currentModel?.productLabel || t('quota.current.unmatched'));
-    }
-    if (curPoolEl) {
-      setQuotaTextIfChanged(curPoolEl, view.currentModel?.poolTitle ? `${view.currentModel.poolTitle}` : '');
-    }
-    if (curEstEl) {
-      const curEstText = !view.currentModel?.noPermission && matchedPoolObj?.primaryBucket?.tokenEstimate
-        ? formatBucketTokenEstimateLine(matchedPoolObj.primaryBucket.tokenEstimate)
-        : '';
-      if (curEstText) {
-        setQuotaHiddenIfChanged(curEstEl, false);
-        setQuotaTextIfChanged(curEstEl, curEstText);
-      } else {
-        setQuotaHiddenIfChanged(curEstEl, true);
-        setQuotaTextIfChanged(curEstEl, '');
-      }
-    }
-    if (curStatusEl) {
-      setQuotaClassIfChanged(curStatusEl, `key-pill ${getQuotaPillClass(view.activeStatus)}`);
-      setQuotaTextIfChanged(curStatusEl, getQuotaStatusLabelText(view.activeStatus));
-    }
-    if (curAlertEl) {
-      if (view.currentModel?.noPermission && view.currentModel?.unavailabilityReason) {
-        setQuotaHiddenIfChanged(curAlertEl, false);
-        setQuotaAttrIfChanged(curAlertEl, 'data-kind', 'noperm');
-        setQuotaTextIfChanged(curAlertEl, view.currentModel.unavailabilityReason);
-      } else if (
-        view.currentModel?.noticeText &&
-        !/^(?:new|beta|preview|updated|notice|recommended)$/i.test(String(view.currentModel.noticeText).trim())
-      ) {
-        setQuotaHiddenIfChanged(curAlertEl, false);
-        setQuotaAttrIfChanged(curAlertEl, 'data-kind', 'notice');
-        setQuotaTextIfChanged(curAlertEl, `Notice: ${view.currentModel.noticeText}`);
-      } else {
-        setQuotaHiddenIfChanged(curAlertEl, true);
-      }
-    }
-    if (curBucketsEl) {
-      renderQuotaBucketsContainer(
-        curBucketsEl,
-        matchedPoolObj?.buckets || [],
-        view.currentModel?.noPermission ? 'no_permission' : null,
-        { animate: shouldAnimate, nowMs, chargeTargets: view.currentModel?.noPermission ? null : chargeBarTargets }
-      );
-    }
-
     // 共享额度池列表（原地复用已有 DOM 卡片，禁止整块摧毁重排，兼顾轻量 mock DOM）
     const listEl = el('quota-pools-list');
     if (listEl) {
@@ -16254,24 +16197,155 @@
     }
   }
 
+  function classifyRendererQuotaFamily(raw) {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return null;
+    if (s.includes('shared_3p_pool') || /claude|anthropic|sonnet|opus|haiku|gpt|openai|3p/.test(s)) return 'claude';
+    if (s.includes('shared_gemini') || /gemini|hydrogen|carbon|argon|neon|flash|orchestrator|bison|palm/.test(s)) return 'gemini';
+    return null;
+  }
+
+  function formatWeeklyPctNum(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return '0';
+    const rounded = Math.round(n * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+
+  function formatWeeklyResetCompact(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    try {
+      const d = new Date(n);
+      if (Number.isNaN(d.getTime())) return '';
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mi = String(d.getMinutes()).padStart(2, '0');
+      return `${mm}/${dd} ${hh}:${mi}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function resolveAccountWeeklyCompareItems(ov) {
+    if (Array.isArray(ov?.accountWeeklyCompare)) return ov.accountWeeklyCompare;
+    const accts = Array.isArray(ov?.accounts) ? ov.accounts : [];
+    const intervals = Array.isArray(ov?.quotaIntervals) ? ov.quotaIntervals : [];
+    const nowMs = Date.now();
+    const DAY_MS = 86_400_000;
+    const toLocalDateKey = (ms) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const findWeeklyBucket = (p) => (Array.isArray(p?.buckets) ? p.buckets : []).find(
+      b => b && (b.windowKey === 'weekly' || String(b.windowShort || '').toLowerCase() === '7d')
+    ) || null;
+
+    return accts.map(acc => {
+      const pools = Array.isArray(acc?.quotaSnapshot?.pools) ? acc.quotaSnapshot.pools : [];
+      const acctUsage = acc?.accountScopeKey
+        ? ANTIGRAVITY_TOKEN_DATA.rawPayload?.usageByAccount?.[acc.accountScopeKey]
+        : null;
+      const families = {};
+      for (const family of ['gemini', 'claude']) {
+        const matched = pools.filter(p => p && classifyRendererQuotaFamily(`${p.poolKey || ''} ${p.title || ''}`) === family);
+        let chosen = null;
+        if (family === 'gemini') {
+          chosen = matched.find(p => String(p.title || '').trim().toLowerCase() === 'gemini models')
+            || matched.find(p => p.poolKey === 'shared_gemini_main')
+            || matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+            || matched[0]
+            || null;
+        } else {
+          chosen = matched.find(p => findWeeklyBucket(p)?.remainingFraction != null)
+            || matched[0]
+            || null;
+        }
+        const weeklyBucket = chosen ? findWeeklyBucket(chosen) : null;
+        const noPermission = Boolean(chosen?.noPermission);
+        const rawFrac = (!noPermission && weeklyBucket && weeklyBucket.remainingFraction != null && Number.isFinite(Number(weeklyBucket.remainingFraction)))
+          ? Math.max(0, Math.min(1, Number(weeklyBucket.remainingFraction)))
+          : null;
+        const remainingPct = rawFrac != null ? Math.round(rawFrac * 1000) / 10 : null;
+        const usedPct = remainingPct != null ? Math.round((100 - remainingPct) * 10) / 10 : null;
+        const parsedIso = weeklyBucket?.resetTimeIso ? Date.parse(weeklyBucket.resetTimeIso) : NaN;
+        const resetAtMs = (Number.isFinite(Number(weeklyBucket?.resetAtMs)) && Number(weeklyBucket.resetAtMs) > 0)
+          ? Number(weeklyBucket.resetAtMs)
+          : (Number.isFinite(parsedIso) && parsedIso > 0 ? parsedIso : null);
+        const hasValidReset = Number.isFinite(resetAtMs) && resetAtMs > nowMs && (resetAtMs - nowMs) <= 8 * DAY_MS;
+        const windowStartMs = hasValidReset ? (resetAtMs - 7 * DAY_MS) : (nowMs - 7 * DAY_MS);
+
+        let requestCount = 0;
+        let uncachedInputTokens = 0;
+        let cacheReadTokens = 0;
+        let outputTokens = 0;
+        let totalTokens = 0;
+
+        const dailyModelAll = acctUsage?.dailyModelMapBySource?.all;
+        if (dailyModelAll && typeof dailyModelAll === 'object') {
+          const startDateKey = toLocalDateKey(windowStartMs);
+          for (const [dKey, byVariant] of Object.entries(dailyModelAll)) {
+            if (!dKey || dKey < startDateKey || !byVariant || typeof byVariant !== 'object') continue;
+            for (const [vKey, stats] of Object.entries(byVariant)) {
+              if (!stats || typeof stats !== 'object') continue;
+              const meta = acctUsage?.modelMetaByKey?.[vKey];
+              const fam = classifyRendererQuotaFamily(`${vKey} ${meta?.modelKey || ''} ${meta?.modelLabel || ''}`);
+              if (fam !== family) continue;
+              requestCount += Number(stats.steps || 0);
+              uncachedInputTokens += Number(stats.input || 0);
+              cacheReadTokens += Number(stats.cache || 0);
+              outputTokens += Number(stats.output || 0);
+              totalTokens += Number(stats.total || 0);
+            }
+          }
+        } else {
+          for (const iv of intervals) {
+            if (!iv || iv.accountScopeKey !== acc.accountScopeKey) continue;
+            if (iv.windowKey !== 'weekly' && String(iv.windowShort || '').toLowerCase() !== '7d') continue;
+            if (classifyRendererQuotaFamily(`${iv.poolKey || ''} ${iv.poolTitle || ''}`) !== family) continue;
+            if (Number.isFinite(Number(iv.endAtMs)) && Number(iv.endAtMs) < windowStartMs) continue;
+            requestCount += Number(iv.requestCount || 0);
+            uncachedInputTokens += Number(iv.uncachedInputTokens || 0);
+            cacheReadTokens += Number(iv.cacheReadTokens || 0);
+            outputTokens += Number(iv.outputTokens || 0);
+            totalTokens += Number(iv.totalTokens || 0);
+          }
+        }
+
+        families[family] = {
+          family,
+          poolKey: chosen?.poolKey || null,
+          poolTitle: chosen?.title || '',
+          noPermission,
+          remainingFraction: rawFrac,
+          remainingPct,
+          usedPct,
+          resetAtMs,
+          requestCount,
+          uncachedInputTokens,
+          cacheReadTokens,
+          outputTokens,
+          totalTokens
+        };
+      }
+      return {
+        email: acc.email,
+        maskedEmail: acc.maskedEmail,
+        accountScopeKey: acc.accountScopeKey,
+        isActive: Boolean(acc.isActive),
+        tierId: acc.tierId || '',
+        families
+      };
+    });
+  }
+
   function renderAccountsOverviewSection() {
     const ov = accountsUiState.overview || {
       accounts: [],
       autoSwitch: {},
       autoSwitchStatus: { state: 'disabled' },
-      keepalive: {},
-      keepaliveState: {},
-      quotaIntervals: [],
-      protocolEvidence: {
-        checkedVersion: '2.32.1',
-        rpcCountChecked: 375,
-        conclusion: '在已检查的 Antigravity 2.32.1 语言服务 375 个 RPC 和响应中，未发现明确的 Prompt Cache 续期或 TTL 接口，响应亦未见 cacheWriteTokens 或 cacheTtl；因此不展示虚构到期倒计时，缓存保活保持待验证/默认关闭。',
-        minimalExperimentPlan: {
-          targetModel: 'Gemini 4 Hydrogen (High)',
-          totalRequestsPlanned: 5,
-          groupB: '实验组（3 次请求，含 1 次 "ok" 心跳）对比对照组（2 次请求，无保活），约 20K 固定只读前缀、预计总输出 60~150 tok，待维护者确认后再发实验请求。'
-        }
-      }
+      quotaIntervals: []
     };
     const isEn = currentPanelLanguage === 'en';
     const isTw = currentPanelLanguage === 'zh-TW';
@@ -16472,89 +16546,117 @@
       }
     }
 
-    // 4. ELV-57 配额变化对照表
+    // 4. 按账号汇总周额度（仅分 Gemini / Claude 总池，仅看 7d 周额度）与本机本周消耗对照
     const cmpEl = el('quota-compare-list');
     if (cmpEl) {
       cmpEl.replaceChildren();
-      const intervals = Array.isArray(ov.quotaIntervals) ? ov.quotaIntervals.slice(0, 8) : [];
-      if (!intervals.length) {
+      const compareItems = resolveAccountWeeklyCompareItems(ov);
+      if (!compareItems.length) {
         const emp = document.createElement('div');
         emp.className = 'quota-muted-note';
         emp.textContent = t('quota.compareEmpty');
         cmpEl.appendChild(emp);
       } else {
-        for (const iv of intervals) {
+        for (const item of compareItems) {
           const card = document.createElement('div');
-          card.className = 'quota-compare-card';
-          const deltaLabel = iv.deltaPp < 0
-            ? (isEn ? `-${Math.abs(iv.deltaPp)} pp` : (isTw ? `下降 ${Math.abs(iv.deltaPp)} 個百分點` : `下降 ${Math.abs(iv.deltaPp)} 个百分点`))
-            : (iv.deltaPp > 0 ? (isEn ? `+${iv.deltaPp} pp` : (isTw ? `回升 ${iv.deltaPp} 個百分點` : `回升 ${iv.deltaPp} 个百分点`)) : (isEn ? '0 pp' : (isTw ? '無變化' : '无变化')));
-          const splitText = iv.splitReason
-            ? (t(`quota.split.${iv.splitReason}`) !== `quota.split.${iv.splitReason}` ? t(`quota.split.${iv.splitReason}`) : iv.splitReason)
-            : '';
-          const splitBadge = splitText ? ` [${splitText}]` : '';
-          const sTime = new Date(iv.startAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          const eTime = new Date(iv.endAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          card.className = `quota-compare-card${item.isActive ? ' is-active' : ''}`;
+
           const head = document.createElement('div');
           head.className = 'quota-subcard-row';
-          head.innerHTML = '';
-          const hLeft = document.createElement('strong');
-          hLeft.textContent = `${iv.poolTitle} (${iv.windowShort || iv.windowKey}) · ${iv.startRemainingPct}% → ${iv.endRemainingPct}% (${deltaLabel})`;
-          const hRight = document.createElement('span');
-          hRight.className = 'quota-acct-meta';
-          hRight.textContent = `${sTime}–${eTime}${splitBadge}`;
+          const hLeft = document.createElement('span');
+          hLeft.className = 'quota-acct-email';
+          hLeft.textContent = `${item.email}${item.tierId ? ` · ${item.tierId}` : ''}`;
+          hLeft.title = item.email || '';
           head.appendChild(hLeft);
-          head.appendChild(hRight);
-
-          const body = document.createElement('div');
-          body.className = 'quota-acct-meta';
-          body.textContent = isEn
-            ? `Account: ${iv.email} · Local reqs: ${iv.requestCount} | Uncached In: ${formatTokensK(iv.uncachedInputTokens)} · Cache Read: ${formatTokensK(iv.cacheReadTokens)} · Out: ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · Sampling gap split' : ''}`
-            : (isTw
-              ? `帳號: ${iv.email} · 本機請求 ${iv.requestCount} 次 | 未快取輸入 ${formatTokensK(iv.uncachedInputTokens)} · 快取讀取 ${formatTokensK(iv.cacheReadTokens)} · 輸出 ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · 含採樣缺口已切分' : ''}`
-              : `账号: ${iv.email} · 本机请求 ${iv.requestCount} 次 | 未缓存输入 ${formatTokensK(iv.uncachedInputTokens)} · 缓存读取 ${formatTokensK(iv.cacheReadTokens)} · 输出 ${formatTokensK(iv.outputTokens)}${iv.hasSamplingGap ? ' · 含采样缺口已切分' : ''}`);
+          if (item.isActive) {
+            const activePill = document.createElement('span');
+            activePill.className = 'key-pill pill-good';
+            activePill.textContent = t('accounts.activeTag');
+            head.appendChild(activePill);
+          }
           card.appendChild(head);
-          card.appendChild(body);
+
+          const famList = document.createElement('div');
+          famList.className = 'quota-compare-families';
+          for (const [famKey, famLabel] of [['gemini', 'Gemini'], ['claude', 'Claude']]) {
+            const fam = item.families?.[famKey] || {};
+            const row = document.createElement('div');
+            row.className = 'quota-compare-fam-row';
+            row.setAttribute?.('data-quota-family', famKey);
+
+            const famHead = document.createElement('div');
+            famHead.className = 'quota-compare-fam-head';
+            const famNameWrap = document.createElement('span');
+            famNameWrap.className = 'quota-compare-fam-name';
+            const famNameTxt = document.createElement('span');
+            famNameTxt.textContent = famLabel;
+            const famTag = document.createElement('span');
+            famTag.className = 'quota-compare-fam-tag';
+            famTag.textContent = t('quota.compare.weeklyTag');
+            famNameWrap.appendChild(famNameTxt);
+            famNameWrap.appendChild(famTag);
+
+            const famPctEl = document.createElement('span');
+            famPctEl.className = 'quota-compare-fam-pct';
+            let statusKey = 'unknown';
+            let widthPct = 0;
+            if (fam.noPermission) {
+              famPctEl.textContent = t('accounts.poolNoAccess');
+              statusKey = 'no_permission';
+            } else if (fam.remainingPct != null && Number.isFinite(Number(fam.remainingPct))) {
+              const remNum = Math.max(0, Math.min(100, Number(fam.remainingPct)));
+              const usedNum = fam.usedPct != null && Number.isFinite(Number(fam.usedPct))
+                ? Math.max(0, Math.min(100, Number(fam.usedPct)))
+                : Math.round((100 - remNum) * 10) / 10;
+              famPctEl.textContent = t('quota.compare.remainingUsed', {
+                rem: formatWeeklyPctNum(remNum),
+                used: formatWeeklyPctNum(usedNum)
+              });
+              widthPct = remNum;
+              statusKey = remNum <= 0 ? 'exhausted' : (remNum <= 20 ? 'low' : 'available');
+            } else {
+              famPctEl.textContent = t('quota.compare.noWeekly');
+            }
+            famHead.appendChild(famNameWrap);
+            famHead.appendChild(famPctEl);
+            row.appendChild(famHead);
+
+            const track = document.createElement('div');
+            track.className = 'quota-compare-bar-track';
+            const fill = document.createElement('div');
+            fill.className = 'quota-compare-bar-fill';
+            fill.setAttribute?.('data-status', statusKey);
+            if (fill.style) fill.style.width = `${widthPct}%`;
+            track.appendChild(fill);
+            row.appendChild(track);
+
+            const meta = document.createElement('div');
+            meta.className = 'quota-acct-meta';
+            const reqs = Number(fam.requestCount || 0);
+            const totTok = Number(fam.totalTokens || 0);
+            const usageStr = (reqs > 0 || totTok > 0)
+              ? t('quota.compare.localUsage', {
+                reqs,
+                total: formatTokensK(totTok),
+                in: formatTokensK(fam.uncachedInputTokens || 0),
+                cache: formatTokensK(fam.cacheReadTokens || 0),
+                out: formatTokensK(fam.outputTokens || 0)
+              })
+              : t('quota.compare.localEmpty');
+            const resetStr = fam.resetAtMs ? formatWeeklyResetCompact(fam.resetAtMs) : '';
+            meta.textContent = resetStr
+              ? `${usageStr} · ${t('quota.compare.resetAt', { time: resetStr })}`
+              : usageStr;
+            row.appendChild(meta);
+
+            famList.appendChild(row);
+          }
+
+          card.appendChild(famList);
           cmpEl.appendChild(card);
         }
       }
     }
-
-    // 5. ELV-52 保活协议证据与安全控制
-    const kaPill = el('keepalive-status-pill');
-    const kaProto = el('keepalive-protocol-summary');
-    const kaExp = el('keepalive-experiment-summary');
-    const kaRun = el('keepalive-runtime-note');
-    const kaStopBtn = el('btn-keepalive-stop');
-    const ka = ov.keepalive || {};
-    const ks = ov.keepaliveState || {};
-    if (kaPill) {
-      kaPill.textContent = ks.running
-        ? (isEn ? 'Running' : (isTw ? '保活執行中' : '保活运行中'))
-        : (isEn ? 'Unverified · Off' : (isTw ? '待驗證 · 預設關閉' : '待验证 · 默认关闭'));
-      kaPill.className = `key-pill ${ks.running ? 'pill-warn' : 'pill-muted'}`;
-    }
-    if (kaProto && ov.protocolEvidence) {
-      kaProto.textContent = t('keepalive.protocolSummary', {
-        ver: ov.protocolEvidence.checkedVersion || '2.32.1',
-        rpcs: ov.protocolEvidence.rpcCountChecked || 375
-      });
-    }
-    if (kaExp && ov.protocolEvidence?.minimalExperimentPlan) {
-      const plan = ov.protocolEvidence.minimalExperimentPlan;
-      kaExp.textContent = t('keepalive.experimentSummary', {
-        reqs: plan.totalRequestsPlanned || 5,
-        model: plan.targetModel || 'Gemini 4 Hydrogen (High)'
-      });
-    }
-    if (kaRun) {
-      const blockedTxt = ks.blockedReason && typeof translateBackendText === 'function' ? translateBackendText(ks.blockedReason) : ks.blockedReason;
-      const stopTxt = ks.stopReason && typeof translateBackendText === 'function' ? translateBackendText(ks.stopReason) : ks.stopReason;
-      kaRun.textContent = blockedTxt
-        ? t('keepalive.blockedReason', { reason: blockedTxt })
-        : (stopTxt ? t('keepalive.stopReason', { reason: stopTxt }) : t('keepalive.defaultNote'));
-    }
-    if (kaStopBtn) kaStopBtn.hidden = !ks.running;
 
     syncTokenAccountFilterOptions(ANTIGRAVITY_TOKEN_DATA.rawPayload);
     if (accountsUiState.removeModal?.open) renderAccountRemoveModal();
@@ -16775,7 +16877,6 @@
   el('btn-acct-import-current')?.addEventListener('click', () => void performAccountAction('import_current'));
   el('btn-acct-import-tools')?.addEventListener('click', () => void performAccountAction('import_tools'));
   el('btn-acct-oauth-add')?.addEventListener('click', () => void performAccountAction('oauth_login'));
-  el('btn-keepalive-stop')?.addEventListener('click', () => void performAccountAction('stop_keepalive', { reason: 'manual_button' }));
   el('btn-save-auto-switch')?.addEventListener('click', () => {
     const enabled = Boolean(el('chk-auto-switch-enabled')?.checked);
     const poolKey = el('sel-auto-switch-pool')?.value || 'shared_gemini_main';
@@ -17447,8 +17548,7 @@
       feedbackTone: accountsUiState.feedbackTone || 'info',
       accountCount: el('quota-accounts-list')?.children?.length || 0,
       compareCount: el('quota-compare-list')?.children?.length || 0,
-      autoSwitchStatus: el('auto-switch-status-pill')?.textContent || '',
-      keepaliveStatus: el('keepalive-status-pill')?.textContent || ''
+      autoSwitchStatus: el('auto-switch-status-pill')?.textContent || ''
     }),
     isDisposedForTest: () => Boolean(state.disposed),
     dispose() {
