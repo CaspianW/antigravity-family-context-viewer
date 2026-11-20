@@ -85,6 +85,20 @@ npx wrangler deploy
 
 切换服务器会重新要求本机账号分类。原服务器已接收的数据由原服务器保存。同一份修改版插件应从这个开发分支更新，使用原版的在线更新会替换本插件。
 
+## AI 智能体跨系统部署与版本更新
+
+如果你希望让 Windows、macOS 或 Linux 上的 AI 助手帮你**首次部署**或**同步升级本家庭分支版本**，请直接指示它阅读 [`AGENTS.md`](AGENTS.md) 并运行统一入口 [`deploy.js`](deploy.js)：
+
+```sh
+# 首次部署（保留后续家庭接入配置能力）
+node deploy.js
+
+# 日常版本更新（自动拉取 git 更新、注入最新插件并保留本机 family_sync_config.json 与账本）
+node deploy.js --pull
+```
+
+> 更新只会替换客户端插件包体并自动附带 `--enable-meter`，不会覆盖本机状态目录下的 `family_sync_config.json`、`family_sync_state.json` 或 `pricing_ledger_v1.json`。切勿使用客户端菜单里的原版在线更新替换本分支。
+
 ## 本地验证
 
 在源码仓库根目录运行测试。

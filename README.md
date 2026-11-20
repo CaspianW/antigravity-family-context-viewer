@@ -36,27 +36,31 @@ https://github.com/user-attachments/assets/46e3a6f9-5127-4470-a2ef-01525736ec5b
 
 ---
 
-## 🤖 给 AI 智能体的一键安装指令 (For AI Agents)
+## 🤖 给 AI 智能体的一键部署与更新指令 (For AI Agents)
 
-如果你将本仓库交给 AI 助手安装，只需对 AI 说：**“读取仓库里的 `AGENTS.md` 或 `README.md`，帮我安装这个上下文查看器与 Token 看板”**。
+如果你将本仓库交给 Windows、macOS 或 Linux 上的任意 AI 助手部署或升级，只需对 AI 说：
 
-AI 智能体只需在仓库根目录执行以下命令完成持久化安装，**涉及主进程/预加载/新模块升级（如 0.8.5）必须完全重启客户端**：
+> **“读取仓库 `https://github.com/CaspianW/antigravity-family-context-viewer` 里的 `AGENTS.md`，帮我自动部署（或拉取最新版本并更新）这个插件。”**
+
+AI 智能体只需在仓库根目录运行统一部署脚本 [`deploy.js`](deploy.js)（零外部依赖，需要 Node.js `>= 22.4.0`，**会自动启用 `--enable-meter` 并保留本机 `family_sync_config.json` 与账本**）：
 
 ```bash
-# 1. 持久化写入 ASAR 与全部插件模块
-node cli.js install
+# 首次部署（克隆本分支仓库后执行）
+node deploy.js
 
-# 2. 完全退出所有 Antigravity 窗口（含系统托盘图标中的“退出”）并重新打开
+# 后续版本更新（自动 git pull --ff-only + 重新注入 + 检查是否需要重启客户端）
+node deploy.js --pull
 
-# 3. 重启后验证安装与模块运行状态
-node cli.js status
+# 如需 AI 解析结构化结果或先做只读预检
+node deploy.js --pull --json
+node deploy.js --dry-run --json
 ```
 
-> [!IMPORTANT] **AI 智能体执行与验证边界规范（见 [`AGENTS.md`](AGENTS.md)）**：
-> - **零外部依赖**：内置原生 Node.js ASAR 解包/封包引擎（[`asar-engine.js`](asar-engine.js)），无需执行 `npm install`。
-> - **`node cli.js live` 验证范围说明**：CDP 免改盘热注入（以及安装器附带的热挂载）**仅能加载前端渲染层，用来检查 UI 排版与静态/渲染文案**；无法更新运行中进程的主进程钩子 (`meter-main.js`)、预加载桥接接口 (`preload`) 或新后台模块 (`meter-enhance.js`)，切勿把 `live` 热注入当作完整升级验收。
-> - **严禁在对话内强杀宿主进程**：在 Antigravity 会话内执行时，切勿关闭或杀死 `Antigravity.exe`；持久化安装后需由用户手动完全退出并重启客户端后再核查 `status`。
-> - **汉化与上下文边界**：安装器检查未修改文件的 SHA-256，以检测对其他补丁内容的意外修改。显示预算变更与补丁加载均不等于真实超长请求已被服务端通过。
+> [!IMPORTANT] **AI 智能体执行与验证边界规范（完整规则见 [`AGENTS.md`](AGENTS.md)）**：
+> - **拉取源约束**：本家庭魔改版必须通过 `CaspianW/antigravity-family-context-viewer` 的 `git pull` / `node deploy.js --pull` 更新；**切勿**使用插件内置的在线更新功能（指向原版仓库）。
+> - **零外部依赖 & 非交互脚本**：无需执行 `npm install`；Windows 下切勿让 Agent 调用末尾带 `pause` 的 `.bat` 脚本，直接运行 `node deploy.js`。
+> - **`--enable-meter` 与自定义路径**：`deploy.js` 会自动附带 `--enable-meter` 写入持久化配置；若目标机器客户端装在非默认路径，追加 `--path "<app.asar 路径>"`。
+> - **严禁在对话内强杀宿主进程**：若 Windows 下因运行中锁定导致 `ASAR_LOCKED`，或 `deploy.js` 输出 `restartRequired: true`（涉及主进程 `meter-main.js`、同步模块或预加载钩子更新），必须提示用户**手动完全退出所有 Antigravity 窗口（含托盘退出）并重开**，不可把 `node cli.js live` 前端热挂载当作完整升级验收。
 
 ---
 

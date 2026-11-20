@@ -19,6 +19,7 @@ const DIST_DIR = outDirArgIdx !== -1 && process.argv[outDirArgIdx + 1]
 
 const COMMON_FILES = [
   'cli.js',
+  'deploy.js',
   'install.js',
   'restore.js',
   'live-host.js',
