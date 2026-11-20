@@ -920,25 +920,28 @@ test('integrated verification: legacy payload without referenceCost calculates d
   assert.equal(nonPaidBadge.textContent, 'API折算 · 非实付');
   assert.match(scopeDesc.textContent, /全部来源/);
 
-  // 4. 验证展开与收起围绕右侧锚点自适应展开与收拢
+  // 4. 验证费用展开与收起保持固定 730px 宽度（不再切换 cost-compact-view，left 锚点严格不变）
   const compactLeft = parseInt(pTokens.style.left, 10);
+  assert.ok(!String(pTokens.className || '').includes('cost-compact-view'), '费用摘要态不得添加缩窄类 cost-compact-view');
   // 点击展开
   toggleBtn.click();
   assert.equal(detailsPane.style.display, 'block');
   assert.equal(toggleBtn.textContent, '收起详情 ▴');
   const expandedLeft = parseInt(pTokens.style.left, 10);
-  assert.ok(expandedLeft <= compactLeft); // 宽度增加时向左下方展开，left 变小
+  assert.equal(expandedLeft, compactLeft, '展开费用详情时面板宽度与 left 锚点必须保持完全一致');
+  assert.ok(!String(pTokens.className || '').includes('cost-compact-view'));
 
   // 点击收起
   toggleBtn.click();
   assert.equal(detailsPane.style.display, 'none');
   assert.equal(toggleBtn.textContent, '展开详情 ▼');
   const collapsedLeft = parseInt(pTokens.style.left, 10);
-  assert.equal(collapsedLeft, compactLeft); // 收拢时向右上方收回相同锚点
+  assert.equal(collapsedLeft, compactLeft, '收起费用详情时面板宽度与 left 锚点必须保持完全一致');
 
-  // 5. 切换回 Token 统计视图，热力图与统计卡片恢复
+  // 5. 切换回 Token 统计视图，热力图与统计卡片恢复且锚点一致
   h.elements.get('tok-view-tokens').click();
   assert.equal(tokensMain.style.display, 'block');
+  assert.equal(parseInt(pTokens.style.left, 10), compactLeft, '切换回 Token 统计视图时面板位置与宽度严格一致');
 
   h.sandbox.__AGContextMeter.dispose();
 });
@@ -6739,28 +6742,114 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
   }
 });
 
-test('模型额度浮窗 (#panel-quota) 深墨绿主题（暗色与浅色模式）并保留低余量琥珀与耗尽红色语义', () => {
+test('分面板仅点缀色主题（#panel-quota 墨绿 / #panel 深蓝 / #panel-speed 暖琥珀金）：底色与正文字体严格跟随系统且保留告警语义', () => {
   const pathMod = require('node:path');
   const cssSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
 
-  // 1. 暗色墨绿底色、边框、标题与状态条
-  assert.match(cssSrc, /#panel-quota\{[^}]*#081914/i, '暗色模式下 #panel-quota 必须采用深墨绿渐变底色');
-  assert.match(cssSrc, /#panel-quota\s+\.panel-title-text\{[^}]*#d1fae5/i, '暗色模式下 #panel-quota 标题为协调浅翡翠白');
-  assert.match(cssSrc, /\.quota-bar-fill\{[^}]*#0f4c3a[^}]*#10b981/i, '正常额度进度条采用墨绿到翡翠绿渐变');
-  assert.match(cssSrc, /\.quota-pool-card\[data-active-current="true"\]\{[^}]*rgba\(16,185,129/i, '活跃模型池卡片高亮保持墨绿语义');
+  // 1. 严格禁止将面板/顶栏/卡片/弹窗/菜单底色或正文色染成整片绿色（彻底移除 0bee9a2 的满屏底色覆写）
+  assert.doesNotMatch(cssSrc, /#081914|#0a1f19|#0b211b|#0f2d23|#f2faf6|#e7f4ed|#e4f6ed/i, '不得对面板/卡片/菜单覆写整片墨绿底色');
+  assert.match(cssSrc, /#panel-quota\{width:460px;max-width:calc\(100vw - 24px\)\}/, '#panel-quota 自身仅声明锁定宽度，继承系统底色与正文变量');
+  assert.doesNotMatch(cssSrc, /#panel-quota\s+\.panel-header-bar\s*\{/, '#panel-quota 顶栏必须继承中性系统底色');
+  assert.doesNotMatch(cssSrc, /#panel-quota\s+\.ag-modal-card\s*\{/, '#panel-quota 弹窗必须继承中性系统底色');
+  assert.doesNotMatch(cssSrc, /#panel-quota\s+\.ag-dropdown-menu\s*\{/, '#panel-quota 下拉菜单必须继承中性系统底色');
+  assert.doesNotMatch(cssSrc, /\.quota-pool-card\[data-active-current="true"\]\{[^}]*background\s*:/i, '活跃模型池卡片仅高亮边框，不得覆盖中性底色');
+  assert.doesNotMatch(cssSrc, /\.quota-acct-card\.is-active,\.quota-compare-card\.is-active\{[^}]*background\s*:/i, '活跃账号卡片仅高亮边框，不得覆盖中性底色');
 
-  // 2. 浅色柔和薄荷墨绿主题覆盖
-  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-quota[\s\S]*?\{[^}]*#f2faf6/i, '浅色模式下 #panel-quota 必须具备协调墨绿/薄荷底色');
-  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-quota\s+\.panel-title-text[\s\S]*?\{[^}]*#0f4c3a/i, '浅色模式下 #panel-quota 标题保持高对比深墨绿');
-  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-pool-card\[data-active-current="true"\][\s\S]*?\{[^}]*#e4f6ed/i, '浅色模式下活跃卡片采用薄荷翡翠高亮');
-
-  // 3. 严禁覆盖告警色：低余量保留琥珀色、耗尽保留红色、无权限保留紫色
+  // 2. #panel-quota 墨绿色点缀（深/浅双主题 + 告警色严格保留）
+  assert.match(cssSrc, /#panel-quota\s+\.panel-title-text\{color:#10b981/i);
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-quota\s+\.panel-title-text[\s\S]*?\{color:#047857/i);
+  assert.match(cssSrc, /#panel-quota\s+\.switch-pill-btn\.active,\s*\n\s*#panel-quota\s+\.unlock-btn-primary\{[^}]*#065f46[^}]*#059669/i);
+  assert.match(cssSrc, /\.quota-bar-fill\{[^}]*#065f46[^}]*#10b981/i, '正常额度进度条采用墨绿点缀渐变');
+  assert.match(cssSrc, /\.quota-compare-bar-fill\{[^}]*#065f46[^}]*#10b981/i, '账号周额度对比条采用墨绿点缀渐变');
+  assert.match(cssSrc, /\.quota-pool-card\[data-active-current="true"\]\{[^}]*rgba\(16,185,129/i, '活跃模型池卡片边框保持墨绿高亮');
+  assert.match(cssSrc, /#panel-quota\s+input\[type="checkbox"\]\{accent-color:#059669/i);
   assert.match(cssSrc, /\.quota-bar-fill\[data-status="low"\]\{[^}]*#f59e0b/i, '低余量告警必须保留琥珀色');
   assert.match(cssSrc, /\.quota-bar-fill\[data-status="exhausted"\]\{[^}]*#ef4444/i, '耗尽告警必须保留红色');
-  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="low"\][\s\S]*?\{[^}]*217,119,6/i, '浅色低余量扫光保留深琥珀色');
-  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="exhausted"\][\s\S]*?\{[^}]*220,38,38/i, '浅色耗尽扫光保留深红色');
   assert.match(cssSrc, /\.quota-bar-fill\[data-status="no_permission"\]\{[^}]*#a855f7/i, '无权限状态保持紫色语义');
-  assert.match(source, /#panel-quota\{[^}]*#081914/i, '构建产物 meter-renderer.js 必须同步包含墨绿主题样式');
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="low"\][\s\S]*?\{[^}]*217,119,6/i);
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="exhausted"\][\s\S]*?\{[^}]*220,38,38/i);
+
+  // 3. #panel (当前会话上下文) 深蓝色点缀（深/浅双主题 + 高占用/危险态保留）
+  assert.match(cssSrc, /#panel\s+\.panel-title-text\{color:#60a5fa/i);
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel\s+\.panel-title-text[\s\S]*?\{color:#1d4ed8/i);
+  assert.match(cssSrc, /#panel\s+#ctx-tabs-bar\s+\.ctx-tab-btn\.active\{[^}]*rgba\(29,78,216/i);
+  assert.match(cssSrc, /#panel\s+\.unlock-btn-primary,\s*\n\s*#panel\s+#btn-compact-context\{[^}]*#1e40af[^}]*#2563eb/i);
+  assert.match(cssSrc, /#panel\s+\.key-bar-fill\{[^}]*#1e40af[^}]*#2563eb/i);
+  assert.match(cssSrc, /:host\(\[data-occupancy="warn"\]\)\s+#panel\s+\.key-bar-fill[\s\S]*?background:var\(--ag-ring-warn\)/i, '上下文高占用告警色必须保留');
+  assert.match(cssSrc, /:host\(\[data-occupancy="danger"\]\)\s+#panel\s+\.key-bar-fill[\s\S]*?background:var\(--ag-ring-danger\)/i, '上下文超限/危险告警色必须保留');
+  assert.match(cssSrc, /#panel\s+#ctx-auto-compact-badge\.pill-good[\s\S]*?rgba\(29,78,216/i);
+  assert.match(cssSrc, /#panel\s+input\[type="checkbox"\]\{accent-color:#2563eb/i);
+
+  // 4. #panel-speed (模型输出速度) 暖琥珀金点缀（深/浅双主题，尊重 --ag-custom-speed）
+  assert.match(cssSrc, /#panel-speed\s+\.panel-title-text\{color:var\(--ag-custom-speed,#f59e0b\)/i);
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-speed\s+\.panel-title-text[\s\S]*?var\(--ag-custom-speed,#b45309\)/i);
+  assert.match(cssSrc, /#panel-speed\s+#speed-val\{color:var\(--ag-custom-speed,#fbbf24\)/i);
+  assert.match(cssSrc, /#panel-speed\s+\.ctx-seg-btn\.active\{[^}]*rgba\(245,158,11/i);
+  assert.match(cssSrc, /#panel-speed\s+#speed-bar-svg\s+g\s+rect:nth-of-type\(3\)\{fill:var\(--ag-custom-speed,#d97706\)/i);
+  assert.match(cssSrc, /#panel-speed\s+#speed-line-svg\s+path\{stroke:var\(--ag-custom-speed,#f59e0b\)/i);
+
+  // 5. 构建产物 meter-renderer.js 同步一致
+  assert.doesNotMatch(source, /#081914|#f2faf6/i, '构建产物不得残留满屏墨绿底色');
+  assert.match(source, /#panel-quota\s+\.panel-title-text\{color:#10b981/i);
+  assert.match(source, /#panel\s+#ctx-tabs-bar\s+\.ctx-tab-btn\.active\{[^}]*rgba\(29,78,216/i);
+  assert.match(source, /#panel-speed\s+\.ctx-seg-btn\.active\{[^}]*rgba\(245,158,11/i);
+});
+
+test('五独立浮窗宽度严格统一：切换分页/视图/抽屉不跳宽且无 cost-compact-view 缩窄', async () => {
+  const pathMod = require('node:path');
+  const cssSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
+
+  // 1. CSS 静态锁定规则与滚动条槽位防抖
+  assert.match(cssSrc, /\.ag-panel\{[^}]*overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;/);
+  assert.match(cssSrc, /\.quota-panel-body\{[^}]*overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;/);
+  assert.match(cssSrc, /#panel,#panel-speed,#panel-settings\{width:472px;max-width:calc\(100vw - 24px\)\}/);
+  assert.match(cssSrc, /#panel-quota\{width:460px;max-width:calc\(100vw - 24px\)\}/);
+  assert.match(cssSrc, /#panel-tokens\{width:730px;max-width:calc\(100vw - 24px\);/);
+  assert.doesNotMatch(cssSrc, /cost-compact-view/, 'styles.css 中不得残留缩窄面板的 cost-compact-view 规则');
+  assert.doesNotMatch(source, /cost-compact-view/, '构建产物 meter-renderer.js 中不得残留 cost-compact-view 切宽逻辑');
+  assert.match(cssSrc, /@media \(max-width:496px\)\{\s*#panel,#panel-speed,#panel-settings,#panel-quota\{width:calc\(100vw - 24px\)\}\s*\}/);
+  assert.match(cssSrc, /@media \(max-width:754px\)\{\s*#panel-tokens\{width:calc\(100vw - 24px\)\}\s*\}/);
+
+  // 2. 运行时行为校验：#panel 双分页与 #panel-tokens 四视图切换均不改变宽度或锚点 left
+  const h = harness();
+  const api = h.sandbox.__AGContextMeter;
+  try {
+    h.sandbox.window.innerWidth = 1280;
+    h.sandbox.window.innerHeight = 800;
+    h.elements.get('badge').getBoundingClientRect = () => ({ left: 840, top: 6, width: 68, height: 28, right: 908, bottom: 34 });
+    h.elements.get('badge-tokens').getBoundingClientRect = () => ({ left: 970, top: 6, width: 78, height: 28, right: 1048, bottom: 34 });
+
+    // #panel: 当前会话 <-> 模型设置
+    h.elements.get('badge').click();
+    await h.flush();
+    const panel = h.elements.get('panel');
+    const sessionLeft = panel.style.left;
+    const sessionWidth = panel.style.width;
+    h.elements.get('tab-ctx-models').click();
+    await h.flush();
+    assert.equal(panel.style.left, sessionLeft, '#panel 切至模型设置后 left 不得跳动');
+    assert.equal(panel.style.width, sessionWidth, '#panel 切至模型设置后 width 不得变化');
+    h.elements.get('tab-ctx-session').click();
+    await h.flush();
+    assert.equal(panel.style.left, sessionLeft);
+    assert.equal(panel.style.width, sessionWidth);
+
+    // #panel-tokens: Token 统计 / 按模型 / API 参考金额 / 家庭组
+    h.elements.get('badge-tokens').click();
+    await h.flush();
+    const pTokens = h.elements.get('panel-tokens');
+    const tokensLeft = pTokens.style.left;
+    const tokensWidth = pTokens.style.width;
+    for (const viewBtnId of ['tok-view-models', 'tok-view-cost', 'tok-view-family', 'tok-view-tokens']) {
+      h.elements.get(viewBtnId).click();
+      await h.flush();
+      assert.equal(pTokens.style.left, tokensLeft, `#panel-tokens 切至 ${viewBtnId} 后 left 必须严格一致`);
+      assert.equal(pTokens.style.width, tokensWidth, `#panel-tokens 切至 ${viewBtnId} 后 width 必须严格一致`);
+      assert.ok(!String(pTokens.className || '').includes('cost-compact-view'), `${viewBtnId} 不得引入缩窄类`);
+    }
+  } finally {
+    try { api.dispose(); } catch {}
+  }
 });
 
 test('五独立浮窗重构：双 Tab 上下文、独立速度/设置面板、底层参数迁移、顶层重启模态框与热重载兼容', async () => {

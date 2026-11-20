@@ -1097,10 +1097,8 @@
           : hRect;
         const dpr = getEffectiveDpr();
         const top = snapToDevicePixel(Math.max(36, Math.min(vh - 120, (bRect.bottom || hRect.bottom) + 6)));
-        const isCompact = panelEl.classList?.contains?.('cost-compact-view') || panelEl.getAttribute?.('class')?.includes?.('cost-compact-view');
-        const effW = isCompact ? 400 : targetW;
         const maxAvailW = Math.max(260, vw - minLeft - 12);
-        const finalW = Math.min(effW, maxAvailW);
+        const finalW = Math.min(targetW, maxAvailW);
 
         // 核心锚点：右侧精确对齐到触发按钮右边缘，并按当前 DPI 物理像素网格对齐
         let left = snapToDevicePixel(bRect.right - finalW);
@@ -1109,7 +1107,7 @@
 
         const maxWidthPx = Math.max(260, vw - left - 12);
         const maxHeightPx = Math.max(160, vh - top - 16);
-        const geomKey = `${top}|${left}|${maxWidthPx}|${maxHeightPx}|${isCompact ? 1 : 0}|${dpr}`;
+        const geomKey = `${top}|${left}|${maxWidthPx}|${maxHeightPx}|${dpr}`;
         if (panelEl._lastPlacedGeomKey === geomKey) return;
         panelEl._lastPlacedGeomKey = geomKey;
 
@@ -2100,23 +2098,12 @@
 
     const pane = el('cost-details-pane');
     const btn = el('btn-cost-details-toggle');
-    const pTokens = el('panel-tokens');
 
     if (pane) {
       pane.style.display = costDetailsExpanded ? 'block' : 'none';
       if (costDetailsExpanded) pane.style.animation = 'agFadeIn .2s cubic-bezier(0.16,1,0.3,1)';
     }
     if (btn) btn.textContent = costDetailsExpanded ? t('cost.btnCollapse') : t('cost.btnExpand');
-    if (pTokens) {
-      const isCompact = activeTokenView === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
     positionFloatingPanels();
   }
   el('cost-details-pane');
@@ -2579,7 +2566,6 @@
     const tokenSourceBar = el('token-source-bar');
     const tokenAccountBar = el('token-account-bar');
     const titleTokens = el('panel-tokens-title');
-    const pTokens = el('panel-tokens');
 
     if (tokenSourceBar) tokenSourceBar.style.display = v === 'family' ? 'none' : '';
     if (tokenAccountBar) tokenAccountBar.style.display = v === 'family' ? 'none' : '';
@@ -2620,16 +2606,6 @@
             : t('tokens.title');
     }
 
-    if (pTokens) {
-      const isCompact = v === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
     positionFloatingPanels();
   }
   el('tok-view-tokens')?.addEventListener('click', () => switchTokenView('tokens'));

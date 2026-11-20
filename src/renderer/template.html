@@ -622,7 +622,7 @@
           <button id="btn-speed-breakdown-toggle" class="latest-call-link-btn" type="button" aria-expanded="false" hidden data-i18n="session.speed.details">拆解</button>
         </div>
       </div>
-      <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
+      <div class="key-stats" style="grid-template-columns:repeat(4,minmax(0,1fr));">
         <div class="key-stat">
           <div class="key-stat-label" id="speed-val-label" data-i18n="session.speed.streamRate">纯流式速度</div>
           <div id="speed-val" class="key-stat-val" style="color:var(--ag-custom-speed,var(--ag-text-primary));">—
@@ -1065,13 +1065,13 @@
           <label style="font-size:11px;color:var(--ag-text-secondary);display:flex;flex-direction:column;gap:4px;">
             <span data-i18n="settings.proxy.urlLabel">本地代理地址 (例如 http://127.0.0.1:7897 或 socks5://...)：</span>
             <input id="input-proxy-url" type="text" class="unlock-input"
-              style="padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
+              style="width:100%;box-sizing:border-box;min-width:0;padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
               value="http://127.0.0.1:7897" />
           </label>
           <label style="font-size:11px;color:var(--ag-text-secondary);display:flex;flex-direction:column;gap:4px;">
             <span data-i18n="settings.proxy.bypassLabel">绕过代理列表 (NO_PROXY)：</span>
             <input id="input-proxy-bypass" type="text" class="unlock-input"
-              style="padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
+              style="width:100%;box-sizing:border-box;min-width:0;padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
               value="localhost,127.0.0.1,::1,<local>" />
           </label>
         </div>
@@ -1175,7 +1175,7 @@
           </div>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-top:7px">
         <span style="font-size:10.5px;color:var(--ag-text-muted)"
           data-i18n="settings.colors.note">注：高占用与超限告警色独立保留，不被常态颜色覆盖。</span>
         <button id="reset-all-colors" class="color-reset-btn" type="button"
@@ -1315,7 +1315,7 @@
         <button id="src-tab-desktop" class="switch-pill-btn" type="button" data-i18n="tokens.src.desktop">桌面端</button>
         <button id="src-tab-cli" class="switch-pill-btn" type="button" data-i18n="tokens.src.cli">CLI</button>
       </div>
-      <div class="view-switch-bar">
+      <div class="view-switch-bar" style="margin-left:auto">
         <button id="tok-view-tokens" class="switch-pill-btn active" type="button" data-i18n="tokens.view.tokens">Token
           统计</button>
         <button id="tok-view-models" class="switch-pill-btn" type="button" data-i18n="tokens.view.models">按模型</button>
@@ -1345,7 +1345,7 @@
 
     <!-- 账号套餐状态摘要行 -->
     <div id="plan-summary-bar" class="plan-summary-bar">
-      <div class="plan-summary-badge" style="display:flex;align-items:center;gap:6px;flex:1;overflow:hidden">
+      <div class="plan-summary-badge" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow:hidden">
         <span>💎</span>
         <span id="plan-summary-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pro · ...</span>
       </div>
@@ -1529,7 +1529,7 @@
           data-i18n="plan.form.title">
           设置当前账号订阅信息
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:6px">
           <div style="min-width:0">
             <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px"
               data-i18n="plan.form.acqLabel">获取方式 / 活动来源</label>
@@ -1607,7 +1607,7 @@
             <div id="select-custom-region-preset-dropdown-menu" class="ag-dropdown-menu"></div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:6px">
           <div style="min-width:0">
             <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px"
               data-i18n="plan.form.countryLabel">账号所在地区 (仅本地记录)</label>
@@ -1626,7 +1626,7 @@
           <div style="min-width:0">
             <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px"
               data-i18n="plan.form.currencyLabel">订阅币种与实付金额</label>
-            <div style="display:flex;gap:4px;align-items:center">
+            <div style="display:flex;gap:4px;align-items:center;min-width:0">
               <select id="select-custom-currency" title="订阅计价/结算币种" data-i18n-title="plan.currency.title" aria-label="订阅币种" data-i18n-aria="plan.currency.aria" style="display:none">
                 <option value="USD">USD</option>
                 <option value="KRW">KRW</option>
@@ -1646,7 +1646,7 @@
                 <option value="AUD">AUD</option>
                 <option value="MYR">MYR</option>
               </select>
-              <div id="select-custom-currency-dropdown-wrap" class="ag-dropdown-wrapper ag-dropdown-compact" style="flex:0 0 82px;min-width:72px">
+              <div id="select-custom-currency-dropdown-wrap" class="ag-dropdown-wrapper ag-dropdown-compact" style="flex:0 1 78px;min-width:58px">
                 <div id="select-custom-currency-dropdown-trigger" class="ag-dropdown-trigger" tabindex="0">
                   <span id="select-custom-currency-dropdown-label" class="ag-dropdown-label">USD</span>
                   <div class="ag-dropdown-arrow">
@@ -1661,7 +1661,7 @@
             </div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:6px">
           <div style="min-width:0">
             <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px"
               data-i18n="plan.form.cycleLabel">计费周期</label>
@@ -1682,7 +1682,7 @@
               <div id="select-custom-cycle-dropdown-menu" class="ag-dropdown-menu"></div>
             </div>
           </div>
-          <div>
+          <div style="min-width:0">
             <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px"
               data-i18n="plan.form.validEndLabel">权益到期日</label>
             <input id="input-valid-end" type="hidden" value="">
@@ -1744,7 +1744,7 @@
           style="font-size:11px;color:var(--ag-text-secondary);margin-bottom:6px;line-height:1.35">—</div>
         <!-- 5. 一行订阅实付及补充入口 -->
         <div id="cost-sub-line-wrap"
-          style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--ag-bg-subcard);border-radius:6px;margin:6px 0 8px">
+          style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:5px 8px;background:var(--ag-bg-subcard);border-radius:6px;margin:6px 0 8px">
           <div style="display:flex;align-items:center;gap:4px">
             <span id="cost-sub-line" style="font-size:11px;color:var(--ag-text-primary)"
               data-i18n="cost.subUnknown">订阅实付：未填写</span>
@@ -1780,7 +1780,7 @@
 
         <!-- 估值模式快捷切换（中性“参考模型估算”） -->
         <div
-          style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
+          style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
           <span style="font-size:10.5px;color:var(--ag-text-muted)" data-i18n="cost.modeLabel">估值模式:</span>
           <div class="source-switch-bar">
             <button id="cost-btn-mode-ref" class="switch-pill-btn active" type="button"
@@ -1801,7 +1801,7 @@
 
         <!-- 分类单价与公式明细卡片（输入、缓存读取、输出） -->
         <div id="ref-cost-breakdown-cards"
-          style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+          style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:8px">
           <div class="t-card ref-cost-card" style="padding:6px">
             <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.input">输入 Token</span>
               ($0.75/M)</div>
@@ -2405,7 +2405,7 @@
           </div>
 
           <div
-            style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px dashed var(--ag-border-subcard);font-size:11px">
+            style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--ag-border-subcard);font-size:11px">
             <span style="color:var(--ag-text-primary);font-weight:500" data-i18n="tokens.update.title">更新设置</span>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ag-text-secondary)">
               <input id="check-auto-update" type="checkbox" checked>
