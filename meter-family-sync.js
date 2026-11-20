@@ -10,7 +10,15 @@ const { calculateRequestApiCost } = require('./meter-core');
 const { PROJECT_VERSION } = require('./modules-config');
 
 const DAY = 86_400_000;
-const HEARTBEAT = 30_000;
+const HEARTBEAT = 180_000;
+const SYNC_TICK_MS = 60_000;
+const QUOTA_SYNC_INTERVAL = 120_000;
+const QUOTA_UNCHANGED_TTL = 300_000;
+const LEDGER_DEBOUNCE_MS = 12_000;
+const BACKOFF_BASE_MS = 60_000;
+const BACKOFF_MAX_MS = 30 * 60_000;
+const DASHBOARD_CACHE_TTL = 15_000;
+const WEEKLY_CACHE_TTL = 180_000;
 const SCOPE_KEY = /^acct_[0-9a-f]{16}$/;
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const MODEL = /^[\p{L}\p{N}][\p{L}\p{N} ._()+:-]{0,95}$/u;
@@ -181,6 +189,13 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
   let timer;
   let debounce;
   let lockedInProcess = false;
+  let lastQuotaCheckAt = 0;
+  const dashboardCache = new Map();
+  const weeklyCache = new Map();
+  const clearDashboardCaches = () => {
+    dashboardCache.clear();
+    weeklyCache.clear();
+  };
 
   const getConfig = () => ({ ...defaults, ...read(configPath, defaults) });
   const loadStates = () => read(syncPath, { destinations: {} });
@@ -331,6 +346,9 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
       const dest = uploadKey(cfg);
       const syncState = states.destinations[dest] ||= { sent: {}, quotas: {}, revision: 0 };
       const timestamp = now();
+      if (automatic && !manual && Number(syncState.nextRetryAt || 0) > timestamp) {
+        return { uploaded: 0, skipped: 'backoff' };
+      }
       try {
         const work = [];
         const calls = ledgerCalls();
@@ -384,12 +402,29 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
             accountKey(cfg.familySecret, record.key) !== record.account)
           .map(([key]) => key);
         let quota = null;
+        let quotaWindowsHash = null;
         const shouldFetchQuota = Object.values(cfg.accountRules).some(rule => rule.mode === 'shared') &&
-          (manual || timestamp - (syncState.lastSyncAt || 0) >= HEARTBEAT);
+          (manual || timestamp - lastQuotaCheckAt >= QUOTA_SYNC_INTERVAL);
         if (shouldFetchQuota && readQuota) {
+          lastQuotaCheckAt = timestamp;
           const result = await readQuota(origin).catch(() => null);
           quota = getSnapshot(result, cfg, timestamp);
-          if (quota && (syncState.quotas[quota.payload.accountScopeKey]?.observedAt || 0) >= quota.payload.observedAt) quota = null;
+          if (quota) {
+            const prevQuota = syncState.quotas[quota.payload.accountScopeKey];
+            quotaWindowsHash = hash(JSON.stringify(quota.payload.windows.map(w => ({
+              pool: w.pool,
+              window: w.window,
+              remainingPct: w.remainingPct,
+              resetBucket: w.resetAt ? Math.round(w.resetAt / 600_000) : null
+            }))));
+            if (prevQuota && (
+              (prevQuota.observedAt || 0) >= quota.payload.observedAt ||
+              (!manual && prevQuota.windowsHash === quotaWindowsHash && timestamp - (prevQuota.observedAt || 0) < QUOTA_UNCHANGED_TTL)
+            )) {
+              quota = null;
+              quotaWindowsHash = null;
+            }
+          }
         }
         const entries = work.filter(item => !item.remove || revoked.has(item.id));
         const heartbeat = timestamp - (syncState.lastSyncAt || 0) >= HEARTBEAT;
@@ -408,7 +443,9 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           // Mark possibly delivered IDs before sending. A lost reply must not prevent a later withdrawal.
           for (const item of events) syncState.sent[item.id] = { key: item.key, signature: null, syntheticStepKey: Boolean(item.syntheticStepKey) };
           if (quotaSnapshot) {
-            syncState.quotas[quotaSnapshot.accountScopeKey] = { key: quota.key, account: quotaSnapshot.accountScopeKey, observedAt: null };
+            syncState.quotas[quotaSnapshot.accountScopeKey] = {
+              key: quota.key, account: quotaSnapshot.accountScopeKey, observedAt: null, windowsHash: quotaWindowsHash
+            };
           }
           write(syncPath, states);
           const result = await api(cfg, 'sync', { method: 'POST', body: {
@@ -422,13 +459,20 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           if (quotaSnapshot) syncState.quotas[quotaSnapshot.accountScopeKey].observedAt = quotaSnapshot.observedAt;
           syncState.lastSyncAt = now();
           syncState.lastError = '';
+          syncState.consecutiveFailures = 0;
+          syncState.nextRetryAt = 0;
           write(syncPath, states);
           uploaded += events.length;
           removed += removeEventIds.length;
         }
+        if (uploaded > 0 || removed > 0 || quota) clearDashboardCaches();
         return { uploaded, removed };
       } catch (error) {
         syncState.lastError = error.message;
+        const failures = (Number(syncState.consecutiveFailures) || 0) + 1;
+        syncState.consecutiveFailures = failures;
+        const backoffMs = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * Math.pow(2, Math.min(failures - 1, 5)));
+        syncState.nextRetryAt = now() + backoffMs;
         write(syncPath, states);
         throw error;
       }
@@ -437,7 +481,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
 
   function schedule() {
     clearTimeout(debounce);
-    debounce = setTimeout(() => void synchronize({ automatic: true }).catch(() => {}), 2_000);
+    debounce = setTimeout(() => void synchronize({ automatic: true }).catch(() => {}), LEDGER_DEBOUNCE_MS);
     debounce.unref?.();
   }
 
@@ -463,7 +507,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
         watchLedger();
         void synchronize({ automatic: true }).catch(() => {});
       } catch {}
-    }, HEARTBEAT);
+    }, SYNC_TICK_MS);
     timer.unref?.();
     try { if (getConfig().enabled) { watchLedger(); schedule(); } } catch {}
   }
@@ -507,11 +551,13 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
         }
         case 'save':
           await exclusive(() => save(input));
+          clearDashboardCaches();
           if (getConfig().enabled) { watchLedger(); schedule(); }
           else { watcher?.close(); watcher = null; }
           return { ok: true, data: view() };
         case 'rule':
           await exclusive(() => setRule(input));
+          clearDashboardCaches();
           if (getConfig().enabled) schedule();
           return { ok: true, data: view() };
         case 'sync': return { ok: true, data: await synchronize({ manual: true, origin }) };
@@ -520,23 +566,45 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           const cfg = getConfig();
           const reqRange = input.range || 'today';
           const reqScope = input.scope || 'shared';
+          const tzOffset = input.tzOffset ?? 0;
+          const force = input.force === true;
+          const nowTs = now();
+          const dashKey = `${cfg.serverUrl}|${reqRange}|${reqScope}|${tzOffset}`;
+          const weekKey = `${cfg.serverUrl}|${reqScope}|${tzOffset}`;
+          if (!force) {
+            const cached = dashboardCache.get(dashKey);
+            if (cached && (nowTs - cached.ts) < DASHBOARD_CACHE_TTL) {
+              return { ok: true, data: cached.data };
+            }
+          }
           const query = new URLSearchParams({
             range: reqRange,
             scope: reqScope,
-            tzOffset: input.tzOffset ?? 0,
+            tzOffset,
             familyWeekly: '1'
           });
           const needWeekly = reqScope !== 'personal' && reqRange !== '7d';
-          const weekQuery = needWeekly ? new URLSearchParams({
+          const cachedWeek = !force ? weeklyCache.get(weekKey) : null;
+          const hasFreshWeek = Boolean(cachedWeek && (nowTs - cachedWeek.ts) < WEEKLY_CACHE_TTL);
+          const weekQuery = (needWeekly && !hasFreshWeek) ? new URLSearchParams({
             range: '7d',
             scope: reqScope,
-            tzOffset: input.tzOffset ?? 0
+            tzOffset
           }) : null;
           const [data, weekData] = await Promise.all([
             api(cfg, 'dashboard?' + query),
             weekQuery ? api(cfg, 'dashboard?' + weekQuery).catch(() => null) : Promise.resolve(null)
           ]);
-          if (Array.isArray(weekData?.members)) data.weeklyMembers = weekData.members;
+          if (Array.isArray(weekData?.members)) {
+            weeklyCache.set(weekKey, { ts: nowTs, members: weekData.members });
+            data.weeklyMembers = weekData.members;
+          } else if (hasFreshWeek) {
+            data.weeklyMembers = cachedWeek.members;
+          }
+          if (reqRange === '7d' && reqScope !== 'personal' && Array.isArray(data?.members)) {
+            weeklyCache.set(weekKey, { ts: nowTs, members: data.members });
+          }
+          dashboardCache.set(dashKey, { ts: nowTs, data });
           return { ok: true, data };
         }
         default: throw new Error('Unknown family action');

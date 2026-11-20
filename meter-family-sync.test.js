@@ -463,3 +463,177 @@ test('createFamilySync retracts reconciled synthetic step keys and legacy orphan
     fs.rmSync(tmpDir3, { recursive: true, force: true });
   }
 });
+
+test('createFamilySync caches dashboard/weeklyMembers responses, enforces failure backoff, and deduplicates unchanged quota', async (t) => {
+  const { buildAccountScopeKey } = require('./meter-collector');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-family-sync-throttle-'));
+  const ledgerPath = path.join(tmpDir, 'ledger.json');
+  const memberId = '11111111-1111-4111-8111-111111111111';
+  const deviceId = '22222222-2222-4222-8222-222222222222';
+  const scopeKey = buildAccountScopeKey('throttle@example.com');
+  const serverUrl = 'https://example-family.test';
+  const secret = 'test_family_secret_0123456789abcdef';
+
+  let nowMs = 1795200000000;
+  const fixedResetAtMs = nowMs + 86_400_000;
+  let quotaPct = 0.8;
+  let failSyncWith500 = false;
+  const httpReqs = [];
+
+  fs.writeFileSync(ledgerPath, JSON.stringify({ calls: {} }));
+  fs.writeFileSync(path.join(tmpDir, 'family_sync_config.json'), JSON.stringify({
+    enabled: true,
+    serverUrl,
+    familySecret: secret,
+    memberId,
+    deviceId,
+    deviceName: 'ThrottleBox',
+    since: nowMs - 60_000,
+    accountRules: { [scopeKey]: { mode: 'shared', alias: 'Main' } }
+  }));
+
+  const mockFetch = async (url, opts = {}) => {
+    const pathname = new URL(url).pathname;
+    const search = new URL(url).searchParams;
+    const body = opts.body ? JSON.parse(opts.body) : null;
+    httpReqs.push({ pathname, range: search.get('range'), method: opts.method || 'GET', body });
+    if (pathname === '/api/v1/sync') {
+      if (failSyncWith500) {
+        return {
+          ok: false,
+          status: 500,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ error: 'Database operation failed' })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ accepted: (body?.events || []).length })
+      };
+    }
+    if (pathname === '/api/v1/dashboard') {
+      const r = search.get('range') || 'today';
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          total: { calls: r === '7d' ? 50 : 10, totalTokens: r === '7d' ? 5000 : 1000, costUSD: r === '7d' ? 5 : 1, unpricedCalls: 0 },
+          members: [{ id: memberId, name: 'Caspian', calls: r === '7d' ? 50 : 10, totalTokens: r === '7d' ? 5000 : 1000, costUSD: r === '7d' ? 5 : 1, unpricedCalls: 0, models: [] }]
+        })
+      };
+    }
+    return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({}) };
+  };
+
+  const mockReadQuota = async () => ({
+    ok: true,
+    accountScopeKey: scopeKey,
+    fetchedAtMs: nowMs,
+    _raw: { planStatus: { email: 'throttle@example.com' } },
+    snapshot: {
+      pools: [
+        {
+          title: 'Gemini Models',
+          poolKey: 'shared_gemini_main',
+          buckets: [{ windowKey: 'weekly', remainingFraction: quotaPct, resetAtMs: fixedResetAtMs }]
+        }
+      ]
+    }
+  });
+
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const sync = createFamilySync({ stateDir: tmpDir, ledgerPath, fetch: mockFetch, now: () => nowMs, readQuota: mockReadQuota });
+  try {
+    // 1. 首次 dashboard(today) 发 today + 7d；10s 内再查命中 dashboardCache (0 HTTP)；20s 后只发 today，7d 命中 weeklyCache (3m)
+    const d1 = await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480 });
+    assert.equal(d1.ok, true);
+    assert.equal(d1.data.weeklyMembers[0].calls, 50);
+    assert.equal(httpReqs.filter(r => r.pathname === '/api/v1/dashboard').length, 2);
+
+    nowMs += 10_000;
+    await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480 });
+    assert.equal(httpReqs.filter(r => r.pathname === '/api/v1/dashboard').length, 2, '15s 内重复请求应命中短缓存');
+
+    nowMs += 10_000; // +20s 总计，dashboardCache(15s) 过期但 weeklyCache(3m) 仍有效
+    const d3 = await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480 });
+    assert.equal(d3.data.weeklyMembers[0].calls, 50);
+    const dashAfter20s = httpReqs.filter(r => r.pathname === '/api/v1/dashboard');
+    assert.equal(dashAfter20s.length, 3, '仅补发 1 次 today，不重复查昂贵的 7d');
+    assert.equal(dashAfter20s[2].range, 'today');
+
+    // force: true 强制绕过全部缓存
+    await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480, force: true });
+    assert.equal(httpReqs.filter(r => r.pathname === '/api/v1/dashboard').length, 5);
+
+    // 2. 启动自动同步定时器：校验 12s 防抖 + 5 分钟相同额度去重 + 失败退避拦截自动重试
+    sync.start();
+    // 推进 12s 防抖触发第一次自动同步（上传首次额度快照并清 dashboard 缓存）
+    t.mock.timers.tick(12_000);
+    await new Promise(r => setImmediate(r));
+    await sync.action({ action: 'overview' }); // 等待排他锁确保异步同步写完
+    const syncReqs1 = httpReqs.filter(r => r.pathname === '/api/v1/sync');
+    assert.equal(syncReqs1.length, 1);
+    assert.ok(syncReqs1[0].body.quotaSnapshot, '首次应上报额度快照');
+
+    // 推进 +180s 触发下一次自动心跳，但 quotaPct 仍为 0.8 (未超 5m 相同窗口 TTL) -> 不应重复上传相同 quotaSnapshot
+    nowMs += 180_000;
+    t.mock.timers.tick(180_000);
+    await new Promise(r => setImmediate(r));
+    await sync.action({ action: 'overview' });
+    const syncReqs2 = httpReqs.filter(r => r.pathname === '/api/v1/sync');
+    assert.equal(syncReqs2.length, 2);
+    assert.equal(syncReqs2[1].body.quotaSnapshot, undefined, '5 分钟内未变化的额度快照应被自动去重跳过');
+
+    // 触发报错退避：插入一条调用并用 HTTP 500 模拟 D1 超限
+    nowMs += 30_000;
+    fs.writeFileSync(ledgerPath, JSON.stringify({
+      calls: {
+        call_err: {
+          callId: 'call_err',
+          source: 'desktop',
+          model: 'Gemini 4 Hydrogen (Orchestrator)',
+          inputTokens: 100,
+          cacheReadTokens: 0,
+          outputTokens: 50,
+          totalTokens: 150,
+          costUSD: 0.001,
+          isPriced: true,
+          created_at: new Date(nowMs).toISOString(),
+          timestamp: nowMs,
+          accountScopeKey: scopeKey,
+          accountAttributionConfidence: 'session_window_verified'
+        }
+      }
+    }));
+    failSyncWith500 = true;
+    // 手动 sync 失败，设 nextRetryAt = nowMs + 60s
+    const errRes = await sync.action({ action: 'sync' });
+    assert.equal(errRes.ok, false);
+    const syncCountAfterErr = httpReqs.filter(r => r.pathname === '/api/v1/sync').length;
+
+    // 仅过 30s（未到 60s 退避结束），即使触发自动 save -> schedule() (12s) 也不应发出 HTTP sync 请求！
+    nowMs += 30_000;
+    await sync.action({ action: 'save', serverUrl, familySecret: secret, memberId, deviceName: 'ThrottleBox', enabled: true });
+    t.mock.timers.tick(12_000);
+    await new Promise(r => setImmediate(r));
+    assert.equal(httpReqs.filter(r => r.pathname === '/api/v1/sync').length, syncCountAfterErr, '退避窗口期内自动同步必须被拦截');
+
+    // 手动 sync 可绕过退避并立即恢复清零退避计数
+    failSyncWith500 = false;
+    nowMs += 10_000;
+    const recRes = await sync.action({ action: 'sync' });
+    assert.equal(recRes.ok, true);
+    assert.equal(recRes.data.uploaded, 1);
+    const stateRecovered = JSON.parse(fs.readFileSync(path.join(tmpDir, 'family_sync_state.json'), 'utf8'));
+    const destRecovered = Object.values(stateRecovered.destinations)[0];
+    assert.equal(destRecovered.consecutiveFailures, 0);
+    assert.equal(destRecovered.nextRetryAt, 0);
+  } finally {
+    sync.stop();
+    t.mock.timers.reset();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

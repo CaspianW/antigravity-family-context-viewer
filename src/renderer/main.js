@@ -2084,6 +2084,8 @@
     busy: false,
     epoch: 0,
     refreshTimer: null,
+    failCount: 0,
+    weeklyCache: null,
     pieMode: 'auto',
     selectedPool: '',
     lastData: null,
@@ -4826,25 +4828,42 @@
     }
   }
 
-  async function refreshFamilyData() {
+  const FAMILY_REFRESH_BASE_MS = 45_000;
+  const FAMILY_REFRESH_MAX_MS = 300_000;
+  const FAMILY_WEEKLY_FALLBACK_TTL_MS = 180_000;
+
+  async function refreshFamilyData(options = {}) {
     if (!familyView.config?.deviceId) return;
+    const force = Boolean(options && options.force);
     const epoch = ++familyView.epoch;
     const reqRange = el('family-range').value;
     const reqScope = el('family-scope').value;
     const tzOffset = -new Date().getTimezoneOffset();
     const data = await callFamily({
       action: 'dashboard', range: reqRange,
-      scope: reqScope, tzOffset
+      scope: reqScope, tzOffset,
+      ...(force ? { force: true } : {})
     });
     if (epoch !== familyView.epoch || state.disposed) return;
+    const weekCacheKey = `${reqScope}|${tzOffset}`;
+    if (reqRange === '7d' && reqScope !== 'personal' && Array.isArray(data?.members) && data.members.length) {
+      familyView.weeklyCache = { key: weekCacheKey, ts: Date.now(), members: data.members };
+    }
     if (reqScope !== 'personal' && reqRange !== '7d' && (!Array.isArray(data?.weeklyMembers) || !data.weeklyMembers.length)) {
-      const weekRes = await callFamily({
-        action: 'dashboard', range: '7d',
-        scope: reqScope, tzOffset
-      }).catch(() => null);
-      if (epoch !== familyView.epoch || state.disposed) return;
-      if (Array.isArray(weekRes?.members) && weekRes.members.length) {
-        data.weeklyMembers = weekRes.members;
+      const cachedWeek = familyView.weeklyCache;
+      if (!force && cachedWeek && cachedWeek.key === weekCacheKey && (Date.now() - cachedWeek.ts) < FAMILY_WEEKLY_FALLBACK_TTL_MS) {
+        data.weeklyMembers = cachedWeek.members;
+      } else {
+        const weekRes = await callFamily({
+          action: 'dashboard', range: '7d',
+          scope: reqScope, tzOffset,
+          ...(force ? { force: true } : {})
+        }).catch(() => null);
+        if (epoch !== familyView.epoch || state.disposed) return;
+        if (Array.isArray(weekRes?.members) && weekRes.members.length) {
+          familyView.weeklyCache = { key: weekCacheKey, ts: Date.now(), members: weekRes.members };
+          data.weeklyMembers = weekRes.members;
+        }
       }
     }
     if (epoch === familyView.epoch && !state.disposed) renderFamilyDashboard(data);
@@ -4853,6 +4872,10 @@
   async function refreshFamilyView(resetFields = false) {
     clearTimeout(familyView.refreshTimer);
     if (!el('family-usage-view') || state.disposed || activeTokenView !== 'family' || el('panel-tokens')?.hidden) return;
+    if (typeof document !== 'undefined' && document.hidden === true) {
+      familyView.refreshTimer = setTimeout(() => void refreshFamilyView(), FAMILY_REFRESH_BASE_MS);
+      return;
+    }
     try {
       if (!familyView.busy) {
         const config = await callFamily({ action: 'overview' });
@@ -4865,12 +4888,33 @@
           await refreshFamilyData();
         }
       }
+      familyView.failCount = 0;
     } catch (error) {
+      familyView.failCount = Math.min((familyView.failCount || 0) + 1, 4);
       setFamilyStatus(error.message, true);
     } finally {
-      if (!state.disposed) familyView.refreshTimer = setTimeout(() => void refreshFamilyView(), 15000);
+      if (!state.disposed) {
+        const delay = familyView.failCount > 0
+          ? Math.min(FAMILY_REFRESH_MAX_MS, FAMILY_REFRESH_BASE_MS * Math.pow(2, familyView.failCount))
+          : FAMILY_REFRESH_BASE_MS;
+        familyView.refreshTimer = setTimeout(() => void refreshFamilyView(), delay);
+      }
     }
   }
+
+  const onFamilyVisibilityChange = () => {
+    if (state.disposed || typeof document === 'undefined' || document.hidden) return;
+    if (activeTokenView === 'family' && !el('panel-tokens')?.hidden) {
+      void refreshFamilyView();
+    }
+  };
+  try {
+    document.addEventListener?.('visibilitychange', onFamilyVisibilityChange);
+    earlyDisposeHooks.push(() => {
+      clearTimeout(familyView.refreshTimer);
+      try { document.removeEventListener?.('visibilitychange', onFamilyVisibilityChange); } catch { }
+    });
+  } catch { }
 
   async function runFamilyAction(work) {
     if (familyView.busy) return;
@@ -5017,14 +5061,14 @@
     });
     renderFamilyConfig(config, true);
     setFamilyStatus(t('family.saved'));
-    await refreshFamilyData();
+    await refreshFamilyData({ force: true });
   }));
 
   el('family-sync')?.addEventListener('click', () => runFamilyAction(async () => {
     const result = await callFamily({ action: 'sync' });
     renderFamilyConfig(await callFamily({ action: 'overview' }));
     setFamilyStatus(t('family.syncResult', { n: result.uploaded ?? 0, removed: result.removed ?? 0 }));
-    await refreshFamilyData();
+    await refreshFamilyData({ force: true });
   }));
 
   el('family-backfill')?.addEventListener('click', () => runFamilyAction(async () => {
@@ -5032,7 +5076,7 @@
     const result = await callFamily({ action: 'backfill', range: el('family-backfill-range').value });
     renderFamilyConfig(await callFamily({ action: 'overview' }));
     setFamilyStatus(t('family.syncResult', { n: result.uploaded ?? 0, removed: result.removed ?? 0 }));
-    await refreshFamilyData();
+    await refreshFamilyData({ force: true });
   }));
 
   el('family-web')?.addEventListener('click', event => {
@@ -5043,11 +5087,11 @@
     }));
   });
   for (const id of ['family-range', 'family-scope']) {
-    el(id)?.addEventListener('change', () => runFamilyAction(refreshFamilyData));
+    el(id)?.addEventListener('change', () => runFamilyAction(() => refreshFamilyData({ force: true })));
   }
   el('family-metric')?.addEventListener('change', () => {
     if (familyView.lastData) renderFamilyDashboard(familyView.lastData);
-    else void runFamilyAction(refreshFamilyData);
+    else void runFamilyAction(() => refreshFamilyData({ force: true }));
   });
   el('family-pie-mode-quota')?.addEventListener('click', () => {
     familyView.pieMode = 'quota';

@@ -7146,3 +7146,110 @@ test('执行 /compact 后渲染层即时展示已压缩估算态、requestPoll �
     h.sandbox.__AGContextMeter.dispose();
   }
 });
+
+test('家庭看板请求节流回归：45s 基础轮询、后台隐藏跳过、异常退避与未重启 7d 回退缓存', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const scheduled = [];
+  let seqId = 100;
+  let shouldFailDash = false;
+  let dashCalls = [];
+
+  const h = htmlAwareRendererHarness({
+    setTimeout(fn, delay) {
+      const entry = { id: ++seqId, fn, delay: Number(delay), cleared: false };
+      scheduled.push(entry);
+      return entry.id;
+    },
+    clearTimeout(id) {
+      const hit = scheduled.find(x => x.id === id);
+      if (hit) hit.cleared = true;
+    }
+  });
+  const api = h.sandbox.__AGContextMeter;
+
+  try {
+    h.sandbox.window.contextMeterAPI.familyAction = async (payload) => {
+      if (payload.action === 'overview') {
+        return {
+          ok: true,
+          data: {
+            serverUrl: 'https://antigravity-family.example',
+            hasDefaultServerUrl: true,
+            hasSecret: true,
+            memberId: 'm_1',
+            deviceId: 'd_1',
+            deviceName: 'DevBox',
+            enabled: true,
+            lastSyncAt: Date.now(),
+            lastError: '',
+            pendingCount: 0,
+            undatedCount: 0,
+            accounts: []
+          }
+        };
+      }
+      if (payload.action === 'connect') {
+        return { ok: true, data: { members: [{ id: 'm_1', name: 'Caspian', archived: false }] } };
+      }
+      if (payload.action === 'dashboard') {
+        if (shouldFailDash) return { ok: false, error: 'Family server HTTP 500' };
+        dashCalls.push({ range: payload.range, force: Boolean(payload.force) });
+        if (payload.range === '7d') {
+          return {
+            ok: true,
+            data: {
+              total: { calls: 10, totalTokens: 1000, costUSD: 2, unpricedCalls: 0 },
+              members: [{ id: 'm_1', name: 'Caspian', calls: 10, totalTokens: 1000, costUSD: 2, unpricedCalls: 0, models: [] }],
+              familyWeekly: [],
+              quotaSnapshots: []
+            }
+          };
+        }
+        // 不返回 weeklyMembers 以触发未重启宿主的 7d 回退链路
+        return {
+          ok: true,
+          data: {
+            total: { calls: 4, totalTokens: 400, costUSD: 1, unpricedCalls: 0 },
+            members: [{ id: 'm_1', name: 'Caspian', calls: 4, totalTokens: 400, costUSD: 1, unpricedCalls: 0, models: [] }],
+            familyWeekly: [],
+            quotaSnapshots: []
+          }
+        };
+      }
+      return { ok: false, error: 'unknown' };
+    };
+
+    // 1. 打开家庭看板 -> 首轮拉取 today + 7d，并在 45s（非 15s）后调度下次刷新
+    h.elements.get('badge-tokens').click();
+    h.elements.get('tok-view-family').click();
+    for (let i = 0; i < 8; i++) await flush();
+    assert.deepEqual(dashCalls.map(c => c.range), ['today', '7d']);
+    let lastTimer = [...scheduled].reverse().find(t => !t.cleared && t.delay >= 45_000);
+    assert.equal(lastTimer?.delay, 45_000, '正常刷新周期应为 45s');
+
+    // 2. 再次自动触发时，未重启的 7d 回退应命中 3m 缓存（只发 1 次 today，不发 7d）
+    dashCalls = [];
+    lastTimer.fn();
+    for (let i = 0; i < 8; i++) await flush();
+    assert.deepEqual(dashCalls.map(c => c.range), ['today'], '自动刷新时回退 7d 应命中 3 分钟缓存');
+
+    // 3. document.hidden = true 时完全跳过网络请求
+    lastTimer = [...scheduled].reverse().find(t => !t.cleared && t.delay >= 45_000);
+    h.sandbox.document.hidden = true;
+    dashCalls = [];
+    lastTimer.fn();
+    for (let i = 0; i < 6; i++) await flush();
+    assert.equal(dashCalls.length, 0, '后台隐藏时不得发起 dashboard 请求');
+
+    // 4. 恢复前台后遇到 HTTP 500 报错 -> 退避延时从 45s 升至 90s
+    h.sandbox.document.hidden = false;
+    shouldFailDash = true;
+    lastTimer = [...scheduled].reverse().find(t => !t.cleared && t.delay >= 45_000);
+    lastTimer.fn();
+    for (let i = 0; i < 6; i++) await flush();
+    const backoffTimer1 = [...scheduled].reverse().find(t => !t.cleared && t.delay >= 45_000);
+    assert.equal(backoffTimer1?.delay, 90_000, '首次失败后退避周期应翻倍至 90s');
+  } finally {
+    api.dispose();
+  }
+});
