@@ -569,6 +569,41 @@ async function scanFiles(media, scanOptions = {}) {
 let collectSeqCounter = 0;
 const latestCollectSeqByOrigin = new Map();
 
+function createOriginRpcCaller(origin, options = {}) {
+  const safeOrigin = normalizeLoopbackOrigin(origin);
+  if (!safeOrigin) throw new Error('无效本机服务地址');
+  const reqFn = typeof options.requestFn === 'function' ? options.requestFn : request;
+  const signal = options.signal || null;
+  let token = !options.force ? csrfTokenByOrigin.get(safeOrigin) : null;
+
+  const ensureToken = async (forceRefresh = false) => {
+    if (!forceRefresh && token) return token;
+    if (forceRefresh) csrfTokenByOrigin.delete(safeOrigin);
+    const html = await reqFn(safeOrigin, null, null, null, signal);
+    const match = typeof html === 'string' ? html.match(/window\.__APP_CONFIG__ = (.*?);/) : null;
+    if (!match) throw new Error('未能读取语言服务会话凭证');
+    token = JSON.parse(match[1]).csrfToken;
+    csrfTokenByOrigin.set(safeOrigin, token);
+    return token;
+  };
+
+  return {
+    origin: safeOrigin,
+    call: async (method, body) => {
+      const currentToken = await ensureToken(false);
+      try {
+        return await reqFn(safeOrigin, method, body, currentToken, signal);
+      } catch (err) {
+        if (err && /HTTP 40[13]/.test(String(err.message || '')) && !signal?.aborted) {
+          const freshToken = await ensureToken(true);
+          return await reqFn(safeOrigin, method, body, freshToken, signal);
+        }
+        throw err;
+      }
+    }
+  };
+}
+
 async function collect(origin, id, options = {}) {
   const safeOrigin = normalizeLoopbackOrigin(origin);
   if (!safeOrigin || !/^[a-f\d-]{36}$/i.test(id)) throw new Error('无效本机会话');
@@ -596,26 +631,14 @@ async function collect(origin, id, options = {}) {
   const task = (async () => {
     const signal = abortController?.signal || null;
     try {
-      let token = !options.force ? csrfTokenByOrigin.get(origin) : null;
-      if (!token) {
-        const html = await request(origin, null, null, null, signal);
-        if (isSuperseded()) return { version: PROJECT_VERSION, conversation: id, abortedStale: true, scannedAt: Date.now(), errors: [] };
-        token = JSON.parse(html.match(/window.__APP_CONFIG__ = (.*?);/)[1]).csrfToken;
-        csrfTokenByOrigin.set(origin, token);
-      }
+      const rpc = createOriginRpcCaller(origin, { force: options.force, signal, requestFn: options.requestFn });
       const call = async (method, body) => {
-        try {
-          return await request(origin, method, body, token, signal);
-        } catch (err) {
-          if (err && /HTTP 40[13]/.test(String(err.message || '')) && !signal?.aborted) {
-            csrfTokenByOrigin.delete(origin);
-            const html = await request(origin, null, null, null, signal);
-            token = JSON.parse(html.match(/window.__APP_CONFIG__ = (.*?);/)[1]).csrfToken;
-            csrfTokenByOrigin.set(origin, token);
-            return await request(origin, method, body, token, signal);
-          }
+        if (isSuperseded()) {
+          const err = new Error('请求已取消');
+          err.name = 'AbortError';
           throw err;
         }
+        return rpc.call(method, body);
       };
       const full = await call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 });
       if (isSuperseded()) return { version: PROJECT_VERSION, conversation: id, abortedStale: true, scannedAt: Date.now(), errors: [] };
@@ -729,6 +752,79 @@ async function collect(origin, id, options = {}) {
   })();
   setBoundedMap(conversations, key, { ...previous, pending: task }, CONVERSATIONS_CACHE_MAX_ENTRIES);
   try { return await task; } catch (e) { conversations.delete(key); throw e; }
+}
+
+/**
+ * 通过 LanguageServerService/SendUserCascadeMessage 向空闲对话发起原生 /compact 上下文压缩
+ */
+async function compactConversation(origin, id, options = {}) {
+  const safeOrigin = normalizeLoopbackOrigin(origin);
+  if (!safeOrigin || !/^[a-f\d-]{36}$/i.test(String(id || ''))) {
+    return { ok: false, error: '无效本机会话标识，请先进入具体对话后再压缩' };
+  }
+  try {
+    const rpc = createOriginRpcCaller(safeOrigin, { force: options.force === true, requestFn: options.requestFn });
+    const full = await rpc.call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 });
+    const status = String(full?.status || '').trim();
+    if (
+      status === 'CASCADE_RUN_STATUS_RUNNING' ||
+      status === 'CASCADE_RUN_STATUS_BUSY' ||
+      status === 'CASCADE_RUN_STATUS_CANCELING'
+    ) {
+      return {
+        ok: false,
+        busy: true,
+        status,
+        error: '当前对话正在执行或生成中，请等待本轮完成后再压缩'
+      };
+    }
+    const trajectory = full?.trajectory;
+    const stepCount = Number(full?.numTotalSteps ?? trajectory?.steps?.length ?? 0);
+    const genCount = Number(full?.numTotalGeneratorMetadata ?? trajectory?.generatorMetadata?.length ?? 0);
+    if (!trajectory || (stepCount <= 0 && genCount <= 0)) {
+      return {
+        ok: false,
+        empty: true,
+        error: '当前对话尚无历史内容，无需压缩'
+      };
+    }
+
+    const sendPayload = {
+      cascadeId: id,
+      items: [
+        {
+          item: {
+            slashCommand: {
+              info: {
+                name: 'compact',
+                type: 'SLASH_COMMAND_TYPE_SYSTEM'
+              }
+            }
+          }
+        }
+      ],
+      metadata: (options.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata))
+        ? options.metadata
+        : { ideName: 'antigravity' },
+      ...(options.cascadeConfig && typeof options.cascadeConfig === 'object' && !Array.isArray(options.cascadeConfig)
+        ? { cascadeConfig: options.cascadeConfig }
+        : {})
+    };
+    const response = await rpc.call('SendUserCascadeMessage', sendPayload);
+    conversations.delete(`${safeOrigin}/${id}`);
+    return {
+      ok: true,
+      cascadeId: id,
+      stepCountBefore: stepCount,
+      statusBefore: status || null,
+      response: response || null
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err?.message || '触发上下文压缩失败'
+    };
+  }
 }
 
 let cachedTokenHistory = null;
@@ -2928,6 +3024,25 @@ function sanitizeContextPreferencesMap(rawMap) {
   return out;
 }
 
+const DEFAULT_AUTO_COMPACT_CONFIG = Object.freeze({
+  enabled: false,
+  minRemainingPct: 15
+});
+
+function sanitizeAutoCompactConfig(raw) {
+  const base = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const enabled = base.enabled === true;
+  const rawPct = Number(base.minRemainingPct ?? base.thresholdPct ?? DEFAULT_AUTO_COMPACT_CONFIG.minRemainingPct);
+  const minRemainingPct = Number.isFinite(rawPct)
+    ? Math.max(1, Math.min(80, Math.round(rawPct)))
+    : DEFAULT_AUTO_COMPACT_CONFIG.minRemainingPct;
+  return {
+    enabled,
+    minRemainingPct,
+    ...(typeof base.updatedAt === 'string' && base.updatedAt ? { updatedAt: base.updatedAt } : {})
+  };
+}
+
 function loadCustomPlanSettings(overridePathOrDir) {
   const p = getCustomPlanPath(overridePathOrDir);
   const def = {
@@ -2938,7 +3053,8 @@ function loadCustomPlanSettings(overridePathOrDir) {
     uiPreferences: {},
     contextPreferences: {},
     contextScopeMode: 'unified',
-    contextUnifiedPreference: { mode: 'default', limitTokens: null }
+    contextUnifiedPreference: { mode: 'default', limitTokens: null },
+    autoCompact: { ...DEFAULT_AUTO_COMPACT_CONFIG }
   };
   try {
     if (!fs.existsSync(p)) return def;
@@ -2991,6 +3107,7 @@ function loadCustomPlanSettings(overridePathOrDir) {
     const contextUnifiedPreference = raw.contextUnifiedPreference && typeof raw.contextUnifiedPreference === 'object'
       ? (sanitizeContextPreferenceEntry({ ...raw.contextUnifiedPreference, modelId: 'unified' }) || { mode: 'default', limitTokens: null })
       : { mode: 'default', limitTokens: null };
+    const autoCompact = sanitizeAutoCompactConfig(raw.autoCompact);
 
     return {
       version: raw.version || '1.1.0',
@@ -3000,7 +3117,8 @@ function loadCustomPlanSettings(overridePathOrDir) {
       uiPreferences,
       contextPreferences,
       contextScopeMode,
-      contextUnifiedPreference
+      contextUnifiedPreference,
+      autoCompact
     };
   } catch {
     return def;
@@ -3081,6 +3199,7 @@ function getPluginSettings(options = {}) {
   const customPlan = resolveAccountCustomPlan(settings, email);
   const uiPrefs = settings.uiPreferences || {};
   const contextPreferences = settings.contextPreferences || {};
+  const autoCompact = sanitizeAutoCompactConfig(settings.autoCompact);
   return {
     ok: true,
     customPlan,
@@ -3088,6 +3207,7 @@ function getPluginSettings(options = {}) {
     contextPreferences,
     contextScopeMode: settings.contextScopeMode || 'unified',
     contextUnifiedPreference: settings.contextUnifiedPreference || { mode: 'default', limitTokens: null },
+    autoCompact,
     savedHeatView: uiPrefs.savedHeatView,
     autoCheckUpdate: uiPrefs.autoCheckUpdate,
     panelLanguage: uiPrefs.panelLanguage || 'zh-CN',
@@ -3285,6 +3405,22 @@ function savePluginSettings(payload = {}, options = {}) {
       }
     }
   }
+  if (payload.autoCompact !== undefined) {
+    if (payload.autoCompact === null) {
+      settings.autoCompact = { ...DEFAULT_AUTO_COMPACT_CONFIG, updatedAt: new Date().toISOString() };
+    } else if (typeof payload.autoCompact === 'object' && !Array.isArray(payload.autoCompact)) {
+      const prevAc = sanitizeAutoCompactConfig(settings.autoCompact);
+      settings.autoCompact = sanitizeAutoCompactConfig({
+        enabled: payload.autoCompact.enabled !== undefined ? payload.autoCompact.enabled : prevAc.enabled,
+        minRemainingPct: payload.autoCompact.minRemainingPct !== undefined
+          ? payload.autoCompact.minRemainingPct
+          : (payload.autoCompact.thresholdPct !== undefined ? payload.autoCompact.thresholdPct : prevAc.minRemainingPct),
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      return { ok: false, error: '无效的自动压缩设置参数格式' };
+    }
+  }
 
   delete settings.recoveredFromCorruption;
   settings.updatedAt = new Date().toISOString();
@@ -3344,7 +3480,8 @@ function savePluginSettings(payload = {}, options = {}) {
     uiPreferences: settings.uiPreferences,
     contextPreferences: settings.contextPreferences || {},
     contextScopeMode: settings.contextScopeMode || 'unified',
-    contextUnifiedPreference: settings.contextUnifiedPreference || null
+    contextUnifiedPreference: settings.contextUnifiedPreference || null,
+    autoCompact: sanitizeAutoCompactConfig(settings.autoCompact)
   };
 }
 
@@ -8245,6 +8382,7 @@ module.exports = {
   buildAccountScopeKey,
   resetQuotaHostCacheForTest,
   collect,
+  compactConversation,
   collectTokenHistory,
   collectTokenHistoryAsync,
   parseLxssRegistryOutput,
@@ -8292,6 +8430,8 @@ module.exports = {
   resolveAccountCustomPlan,
   getPluginSettings,
   savePluginSettings,
+  DEFAULT_AUTO_COMPACT_CONFIG,
+  sanitizeAutoCompactConfig,
   sanitizeContextPreferenceEntry,
   resolveCliExecutable,
   resolveCliWorkspace,

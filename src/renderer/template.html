@@ -190,6 +190,18 @@
           </div>
         </div>
         <div id="key-takeaway" class="key-takeaway" data-i18n="session.keyTakeaway.loading">正在计算核心指标…</div>
+        <div id="key-compact-bar" class="key-compact-bar">
+          <div class="key-compact-actions">
+            <button id="btn-compact-context" class="unlock-btn unlock-btn-primary key-compact-btn" type="button"
+              data-i18n="session.compact.btnNow">⚡ 一键压缩上下文</button>
+            <label class="key-auto-compact-toggle" for="chk-auto-compact-quick">
+              <input id="chk-auto-compact-quick" type="checkbox">
+              <span data-i18n="session.compact.autoQuickLabel">自动压缩</span>
+              <span id="ctx-auto-compact-badge" class="key-pill pill-muted">未开启 · 15%</span>
+            </label>
+          </div>
+          <div id="compact-status-msg" class="key-compact-status" hidden></div>
+        </div>
       </div>
 
       <!-- 卡片 2: 生成体验、纯流式速度与 E 评分速览 -->
@@ -281,17 +293,31 @@
 
       <!-- 紧凑上下文设置入口卡片 -->
       <div id="ctx-compact-card" class="ctx-compact-card">
-        <div class="ctx-compact-info">
-          <div class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</div>
-          <div class="ctx-compact-meta">
-            <span><span data-i18n="session.compact.savedLabel">本模型已保存：</span><strong
-                id="ctx-compact-saved" data-i18n="status.savedDefault">未单独设置（使用默认）</strong></span>
-            <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong
-                id="ctx-compact-client" data-i18n="status.badge.reading">状态读取中…</strong></span>
+        <div class="ctx-compact-top">
+          <div class="ctx-compact-info">
+            <div class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</div>
+            <div class="ctx-compact-meta">
+              <span><span data-i18n="session.compact.savedLabel">本模型已保存：</span><strong
+                  id="ctx-compact-saved" data-i18n="status.savedDefault">未单独设置（使用默认）</strong></span>
+              <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong
+                  id="ctx-compact-client" data-i18n="status.badge.reading">状态读取中…</strong></span>
+            </div>
           </div>
+          <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button"
+            data-i18n="session.compact.gotoModels">去模型设置 ›</button>
         </div>
-        <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button"
-          data-i18n="session.compact.gotoModels">去模型设置 ›</button>
+        <div id="ctx-auto-compact-inline" class="ctx-auto-compact-inline">
+          <label class="ctx-auto-compact-inline-lbl" for="inp-auto-compact-pct"
+            data-i18n="session.compact.inlinePctLabel">默认自动压缩阈值：剩余 ≤</label>
+          <div class="ctx-auto-compact-inline-ctrl">
+            <input id="inp-auto-compact-pct" class="ctx-auto-compact-pct-input" type="number" min="1" max="80" step="1"
+              value="15" inputmode="numeric">
+            <span class="ctx-auto-compact-unit">%</span>
+            <button id="btn-auto-compact-inline-save" class="ctx-compact-link-btn" type="button"
+              data-i18n="session.compact.saveThreshold">保存</button>
+          </div>
+          <span id="ctx-auto-compact-inline-feedback" class="ctx-auto-compact-inline-feedback" hidden></span>
+        </div>
       </div>
 
       <!-- 底层技术参数与附件审计 -->
@@ -802,6 +828,46 @@
 
     <!-- 设置与系统配置 (第四分页: 配置 / setting) -->
     <div id="pane-ctx-settings" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-settings" hidden>
+      <!-- 0. 上下文自动压缩配置 -->
+      <div class="ctx-settings-card" id="auto-compact-settings-card">
+        <div class="ctx-settings-card-hdr">
+          <div class="ctx-settings-card-title" data-i18n="settings.autoCompact.title">⚡ 上下文自动压缩配置</div>
+          <span id="auto-compact-settings-badge" class="key-pill pill-muted">未开启 · 15%</span>
+        </div>
+        <div class="ctx-settings-card-desc" data-i18n="settings.autoCompact.desc">
+          当当前会话「剩余可用」比例低于或等于设定阈值，且会话处于空闲状态（非生成中）时，自动发送原生 /compact 压缩上下文（不降低模型预算上限）。
+        </div>
+        <label class="ctx-toggle-row" for="chk-auto-compact-settings">
+          <div class="ctx-toggle-row-text">
+            <span class="ctx-toggle-row-title" data-i18n="settings.autoCompact.toggleTitle">启用到达阈值自动压缩</span>
+            <span class="ctx-toggle-row-sub" data-i18n="settings.autoCompact.toggleSub">仅在会话空闲时触发，每轮仅触发一次，避免死循环重复压缩。</span>
+          </div>
+          <input id="chk-auto-compact-settings" type="checkbox">
+        </label>
+        <div class="ctx-auto-compact-settings-row">
+          <label class="ctx-auto-compact-inline-lbl" for="inp-auto-compact-settings-pct"
+            data-i18n="settings.autoCompact.pctLabel">默认剩余可用触发阈值（1%–80%）</label>
+          <div class="ctx-auto-compact-inline-ctrl">
+            <input id="inp-auto-compact-settings-pct" class="ctx-auto-compact-pct-input" type="number" min="1" max="80"
+              step="1" value="15" inputmode="numeric">
+            <span class="ctx-auto-compact-unit">%</span>
+          </div>
+        </div>
+        <div class="ctx-auto-compact-presets" role="group" aria-label="默认阈值预设"
+          data-i18n-aria="settings.autoCompact.presetsAria">
+          <span class="ctx-auto-compact-presets-lbl" data-i18n="settings.autoCompact.presetsLabel">常用预设：</span>
+          <button class="ctx-compact-link-btn auto-compact-preset-btn" type="button" data-compact-pct="10">10%</button>
+          <button class="ctx-compact-link-btn auto-compact-preset-btn" type="button" data-compact-pct="15">15%</button>
+          <button class="ctx-compact-link-btn auto-compact-preset-btn" type="button" data-compact-pct="20">20%</button>
+          <button class="ctx-compact-link-btn auto-compact-preset-btn" type="button" data-compact-pct="30">30%</button>
+        </div>
+        <div class="ctx-settings-card-actions">
+          <button id="btn-save-auto-compact" class="unlock-btn unlock-btn-primary" type="button"
+            data-i18n="settings.autoCompact.saveBtn">保存自动压缩配置</button>
+          <span id="auto-compact-settings-feedback" class="ctx-auto-compact-settings-feedback" hidden></span>
+        </div>
+      </div>
+
       <!-- 1. 一键推荐配置与总览（默认不自动应用，需用户预览勾选并确认） -->
       <div class="ctx-settings-card" id="enhance-preset-card">
         <div class="ctx-settings-card-hdr">

@@ -214,6 +214,37 @@
   let autoCheckUpdate = true;
   let cachedLatestRelease = null;
 
+  const DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT = 15;
+  const AUTO_COMPACT_MIN_PCT = 1;
+  const AUTO_COMPACT_MAX_PCT = 80;
+  const AUTO_COMPACT_COOLDOWN_MS = 60000;
+  const AUTO_COMPACT_RETRY_BACKOFF_MS = 15000;
+  const AUTO_COMPACT_STEP_DELTA = 3;
+  const AUTO_COMPACT_TOKEN_GROWTH = 5000;
+  let autoCompactConfig = { enabled: false, minRemainingPct: DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT };
+  let autoCompactPctDirty = false;
+  let autoCompactSettingsDirty = false;
+  let autoCompactSettingsDraftEnabled = null;
+  let autoCompactSettingsDraftPct = null;
+  const compactState = {
+    inFlight: false,
+    statusKey: '',
+    statusVars: null,
+    statusText: '',
+    statusKind: '',
+    statusRoute: null,
+    inlineKey: '',
+    inlineVars: null,
+    inlineErr: false,
+    settingsKey: '',
+    settingsVars: null,
+    settingsErr: false
+  };
+  const capturedSendEnvelopesByCascade = new Map();
+  let lastCapturedSendEnvelope = null;
+  const autoCompactTriggeredByCascade = new Map();
+  const autoCompactLastAttemptByCascade = new Map();
+
   const METER_RENDERER_VERSION = typeof METER_VERSION !== 'undefined' ? METER_VERSION : '0.8.8';
   function formatDisplayVersion(rawVer) {
     const clean = String(rawVer ?? METER_RENDERER_VERSION).replace(/^v/i, '').trim();
@@ -270,7 +301,8 @@
       '/accounts-action': 'accounts',
       '/family-action': 'family',
       '/check-update': 'checkUpdate',
-      '/apply-update': 'applyUpdate'
+      '/apply-update': 'applyUpdate',
+      '/compact-context': 'compactContext'
     };
     const key = map[routePath];
     if (!key) return true;
@@ -3245,6 +3277,7 @@
     globalThis.__AG_METER_ON_SEND_MESSAGE__ = function (req, channel = 'client_object') {
       try {
         if (!req || typeof req !== 'object' || typeof budgetEngine.transformOutgoingSendRequest !== 'function') return null;
+        captureSafeSendEnvelopeFromRequest(req);
         const tx = budgetEngine.transformOutgoingSendRequest(req, buildInterceptorContext(channel, 'SendUserCascadeMessage'));
         if (!tx || !tx.handled) return null;
         const rec = recordBudgetTransformDispatch(tx);
@@ -3327,6 +3360,7 @@
                 contentType = headersObj['content-type'] || headersObj['Content-Type'] || '';
               }
             }
+            if (/SendUserCascadeMessage/.test(urlStr)) captureSafeSendEnvelopeFromRequest(init.body);
             const tx = budgetEngine.transformOutgoingSendRequest(init.body, buildInterceptorContext('fetch', urlStr, contentType));
             if (tx && tx.handled) {
               if (tx.modified && tx.output !== undefined) {
@@ -3387,6 +3421,7 @@
           const urlStr = this.__agRequestUrl || '';
           if (body && typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr)) {
             const contentType = this.__agRequestHeaders?.['content-type'] || '';
+            if (/SendUserCascadeMessage/.test(urlStr)) captureSafeSendEnvelopeFromRequest(body);
             const tx = budgetEngine.transformOutgoingSendRequest(body, buildInterceptorContext('xhr', urlStr, contentType));
             if (tx && tx.handled) {
               if (tx.modified && tx.output !== undefined) {
@@ -4961,6 +4996,629 @@
       ctxDraftDirty = false;
     }
     switchContextTab('models');
+  });
+
+  // =========================================================================
+  // 模块 3b: 一键压缩上下文 & 剩余可用比例触发自动压缩
+  // =========================================================================
+  const btnCompactContext = el('btn-compact-context');
+  const chkAutoCompactQuick = el('chk-auto-compact-quick');
+  const ctxAutoCompactBadge = el('ctx-auto-compact-badge');
+  const compactStatusMsg = el('compact-status-msg');
+  const inpAutoCompactPct = el('inp-auto-compact-pct');
+  const btnAutoCompactInlineSave = el('btn-auto-compact-inline-save');
+  const ctxAutoCompactInlineFeedback = el('ctx-auto-compact-inline-feedback');
+  const autoCompactSettingsBadge = el('auto-compact-settings-badge');
+  const chkAutoCompactSettings = el('chk-auto-compact-settings');
+  const inpAutoCompactSettingsPct = el('inp-auto-compact-settings-pct');
+  const btnSaveAutoCompact = el('btn-save-auto-compact');
+  const autoCompactSettingsFeedback = el('auto-compact-settings-feedback');
+  const autoCompactSettingsCard = el('auto-compact-settings-card');
+
+  function sanitizeAutoCompactConfigClient(raw) {
+    const base = raw && typeof raw === 'object' ? raw : {};
+    const rawPct = Number(base.minRemainingPct ?? base.thresholdPct ?? DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT);
+    const minRemainingPct = Number.isFinite(rawPct)
+      ? Math.max(AUTO_COMPACT_MIN_PCT, Math.min(AUTO_COMPACT_MAX_PCT, Math.round(rawPct)))
+      : DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT;
+    return {
+      enabled: base.enabled === true,
+      minRemainingPct
+    };
+  }
+
+  function clonePlainObjectSafe(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    try {
+      return JSON.parse(JSON.stringify(obj));
+    } catch {
+      return null;
+    }
+  }
+
+  function captureSafeSendEnvelopeFromRequest(rawReqOrBody) {
+    try {
+      let parsed = null;
+      if (typeof rawReqOrBody === 'string') {
+        const trimmed = rawReqOrBody.trim();
+        if (!trimmed.startsWith('{')) return;
+        parsed = JSON.parse(trimmed);
+      } else if (rawReqOrBody && typeof rawReqOrBody === 'object' && !(typeof Uint8Array !== 'undefined' && rawReqOrBody instanceof Uint8Array)) {
+        parsed = rawReqOrBody;
+      }
+      if (!parsed || typeof parsed !== 'object') return;
+      const cid = String(parsed.cascadeId || parsed.cascade_id || '').trim();
+      const metadata = clonePlainObjectSafe(parsed.metadata);
+      const cascadeConfig = clonePlainObjectSafe(parsed.cascadeConfig || parsed.cascade_config);
+      if (!metadata && !cascadeConfig) return;
+      const env = { metadata, cascadeConfig, capturedAt: Date.now() };
+      lastCapturedSendEnvelope = env;
+      if (cid && /^[a-f\d-]{36}$/i.test(cid)) {
+        capturedSendEnvelopesByCascade.set(cid, env);
+        if (capturedSendEnvelopesByCascade.size > 50) {
+          const oldestKey = capturedSendEnvelopesByCascade.keys().next().value;
+          if (oldestKey) capturedSendEnvelopesByCascade.delete(oldestKey);
+        }
+      }
+    } catch { }
+  }
+
+  function parseValidAutoCompactPctInput(rawValue) {
+    const str = String(rawValue ?? '').trim();
+    if (!/^\d+$/.test(str)) return null;
+    const num = Number(str);
+    if (!Number.isInteger(num) || num < AUTO_COMPACT_MIN_PCT || num > AUTO_COMPACT_MAX_PCT) return null;
+    return num;
+  }
+
+  function isElementFocusedSafe(node) {
+    try {
+      if (!node) return false;
+      return shadow?.activeElement === node || (typeof document !== 'undefined' && document.activeElement === node);
+    } catch {
+      return false;
+    }
+  }
+
+  function markAutoCompactPresetsActive(activePct) {
+    const btns = autoCompactSettingsCard?.querySelectorAll?.('.auto-compact-preset-btn')
+      || shadow?.querySelectorAll?.('.auto-compact-preset-btn')
+      || [];
+    const target = Number.isFinite(Number(activePct)) ? String(Math.round(Number(activePct))) : '';
+    btns.forEach?.((btn) => {
+      const val = String(btn.getAttribute?.('data-compact-pct') || '');
+      if (val && val === target) addClass(btn, 'active');
+      else removeClass(btn, 'active');
+    });
+  }
+
+  function setCompactStatus(key, vars = null, kind = '', targetRoute = state.route || null) {
+    compactState.statusKey = key || '';
+    compactState.statusVars = vars || null;
+    compactState.statusKind = kind || '';
+    compactState.statusRoute = targetRoute || null;
+    compactState.statusText = key ? t(key, vars) : '';
+  }
+
+  function applyAutoCompactConfig(raw, opts = {}) {
+    const clean = sanitizeAutoCompactConfigClient(raw);
+    autoCompactConfig = clean;
+    if (!opts.preserveDirty) {
+      autoCompactPctDirty = false;
+      autoCompactSettingsDirty = false;
+      autoCompactSettingsDraftEnabled = null;
+      autoCompactSettingsDraftPct = null;
+    }
+    try {
+      localStorage?.setItem('ag_auto_compact_v1', JSON.stringify(clean));
+    } catch { }
+    if (typeof window !== 'undefined' && window.__AGContextMeterSettings && typeof window.__AGContextMeterSettings === 'object') {
+      window.__AGContextMeterSettings = {
+        ...window.__AGContextMeterSettings,
+        autoCompact: { ...clean }
+      };
+    }
+    return clean;
+  }
+
+  function renderAutoCompactUi() {
+    const cfg = sanitizeAutoCompactConfigClient(autoCompactConfig);
+    autoCompactConfig = cfg;
+    const hasRoute = Boolean(state.route && /^[a-f\d-]{36}$/i.test(String(state.route)));
+
+    if (compactState.statusRoute && state.route && compactState.statusRoute !== state.route) {
+      setCompactStatus('', null, '', null);
+    }
+
+    if (btnCompactContext) {
+      btnCompactContext.disabled = Boolean(compactState.inFlight || !hasRoute);
+      btnCompactContext.textContent = compactState.inFlight
+        ? t('session.compact.compacting')
+        : t('session.compact.btnNow');
+    }
+
+    if (chkAutoCompactQuick) {
+      chkAutoCompactQuick.checked = cfg.enabled;
+    }
+
+    const badgeText = t(cfg.enabled ? 'session.compact.badgeOnFmt' : 'session.compact.badgeOffFmt', { pct: cfg.minRemainingPct });
+    const badgeCls = cfg.enabled ? 'key-pill pill-good' : 'key-pill pill-muted';
+    if (ctxAutoCompactBadge) {
+      ctxAutoCompactBadge.textContent = badgeText;
+      ctxAutoCompactBadge.className = badgeCls;
+    }
+    if (autoCompactSettingsBadge) {
+      autoCompactSettingsBadge.textContent = badgeText;
+      autoCompactSettingsBadge.className = badgeCls;
+    }
+
+    if (compactStatusMsg) {
+      if (compactState.statusKey) {
+        compactStatusMsg.hidden = false;
+        compactStatusMsg.textContent = t(compactState.statusKey, compactState.statusVars);
+        const kindCls = compactState.statusKind === 'ok'
+          ? 'status-ok'
+          : (compactState.statusKind === 'warn' ? 'status-warn' : (compactState.statusKind === 'err' ? 'status-err' : ''));
+        compactStatusMsg.className = kindCls ? `key-compact-status ${kindCls}` : 'key-compact-status';
+      } else {
+        compactStatusMsg.hidden = true;
+        compactStatusMsg.textContent = '';
+        compactStatusMsg.className = 'key-compact-status';
+      }
+    }
+
+    if (inpAutoCompactPct && !autoCompactPctDirty && !isElementFocusedSafe(inpAutoCompactPct)) {
+      inpAutoCompactPct.value = String(cfg.minRemainingPct);
+    }
+
+    if (chkAutoCompactSettings && !autoCompactSettingsDirty) {
+      chkAutoCompactSettings.checked = cfg.enabled;
+    } else if (chkAutoCompactSettings && autoCompactSettingsDirty && typeof autoCompactSettingsDraftEnabled === 'boolean') {
+      chkAutoCompactSettings.checked = autoCompactSettingsDraftEnabled;
+    }
+
+    const effectiveSettingsPct = (autoCompactSettingsDirty && autoCompactSettingsDraftPct != null)
+      ? autoCompactSettingsDraftPct
+      : String(cfg.minRemainingPct);
+    if (inpAutoCompactSettingsPct && !autoCompactSettingsDirty && !isElementFocusedSafe(inpAutoCompactSettingsPct)) {
+      inpAutoCompactSettingsPct.value = String(cfg.minRemainingPct);
+    } else if (inpAutoCompactSettingsPct && autoCompactSettingsDirty && autoCompactSettingsDraftPct != null && !isElementFocusedSafe(inpAutoCompactSettingsPct)) {
+      inpAutoCompactSettingsPct.value = String(autoCompactSettingsDraftPct);
+    }
+    markAutoCompactPresetsActive(inpAutoCompactSettingsPct?.value || effectiveSettingsPct);
+
+    if (ctxAutoCompactInlineFeedback) {
+      if (compactState.inlineKey) {
+        ctxAutoCompactInlineFeedback.hidden = false;
+        ctxAutoCompactInlineFeedback.textContent = t(compactState.inlineKey, compactState.inlineVars);
+        ctxAutoCompactInlineFeedback.className = compactState.inlineErr
+          ? 'ctx-auto-compact-inline-feedback is-err'
+          : 'ctx-auto-compact-inline-feedback';
+      } else {
+        ctxAutoCompactInlineFeedback.hidden = true;
+        ctxAutoCompactInlineFeedback.textContent = '';
+        ctxAutoCompactInlineFeedback.className = 'ctx-auto-compact-inline-feedback';
+      }
+    }
+
+    if (autoCompactSettingsFeedback) {
+      if (compactState.settingsKey) {
+        autoCompactSettingsFeedback.hidden = false;
+        autoCompactSettingsFeedback.textContent = t(compactState.settingsKey, compactState.settingsVars);
+        autoCompactSettingsFeedback.className = compactState.settingsErr
+          ? 'ctx-auto-compact-settings-feedback is-err'
+          : 'ctx-auto-compact-settings-feedback';
+      } else {
+        autoCompactSettingsFeedback.hidden = true;
+        autoCompactSettingsFeedback.textContent = '';
+        autoCompactSettingsFeedback.className = 'ctx-auto-compact-settings-feedback';
+      }
+    }
+  }
+
+  async function saveAutoCompactSettingsClient(nextRaw, source = 'inline') {
+    const clean = sanitizeAutoCompactConfigClient(nextRaw);
+    const hasIpcSave = Boolean(typeof window !== 'undefined' && typeof window.contextMeterAPI?.saveSettings === 'function');
+    const hasLiveSave = hasLiveRouteCapability('/save-settings');
+    let res = null;
+    try {
+      if (hasIpcSave || hasLiveSave) {
+        res = await saveSettingsPayloadBridge({ autoCompact: clean });
+      } else {
+        res = { ok: true, autoCompact: clean, localOnly: true };
+      }
+    } catch (err) {
+      res = { ok: false, error: err?.message || 'save_failed' };
+    }
+
+    if (res && res.ok === false) {
+      const reason = res.error || 'unknown';
+      if (source === 'settings') {
+        compactState.settingsKey = 'session.compact.saveErrFmt';
+        compactState.settingsVars = { reason };
+        compactState.settingsErr = true;
+      } else if (source === 'inline') {
+        compactState.inlineKey = 'session.compact.saveErrFmt';
+        compactState.inlineVars = { reason };
+        compactState.inlineErr = true;
+      } else {
+        setCompactStatus('session.compact.saveErrFmt', { reason }, 'err', state.route || null);
+      }
+      renderAutoCompactUi();
+      return res;
+    }
+
+    const saved = applyAutoCompactConfig(res?.autoCompact || clean);
+    if (source === 'inline') {
+      compactState.inlineKey = 'session.compact.thresholdSavedFmt';
+      compactState.inlineVars = { pct: saved.minRemainingPct };
+      compactState.inlineErr = false;
+    } else if (source === 'settings') {
+      const stateText = t(saved.enabled ? 'settings.autoCompact.stateOn' : 'settings.autoCompact.stateOff');
+      compactState.settingsKey = 'settings.autoCompact.savedFmt';
+      compactState.settingsVars = { state: stateText, pct: saved.minRemainingPct };
+      compactState.settingsErr = false;
+    } else {
+      compactState.inlineKey = '';
+      compactState.settingsKey = '';
+    }
+    renderAutoCompactUi();
+    if (saved.enabled) {
+      void maybeTriggerAutoCompact();
+    }
+    return { ok: true, autoCompact: saved };
+  }
+
+  async function compactViaDirectLanguageServerFetch(id, options = {}) {
+    const fetchFn = (typeof window !== 'undefined' && typeof window.__agOrigFetch === 'function')
+      ? window.__agOrigFetch
+      : (typeof fetch === 'function' ? fetch : null);
+    if (!fetchFn) return { ok: false, error: 'fetch_unavailable' };
+    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+      ...(csrf ? { 'x-codeium-csrf-token': csrf } : {})
+    };
+    try {
+      const trajResp = await fetchFn('/exa.language_server_pb.LanguageServerService/GetCascadeTrajectory', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cascadeId: id, trajectoryVerbosity: 3 })
+      });
+      if (!trajResp || !trajResp.ok) {
+        return { ok: false, error: `HTTP ${trajResp?.status ?? 'error'}` };
+      }
+      const full = await trajResp.json().catch(() => null);
+      const status = String(full?.status || '').trim();
+      if (
+        status === 'CASCADE_RUN_STATUS_RUNNING' ||
+        status === 'CASCADE_RUN_STATUS_BUSY' ||
+        status === 'CASCADE_RUN_STATUS_CANCELING'
+      ) {
+        return { ok: false, busy: true, status, error: t('session.compact.errBusy') };
+      }
+      const trajectory = full?.trajectory;
+      const stepCount = Number(full?.numTotalSteps ?? trajectory?.steps?.length ?? 0);
+      const genCount = Number(full?.numTotalGeneratorMetadata ?? trajectory?.generatorMetadata?.length ?? 0);
+      if (!trajectory || (stepCount <= 0 && genCount <= 0)) {
+        return { ok: false, empty: true, error: t('session.compact.errEmpty') };
+      }
+      const sendPayload = {
+        cascadeId: id,
+        items: [
+          {
+            item: {
+              slashCommand: {
+                info: {
+                  name: 'compact',
+                  type: 'SLASH_COMMAND_TYPE_SYSTEM'
+                }
+              }
+            }
+          }
+        ],
+        metadata: (options.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata))
+          ? options.metadata
+          : { ideName: 'antigravity' },
+        ...(options.cascadeConfig && typeof options.cascadeConfig === 'object' && !Array.isArray(options.cascadeConfig)
+          ? { cascadeConfig: options.cascadeConfig }
+          : {})
+      };
+      const sendResp = await fetchFn('/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(sendPayload)
+      });
+      if (!sendResp || !sendResp.ok) {
+        const errBody = sendResp && typeof sendResp.json === 'function' ? await sendResp.json().catch(() => null) : null;
+        return { ok: false, error: errBody?.message || errBody?.error || `HTTP ${sendResp?.status ?? 'error'}` };
+      }
+      const responseData = typeof sendResp.json === 'function' ? await sendResp.json().catch(() => null) : null;
+      return {
+        ok: true,
+        cascadeId: id,
+        stepCountBefore: stepCount,
+        statusBefore: status || null,
+        response: responseData,
+        viaDirectFetch: true
+      };
+    } catch (err) {
+      return { ok: false, error: err?.message || 'compact_fetch_failed' };
+    }
+  }
+
+  function recordAutoCompactWatermark(id, { stepCount = 0, actual = null, at = Date.now() } = {}) {
+    if (!id) return;
+    autoCompactTriggeredByCascade.set(id, {
+      at,
+      stepCount: Number(stepCount || 0),
+      postCompactMinActual: Number.isFinite(actual) ? Number(actual) : Number.MAX_SAFE_INTEGER
+    });
+    if (autoCompactTriggeredByCascade.size > 50) {
+      const oldestKey = autoCompactTriggeredByCascade.keys().next().value;
+      if (oldestKey) autoCompactTriggeredByCascade.delete(oldestKey);
+    }
+  }
+
+  async function compactCurrentConversation(opts = {}) {
+    const id = String(opts.cascadeId || state.route || '');
+    if (!id || !/^[a-f\d-]{36}$/i.test(id)) {
+      if (!opts.isAuto) {
+        setCompactStatus('session.compact.errNoRoute', null, 'err', null);
+        renderAutoCompactUi();
+      }
+      return { ok: false, error: t('session.compact.errNoRoute') };
+    }
+    if (compactState.inFlight) {
+      return { ok: false, inFlight: true };
+    }
+
+    const env = capturedSendEnvelopesByCascade.get(id) || lastCapturedSendEnvelope || null;
+    const rpcOpts = {
+      cascadeId: id,
+      ...(env?.metadata ? { metadata: env.metadata } : {}),
+      ...(env?.cascadeConfig ? { cascadeConfig: env.cascadeConfig } : {})
+    };
+
+    compactState.inFlight = true;
+    if (!opts.isAuto) {
+      setCompactStatus('', null, '', id);
+    }
+    renderAutoCompactUi();
+
+    let res = null;
+    try {
+      const ipcCall = (typeof window !== 'undefined' && typeof window.contextMeterAPI?.compactContext === 'function')
+        ? () => window.contextMeterAPI.compactContext(id, rpcOpts)
+        : null;
+      const canLive = hasLiveRouteCapability('/compact-context');
+      if (ipcCall || canLive) {
+        try {
+          const out = await callBackendWithPriority({
+            ipcCall,
+            liveRoute: canLive ? '/compact-context' : '',
+            liveBody: rpcOpts
+          });
+          res = out?.result || null;
+        } catch (bridgeErr) {
+          const msg = String(bridgeErr?.message || '');
+          if (/No handler registered/i.test(msg) || /LIVE_BRIDGE_UNAVAILABLE/i.test(msg) || bridgeErr?.httpStatus === 404) {
+            res = await compactViaDirectLanguageServerFetch(id, rpcOpts);
+          } else {
+            res = { ok: false, error: msg || 'compact_bridge_error' };
+          }
+        }
+      }
+      if (!res) {
+        res = await compactViaDirectLanguageServerFetch(id, rpcOpts);
+      }
+
+      if (res?.ok) {
+        recordAutoCompactWatermark(id, {
+          stepCount: Number(res.stepCountBefore ?? state.count ?? 0),
+          actual: state.latest?.actual ?? null,
+          at: Date.now()
+        });
+        if (opts.isAuto) {
+          setCompactStatus(
+            'session.compact.okAutoFmt',
+            { rem: opts.remainingPctText ?? '0', pct: autoCompactConfig.minRemainingPct },
+            'ok',
+            id
+          );
+        } else {
+          setCompactStatus('session.compact.okManual', null, 'ok', id);
+        }
+        if (typeof setTimeout === 'function' && !state.disposed) {
+          setTimeout(() => {
+            if (state.disposed) return;
+            state.requestNext = 0;
+            if (!state.requestBusy && state.route === id) {
+              void requestPoll(state.generation, id);
+            }
+          }, 1500);
+        }
+      } else if (res?.busy) {
+        if (!opts.isAuto) {
+          setCompactStatus('session.compact.errBusy', null, 'warn', id);
+        }
+      } else if (res?.empty) {
+        if (!opts.isAuto) {
+          setCompactStatus('session.compact.errEmpty', null, 'warn', id);
+        }
+      } else {
+        setCompactStatus('session.compact.errFailed', { reason: res?.error || 'unknown' }, 'err', id);
+      }
+      return res || { ok: false, error: 'unknown' };
+    } finally {
+      compactState.inFlight = false;
+      renderAutoCompactUi();
+    }
+  }
+
+  async function maybeTriggerAutoCompact() {
+    if (state.disposed || !autoCompactConfig.enabled) {
+      return { triggered: false, reason: 'disabled' };
+    }
+    const id = state.route;
+    if (!id || !/^[a-f\d-]{36}$/i.test(String(id))) {
+      return { triggered: false, reason: 'no_route' };
+    }
+    if (compactState.inFlight) {
+      return { triggered: false, reason: 'in_flight' };
+    }
+    if (state.requestBusy || (state.livePendingRequest && state.livePendingRequest.cascadeId === id)) {
+      return { triggered: false, reason: 'busy' };
+    }
+    const scanCalls = Array.isArray(state.scan?.calls) ? state.scan.calls : [];
+    const lastCall = scanCalls.length ? scanCalls[scanCalls.length - 1] : null;
+    if (lastCall?.status === 'streaming') {
+      return { triggered: false, reason: 'streaming' };
+    }
+    const latest = state.latest;
+    if (
+      !latest ||
+      !Number.isFinite(latest.actual) ||
+      latest.actual <= 0 ||
+      !Number.isFinite(latest.budget) ||
+      latest.budget <= 0 ||
+      !Number.isFinite(latest.percent) ||
+      latest.exceeded ||
+      latest.error
+    ) {
+      return { triggered: false, reason: 'no_metrics' };
+    }
+    const usedPct = Math.max(0, Math.min(100, Number(latest.percent)));
+    const remainingPct = Math.max(0, 100 - usedPct);
+    if (remainingPct > autoCompactConfig.minRemainingPct) {
+      return { triggered: false, reason: 'above_threshold', remainingPct };
+    }
+
+    const now = Date.now();
+    const lastAttemptAt = autoCompactLastAttemptByCascade.get(id) || 0;
+    if (now - lastAttemptAt < AUTO_COMPACT_RETRY_BACKOFF_MS) {
+      return { triggered: false, reason: 'backoff' };
+    }
+
+    const wm = autoCompactTriggeredByCascade.get(id);
+    if (wm) {
+      if (latest.actual < wm.postCompactMinActual) {
+        wm.postCompactMinActual = latest.actual;
+      }
+      const cooldownOk = (now - wm.at) >= AUTO_COMPACT_COOLDOWN_MS;
+      const stepProgressed = Number(state.count || 0) > (Number(wm.stepCount || 0) + AUTO_COMPACT_STEP_DELTA);
+      const tokenGrown = latest.actual >= (wm.postCompactMinActual + AUTO_COMPACT_TOKEN_GROWTH);
+      if (!cooldownOk || !stepProgressed || !tokenGrown) {
+        return { triggered: false, reason: 'watermark' };
+      }
+    }
+
+    autoCompactLastAttemptByCascade.set(id, now);
+    if (autoCompactLastAttemptByCascade.size > 50) {
+      const oldestKey = autoCompactLastAttemptByCascade.keys().next().value;
+      if (oldestKey) autoCompactLastAttemptByCascade.delete(oldestKey);
+    }
+
+    const remStr = Number.isInteger(remainingPct)
+      ? String(remainingPct)
+      : remainingPct.toFixed(1).replace(/\.0$/, '');
+    const res = await compactCurrentConversation({
+      cascadeId: id,
+      isAuto: true,
+      remainingPctText: remStr
+    });
+    if (res?.busy) {
+      autoCompactLastAttemptByCascade.delete(id);
+    }
+    return { triggered: Boolean(res?.ok), result: res, remainingPct };
+  }
+
+  btnCompactContext?.addEventListener('click', () => {
+    void compactCurrentConversation({ isAuto: false });
+  });
+
+  chkAutoCompactQuick?.addEventListener('change', () => {
+    void saveAutoCompactSettingsClient({
+      enabled: Boolean(chkAutoCompactQuick.checked),
+      minRemainingPct: autoCompactConfig.minRemainingPct
+    }, 'quick');
+  });
+
+  inpAutoCompactPct?.addEventListener('input', () => {
+    autoCompactPctDirty = true;
+    compactState.inlineKey = '';
+    compactState.inlineErr = false;
+    if (ctxAutoCompactInlineFeedback) ctxAutoCompactInlineFeedback.hidden = true;
+  });
+
+  inpAutoCompactPct?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnAutoCompactInlineSave?.click?.();
+    }
+  });
+
+  btnAutoCompactInlineSave?.addEventListener('click', () => {
+    const parsed = parseValidAutoCompactPctInput(inpAutoCompactPct?.value);
+    if (parsed == null) {
+      compactState.inlineKey = 'session.compact.thresholdInvalid';
+      compactState.inlineVars = null;
+      compactState.inlineErr = true;
+      renderAutoCompactUi();
+      return;
+    }
+    void saveAutoCompactSettingsClient({
+      enabled: autoCompactConfig.enabled,
+      minRemainingPct: parsed
+    }, 'inline');
+  });
+
+  chkAutoCompactSettings?.addEventListener('change', () => {
+    autoCompactSettingsDirty = true;
+    autoCompactSettingsDraftEnabled = Boolean(chkAutoCompactSettings.checked);
+    compactState.settingsKey = '';
+    compactState.settingsErr = false;
+    if (autoCompactSettingsFeedback) autoCompactSettingsFeedback.hidden = true;
+  });
+
+  inpAutoCompactSettingsPct?.addEventListener('input', () => {
+    autoCompactSettingsDirty = true;
+    autoCompactSettingsDraftPct = inpAutoCompactSettingsPct.value;
+    compactState.settingsKey = '';
+    compactState.settingsErr = false;
+    if (autoCompactSettingsFeedback) autoCompactSettingsFeedback.hidden = true;
+    markAutoCompactPresetsActive(inpAutoCompactSettingsPct.value);
+  });
+
+  (autoCompactSettingsCard?.querySelectorAll?.('.auto-compact-preset-btn') || []).forEach?.((btn) => {
+    btn.addEventListener('click', () => {
+      const pct = btn.getAttribute?.('data-compact-pct');
+      if (!pct) return;
+      autoCompactSettingsDirty = true;
+      autoCompactSettingsDraftPct = pct;
+      if (inpAutoCompactSettingsPct) inpAutoCompactSettingsPct.value = pct;
+      compactState.settingsKey = '';
+      compactState.settingsErr = false;
+      if (autoCompactSettingsFeedback) autoCompactSettingsFeedback.hidden = true;
+      markAutoCompactPresetsActive(pct);
+    });
+  });
+
+  btnSaveAutoCompact?.addEventListener('click', () => {
+    const parsed = parseValidAutoCompactPctInput(inpAutoCompactSettingsPct?.value);
+    if (parsed == null) {
+      compactState.settingsKey = 'session.compact.thresholdInvalid';
+      compactState.settingsVars = null;
+      compactState.settingsErr = true;
+      renderAutoCompactUi();
+      return;
+    }
+    const nextEnabled = chkAutoCompactSettings ? Boolean(chkAutoCompactSettings.checked) : autoCompactConfig.enabled;
+    void saveAutoCompactSettingsClient({
+      enabled: nextEnabled,
+      minRemainingPct: parsed
+    }, 'settings');
   });
 
   btnCardGotoSpeed?.addEventListener('click', () => {
@@ -11129,6 +11787,18 @@
         } catch { }
       }
 
+      if (settingsRes?.ok && settingsRes.autoCompact && typeof settingsRes.autoCompact === 'object') {
+        applyAutoCompactConfig(settingsRes.autoCompact, { preserveDirty: autoCompactPctDirty || autoCompactSettingsDirty });
+      } else {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const rawAuto = localStorage.getItem('ag_auto_compact_v1');
+            if (rawAuto) applyAutoCompactConfig(JSON.parse(rawAuto), { preserveDirty: autoCompactPctDirty || autoCompactSettingsDirty });
+          }
+        } catch { }
+      }
+      renderAutoCompactUi();
+
       if (settingsRes?.ok && settingsRes.customPlan && typeof settingsRes.customPlan === 'object') {
         lastSavedCustomPlan = { ...settingsRes.customPlan };
         if (typeof window !== 'undefined') {
@@ -12736,6 +13406,7 @@
     host.hidden = false;
     host.setAttribute('data-has-session', state.route ? 'true' : 'false');
     ensureHostDocked();
+    renderAutoCompactUi();
     if (!state.route) {
       hideContextTooltip();
       const barFill = el('bar-fill');
@@ -13574,6 +14245,13 @@
         const isStreamingNow = Boolean(latestRecNow && latestRecNow.status === 'streaming');
         const nextDelay = document.hidden ? 15000 : (isStreamingNow ? 1000 : 3000);
         state.requestNext = Date.now() + nextDelay;
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(() => {
+            if (!state.disposed) void maybeTriggerAutoCompact();
+          });
+        } else {
+          void maybeTriggerAutoCompact();
+        }
         render();
       }
     }
@@ -16280,7 +16958,12 @@
         enhanceTierDirty: Boolean(enhanceTierDirty),
         selectedEnhanceTier: selectedEnhanceTier ?? null,
         enhanceTitleDirty: Boolean(enhanceTitleDirty),
-        enhanceTitleDraft: enhanceTitleDraft ?? null
+        enhanceTitleDraft: enhanceTitleDraft ?? null,
+        autoCompactPctDirty: Boolean(autoCompactPctDirty),
+        autoCompactPctValue: inpAutoCompactPct ? inpAutoCompactPct.value : null,
+        autoCompactSettingsDirty: Boolean(autoCompactSettingsDirty),
+        autoCompactSettingsEnabledDraft: autoCompactSettingsDraftEnabled,
+        autoCompactSettingsPctDraft: autoCompactSettingsDraftPct
       }
     };
   }
@@ -16311,6 +16994,24 @@
     }
     if (d.enhanceTierDirty || d.enhanceTitleDirty) {
       renderEnhanceSectionUI();
+    }
+    if (d.autoCompactPctDirty && inpAutoCompactPct && typeof d.autoCompactPctValue === 'string') {
+      inpAutoCompactPct.value = d.autoCompactPctValue;
+      autoCompactPctDirty = true;
+    }
+    if (d.autoCompactSettingsDirty) {
+      autoCompactSettingsDirty = true;
+      if (typeof d.autoCompactSettingsEnabledDraft === 'boolean') {
+        autoCompactSettingsDraftEnabled = d.autoCompactSettingsEnabledDraft;
+        if (chkAutoCompactSettings) chkAutoCompactSettings.checked = d.autoCompactSettingsEnabledDraft;
+      }
+      if (typeof d.autoCompactSettingsPctDraft === 'string') {
+        autoCompactSettingsDraftPct = d.autoCompactSettingsPctDraft;
+        if (inpAutoCompactSettingsPct) inpAutoCompactSettingsPct.value = d.autoCompactSettingsPctDraft;
+      }
+    }
+    if (d.autoCompactPctDirty || d.autoCompactSettingsDirty) {
+      renderAutoCompactUi();
     }
     if (saved.browsePoolKey) {
       quotaState.browsePoolKey = saved.browsePoolKey;
@@ -16442,6 +17143,7 @@
       }
       manualModelSelection = false;
       render();
+      if (autoCompactConfig.enabled) void maybeTriggerAutoCompact();
       return { activeSessionModelKey, activeSessionProductKey, selectedEditModelKey, selectedProductKey, draft: { ...ctxDraft } };
     },
     setModelCapabilitiesForTest: (capabilitiesById) => {
@@ -16493,6 +17195,34 @@
     getPanelLanguage: () => getPanelLanguage(),
     setPanelLanguage: (lang, opts) => applyPanelLanguage(lang, opts),
     restoreSettingsForTest: () => restoreSettingsFromHost(),
+    getAutoCompactStateForTest: () => ({
+      config: { ...autoCompactConfig },
+      compactState: { ...compactState },
+      capturedEnvelopeCount: capturedSendEnvelopesByCascade.size,
+      hasLastCapturedEnvelope: Boolean(lastCapturedSendEnvelope),
+      triggeredWatermarks: Array.from(autoCompactTriggeredByCascade.entries()),
+      autoCompactPctDirty,
+      autoCompactSettingsDirty
+    }),
+    compactCurrentConversationForTest: (opts) => compactCurrentConversation(opts),
+    maybeTriggerAutoCompactForTest: () => maybeTriggerAutoCompact(),
+    setAutoCompactConfigForTest: (cfg) => {
+      const saved = applyAutoCompactConfig(cfg);
+      renderAutoCompactUi();
+      return saved;
+    },
+    setRouteStateForTest: (nextRoute, { count = 0, scanCalls = null, latest = undefined } = {}) => {
+      if (state.route !== (nextRoute || null)) {
+        clearLivePendingRequestWait();
+      }
+      state.route = nextRoute || null;
+      if (Number.isFinite(count)) state.count = Number(count);
+      if (Array.isArray(scanCalls)) {
+        state.scan = { ...(state.scan || {}), calls: scanCalls };
+      }
+      if (latest !== undefined) state.latest = latest;
+      render();
+    },
     translateForTest: (key, vars) => t(key, vars),
     applyStaticTranslationsForTest: (rootNode) => applyStaticPanelTranslations(rootNode),
     getModelQuotaStateForTest: (nowMs) => ({

@@ -1743,14 +1743,45 @@
     .ctx-brand-feedback{font-size:11px;margin-top:6px;padding:5px 8px;border-radius:5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary)}
     .ctx-tab-pane[hidden]{display:none!important}
 
+    /* 当前会话核心用量一键压缩栏 */
+    .key-compact-bar{margin-top:8px;padding-top:8px;border-top:1px solid var(--ag-border-subcard);display:flex;flex-direction:column;gap:6px}
+    .key-compact-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .key-compact-btn{gap:4px;font-weight:600}
+    .key-auto-compact-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ag-text-secondary);cursor:pointer;user-select:none;min-width:0}
+    .key-auto-compact-toggle input[type="checkbox"]{cursor:pointer;margin:0}
+    .key-compact-status{font-size:10.5px;line-height:1.35;color:var(--ag-text-secondary);background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:5px;padding:5px 8px}
+    .key-compact-status[hidden]{display:none!important}
+    .key-compact-status.status-ok{color:#4ade80;border-color:rgba(74,222,128,0.28);background:rgba(74,222,128,0.08)}
+    .key-compact-status.status-warn{color:#fbbf24;border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.08)}
+    .key-compact-status.status-err{color:#f87171;border-color:rgba(248,113,113,0.32);background:rgba(248,113,113,0.08)}
+    :host([data-theme="light"]) .key-compact-status.status-ok{color:#15803d;border-color:rgba(21,128,61,0.25);background:#f0fdf4}
+    :host([data-theme="light"]) .key-compact-status.status-warn{color:#b45309;border-color:rgba(180,83,9,0.25);background:#fffbeb}
+    :host([data-theme="light"]) .key-compact-status.status-err{color:#b91c1c;border-color:rgba(185,28,28,0.25);background:#fef2f2}
+
     /* 当前会话紧凑卡片 */
-    .ctx-compact-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 11px;margin:8px 0 4px}
-    .ctx-compact-info{min-width:0;display:flex;flex-direction:column;gap:3px}
+    .ctx-compact-card{display:flex;flex-direction:column;gap:8px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 11px;margin:8px 0 4px}
+    .ctx-compact-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .ctx-compact-info{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}
     .ctx-compact-title{font-size:11.5px;font-weight:600;color:var(--ag-text-primary)}
     .ctx-compact-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--ag-text-secondary)}
     .ctx-compact-meta strong{color:var(--ag-text-primary);font-weight:600}
     .ctx-compact-link-btn{background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:5px;padding:4px 9px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0}
     .ctx-compact-link-btn:hover{background:var(--ag-btn-hover);border-color:var(--ag-btn-border-hover)}
+    .ctx-compact-link-btn.active{background:rgba(37,99,235,0.16);border-color:#2563eb;color:var(--ag-text-primary);font-weight:600}
+    .ctx-auto-compact-inline{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-top:7px;border-top:1px solid var(--ag-border-subcard);font-size:10.5px;color:var(--ag-text-secondary)}
+    .ctx-auto-compact-inline-lbl{font-size:10.5px;color:var(--ag-text-secondary)}
+    .ctx-auto-compact-inline-ctrl{display:inline-flex;align-items:center;gap:4px}
+    .ctx-auto-compact-pct-input{width:54px;padding:3px 6px;border-radius:5px;border:1px solid var(--ag-border-subcard);background:var(--ag-bg-subcard);color:var(--ag-text-primary);font-size:11px;font-weight:600;text-align:center;font-variant-numeric:tabular-nums}
+    .ctx-auto-compact-pct-input:focus{outline:none;border-color:#2563eb}
+    .ctx-auto-compact-unit{font-size:11px;color:var(--ag-text-muted);font-weight:600}
+    .ctx-auto-compact-inline-feedback,.ctx-auto-compact-settings-feedback{font-size:10.5px;color:#4ade80}
+    .ctx-auto-compact-inline-feedback[hidden],.ctx-auto-compact-settings-feedback[hidden]{display:none!important}
+    .ctx-auto-compact-inline-feedback.is-err,.ctx-auto-compact-settings-feedback.is-err{color:#f87171}
+    :host([data-theme="light"]) .ctx-auto-compact-inline-feedback,:host([data-theme="light"]) .ctx-auto-compact-settings-feedback{color:#15803d}
+    :host([data-theme="light"]) .ctx-auto-compact-inline-feedback.is-err,:host([data-theme="light"]) .ctx-auto-compact-settings-feedback.is-err{color:#b91c1c}
+    .ctx-auto-compact-settings-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;padding:7px 9px}
+    .ctx-auto-compact-presets{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .ctx-auto-compact-presets-lbl{font-size:10.5px;color:var(--ag-text-muted)}
 
     /* 模型设置页：全局状态条 */
     .ctx-status-bar{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}

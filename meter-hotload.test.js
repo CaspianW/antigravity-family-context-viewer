@@ -1401,3 +1401,86 @@ test('热加载 10：live-host /runtime-info 返回 hostBuildId 且 cli 同版�
     fs.rmSync(tmpState, { recursive: true, force: true });
   }
 });
+
+test('热加载 11：compactContext 能力矩阵、live-host /compact-context 路由校验、preload API 与 renderer live capability 路由', async () => {
+  const { Readable } = require('node:stream');
+  const liveHost = require('./live-host');
+  const { MAIN_CAPABILITIES } = require('./meter-main');
+  const { generateMeterPreloadCode, generateMainWorldDecoratorScript } = require('./modular-installer');
+
+  assert.ok(liveHost.ALLOWED_ROUTES.includes('/compact-context'));
+  assert.equal(liveHost.LIVE_CAPABILITIES.compactContext, true);
+  assert.equal(MAIN_CAPABILITIES.compactContext, true);
+
+  const preloadSrc = generateMeterPreloadCode({ version: PROJECT_VERSION });
+  assert.match(preloadSrc, /compactContext:\s*\(id,\s*opts\)\s*=>\s*electron_1\.ipcRenderer\.invoke\("context-meter:compact-context",\s*id,\s*opts\)/);
+  const decoratorSrc = generateMainWorldDecoratorScript({ version: PROJECT_VERSION });
+  assert.match(decoratorSrc, /globalThis\.__agJetskiLsClient=target/);
+
+  const handler = liveHost.createLiveRequestHandler({
+    api: { origin: 'https://127.0.0.1:51111', origins: ['https://127.0.0.1:51111'] },
+    secret: 'secret-compact-token-12345'
+  });
+  const req = Readable.from([JSON.stringify({ cascadeId: 'bad-id' })]);
+  req.method = 'POST';
+  req.url = '/compact-context';
+  req.headers = {
+    origin: 'https://127.0.0.1:51111',
+    'x-ag-context-token': 'secret-compact-token-12345'
+  };
+  let status = 200;
+  let rawBody = '';
+  let resolveEnd;
+  const endPromise = new Promise(r => { resolveEnd = r; });
+  await handler(req, {
+    writeHead(s) { status = s; },
+    setHeader() {},
+    end(chunk) {
+      rawBody += String(chunk || '');
+      resolveEnd();
+    }
+  });
+  await endPromise;
+  assert.equal(status, 200);
+  const parsed = JSON.parse(rawBody);
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.error, /无效本机会话标识/);
+
+  // 验证新版 renderer 在旧 IPC 不含 compactContext 且新版 live-host 支持时优先路由至 /compact-context
+  const liveCalls = [];
+  const h = createHotloadDomSandbox({
+    liveInfo: {
+      port: 49998,
+      token: 'tok-compact',
+      version: PROJECT_VERSION,
+      backendSource: 'live-host',
+      capabilities: { ...liveHost.LIVE_CAPABILITIES }
+    },
+    hotCtx: {
+      expectedVersion: PROJECT_VERSION,
+      source: 'in-app-update',
+      preferLiveHost: true
+    },
+    contextMeterAPI: {
+      scan: () => new Promise(() => {}),
+      getSettings: async () => ({ ok: true, autoCompact: { enabled: false, minRemainingPct: 15 } })
+    },
+    fetchImpl: async (url, opts) => {
+      if (String(url).startsWith('http://127.0.0.1:49998/compact-context')) {
+        const body = JSON.parse(opts.body || '{}');
+        liveCalls.push(body);
+        return { ok: true, status: 200, json: async () => ({ ok: true, cascadeId: body.cascadeId, stepCountBefore: 4 }) };
+      }
+      return new Promise(() => {});
+    }
+  });
+  try {
+    h.sandbox.__AGContextMeter.setRouteStateForTest('11111111-1111-1111-1111-111111111111');
+    h.shadowElements.get('btn-compact-context')?.click?.();
+    await h.flush(60);
+    assert.equal(liveCalls.length, 1);
+    assert.equal(liveCalls[0].cascadeId, '11111111-1111-1111-1111-111111111111');
+  } finally {
+    h.cleanup();
+  }
+});

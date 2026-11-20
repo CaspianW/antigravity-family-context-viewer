@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { connect, normalizeLoopbackOrigin, getAppDataDir } = require('./local-api');
 const {
   collect,
+  compactConversation,
   collectTokenHistoryAsync,
   collectSessionTimelineAsync,
   fetchQuotaSnapshotFromHost,
@@ -99,6 +100,7 @@ const MAX_RECORD_CALLS = 500; // 单批次最大记录数
 const ALLOWED_ROUTES = [
   '/runtime-info',
   '/scan',
+  '/compact-context',
   '/token-history',
   '/session-timeline',
   '/quota',
@@ -129,6 +131,7 @@ const LIVE_HOST_STARTED_AT = Date.now();
 const LIVE_HOST_BUILD_ID = getHostCoreBuildId(__dirname);
 const LIVE_CAPABILITIES = {
   scan: true,
+  compactContext: true,
   tokenHistory: true,
   sessionTimeline: true,
   quota: true,
@@ -207,6 +210,13 @@ function createLiveRequestHandler({ api, secret, getAllowedOrigins = null, onShu
       if (exceeded) return;
       try {
         const request = JSON.parse(body || '{}');
+        if (req.url === '/compact-context') {
+          const cid = request.cascadeId || request.id;
+          const result = await compactConversation(reqOrigin, cid, request);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(result));
+          return;
+        }
         if (req.url === '/family-action') {
           const service = familySync || require('./meter-family-sync').createHostFamilySync();
           res.setHeader('Content-Type', 'application/json');

@@ -6308,3 +6308,192 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     try { api.dispose(); } catch {}
   }
 });
+
+test('一键压缩上下文与剩余百分比自动压缩：配置保存、忙闲守卫、防死循环水位线及直连降级', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const cid = '11111111-1111-1111-1111-111111111111';
+  const cid2 = '22222222-2222-2222-2222-222222222222';
+  const savedPayloads = [];
+  const compactCalls = [];
+  let compactMode = 'ok';
+
+  // 1. 完整 IPC 模式：配置还原（不回写 saveSettings）、拦截捕获 envelope、手动一键压缩与校验规则
+  const h = harness(session(), {
+    window: {
+      __APP_CONFIG__: { csrfToken: 'csrf_test_1' },
+      contextMeterAPI: {
+        scan: async () => ({ ok: true, data: { session: session(), scannedAt: Date.now(), latest: null } }),
+        getSettings: async () => ({
+          ok: true,
+          autoCompact: { enabled: true, minRemainingPct: 20 }
+        }),
+        saveSettings: async (payload) => {
+          savedPayloads.push(JSON.parse(JSON.stringify(payload)));
+          return { ok: true, autoCompact: payload.autoCompact };
+        },
+        compactContext: async (id, opts) => {
+          compactCalls.push({ id, opts: JSON.parse(JSON.stringify(opts || {})) });
+          if (compactMode === 'busy') {
+            return { ok: false, busy: true, error: 'busy' };
+          }
+          return { ok: true, cascadeId: id, stepCountBefore: 8, statusBefore: 'CASCADE_RUN_STATUS_IDLE' };
+        }
+      }
+    }
+  });
+  try {
+    const api = h.sandbox.__AGContextMeter;
+    for (let i = 0; i < 4; i++) {
+      while (h.pending.length) {
+        const p = h.pending.shift();
+        if (String(p.url).includes('GetAvailableModels')) {
+          p.resolve({ ok: true, json: async () => ({ clientModelConfigs: [] }) });
+        } else {
+          p.resolve(response({ usage: { inputTokens: 1000 } }));
+        }
+      }
+      await flush();
+    }
+
+    // restoreSettingsFromHost 只恢复配置，绝不自动调用 saveSettings
+    assert.equal(savedPayloads.length, 0);
+    assert.deepEqual({ ...api.getAutoCompactStateForTest().config }, { enabled: true, minRemainingPct: 20 });
+    assert.equal(h.elements.get('chk-auto-compact-quick').checked, true);
+    assert.equal(h.elements.get('inp-auto-compact-pct').value, '20');
+    assert.match(h.elements.get('ctx-auto-compact-badge').textContent, /已开启 · ≤20%/);
+
+    // 非法阈值输入拒绝保存并提示错误
+    h.elements.get('inp-auto-compact-pct').value = '95';
+    h.elements.get('btn-auto-compact-inline-save').click();
+    await flush();
+    assert.equal(savedPayloads.length, 0);
+    assert.equal(h.elements.get('ctx-auto-compact-inline-feedback').hidden, false);
+    assert.match(h.elements.get('ctx-auto-compact-inline-feedback').textContent, /1–80/);
+
+    // 合法阈值保存并同步到配置页与徽章
+    h.elements.get('inp-auto-compact-pct').value = '25';
+    h.elements.get('btn-auto-compact-inline-save').click();
+    await flush();
+    assert.equal(savedPayloads.length, 1);
+    assert.deepEqual({ ...savedPayloads[0].autoCompact }, { enabled: true, minRemainingPct: 25 });
+    assert.equal(h.elements.get('inp-auto-compact-settings-pct').value, '25');
+    assert.match(h.elements.get('auto-compact-settings-badge').textContent, /已开启 · ≤25%/);
+
+    // 无会话路由时禁用一键压缩按钮；恢复会话后启用
+    api.setRouteStateForTest(null);
+    assert.equal(h.elements.get('btn-compact-context').disabled, true);
+    api.setRouteStateForTest(cid, { count: 8, scanCalls: [{ status: 'done' }] });
+    assert.equal(h.elements.get('btn-compact-context').disabled, false);
+
+    // 通过 main-world SendUserCascadeMessage 拦截捕获安全 envelope（仅内存，包含 metadata & cascadeConfig）
+    h.sandbox.__AG_METER_ON_SEND_MESSAGE__({
+      cascadeId: cid,
+      items: [{ text: 'secret user prompt' }],
+      metadata: { ideName: 'antigravity', apiKey: 'ya29.memonly' },
+      cascadeConfig: { requestedModel: { model: 'MODEL_CLAUDE_4_5_SONNET' } }
+    }, 'client_object');
+    assert.equal(api.getAutoCompactStateForTest().capturedEnvelopeCount, 1);
+
+    // 忙时手动压缩提示等待，成功时附带捕获的 metadata/cascadeConfig 发送原生 /compact
+    compactMode = 'busy';
+    h.elements.get('btn-compact-context').click();
+    await flush();
+    assert.equal(compactCalls.length, 1);
+    assert.match(h.elements.get('compact-status-msg').textContent, /正在生成回复/);
+
+    compactMode = 'ok';
+    h.elements.get('btn-compact-context').click();
+    await flush();
+    assert.equal(compactCalls.length, 2);
+    assert.deepEqual(JSON.parse(JSON.stringify(compactCalls[1].opts.metadata)), { ideName: 'antigravity', apiKey: 'ya29.memonly' });
+    assert.deepEqual(JSON.parse(JSON.stringify(compactCalls[1].opts.cascadeConfig)), { requestedModel: { model: 'MODEL_CLAUDE_4_5_SONNET' } });
+    assert.match(h.elements.get('compact-status-msg').textContent, /\/compact/);
+
+    // 切换会话后清理旧会话的压缩成功提示
+    api.setRouteStateForTest(cid2, { count: 2, scanCalls: [{ status: 'done' }] });
+    assert.equal(h.elements.get('compact-status-msg').hidden, true);
+
+    // 2. 自动压缩触发验证：高于阈值不触发；streaming 时不触发；空闲低于阈值触发一次并受水位线防循环保护
+    api.setAutoCompactConfigForTest({ enabled: true, minRemainingPct: 15 });
+    api.setRouteStateForTest(cid2, { count: 10, scanCalls: [{ status: 'done' }] });
+
+    // 剩余 20% > 15%：不触发
+    api.setContextLatestForTest({ actual: 160000, budget: 200000, percent: 80 });
+    await flush();
+    assert.equal(compactCalls.length, 2);
+
+    // 剩余 10% <= 15%，但正在 streaming：不触发
+    api.setRouteStateForTest(cid2, { count: 10, scanCalls: [{ status: 'streaming' }] });
+    api.setContextLatestForTest({ actual: 180000, budget: 200000, percent: 90 });
+    await flush();
+    assert.equal(compactCalls.length, 2);
+
+    // 转为空闲后再评估：立即触发一次自动压缩
+    api.setRouteStateForTest(cid2, { count: 10, scanCalls: [{ status: 'done' }] });
+    const auto1 = await api.maybeTriggerAutoCompactForTest();
+    assert.equal(auto1.triggered, true, `auto1 unexpected: ${JSON.stringify(auto1)}`);
+    assert.equal(compactCalls.length, 3);
+    assert.equal(compactCalls[2].id, cid2);
+    assert.match(h.elements.get('compact-status-msg').textContent, /10%.*15%.*自动触发/);
+
+    // 紧接着同一轮或轻微变动（即使 remain 仍 ≤ 15%）：必须被水位线拦截，禁止死循环重复触发
+    api.setContextLatestForTest({ actual: 175000, budget: 200000, percent: 87.5 });
+    await flush();
+    const autoBlocked = await api.maybeTriggerAutoCompactForTest();
+    assert.equal(autoBlocked.triggered, false);
+    assert.equal(compactCalls.length, 3);
+
+    // 配置页保存开关与默认阈值并验证繁/英切换
+    h.elements.get('chk-auto-compact-settings').checked = false;
+    h.elements.get('chk-auto-compact-settings').trigger('change');
+    h.elements.get('inp-auto-compact-settings-pct').value = '12';
+    h.elements.get('inp-auto-compact-settings-pct').trigger('input');
+    h.elements.get('btn-save-auto-compact').click();
+    await flush();
+    assert.deepEqual({ ...api.getAutoCompactStateForTest().config }, { enabled: false, minRemainingPct: 12 });
+    assert.match(h.elements.get('auto-compact-settings-feedback').textContent, /已保存：未开启.*12%/);
+
+    api.setPanelLanguage('en', { persist: false });
+    assert.match(h.elements.get('btn-compact-context').textContent, /Compact Context/);
+    assert.match(h.elements.get('ctx-auto-compact-badge').textContent, /Off · ≤12%/);
+  } finally {
+    h.sandbox.__AGContextMeter.dispose();
+  }
+
+  // 3. 当宿主尚未重启（无 IPC compactContext 且无 /compact-context Live 能力）时，直连同源 Connect JSON 发送 /compact
+  const hFallback = harness(session(), {
+    window: {
+      __APP_CONFIG__: { csrfToken: 'csrf_fallback_99' },
+      contextMeterAPI: {
+        scan: () => new Promise(() => {}),
+        getSettings: async () => ({ ok: true, autoCompact: { enabled: false, minRemainingPct: 15 } })
+      }
+    }
+  });
+  try {
+    hFallback.elements.get('btn-compact-context').click();
+    const trajReq = hFallback.pending.find(p => String(p.url).endsWith('/GetCascadeTrajectory'));
+    assert.ok(trajReq, '应先请求 GetCascadeTrajectory 检查空闲状态与消息数');
+    assert.equal(trajReq.options.headers['x-codeium-csrf-token'], 'csrf_fallback_99');
+    trajReq.resolve({
+      ok: true,
+      json: async () => ({ status: 'CASCADE_RUN_STATUS_IDLE', numTotalSteps: 5, trajectory: { steps: [{}, {}] } })
+    });
+    await flush();
+    await flush();
+    await flush();
+
+    const sendReq = hFallback.pending.find(p => String(p.url).includes('SendUserCascadeMessage'));
+    assert.ok(sendReq, `校验空闲非空后应通过同源 fetch 发送 SendUserCascadeMessage; pending=${JSON.stringify(hFallback.pending.map(p => p.url))}; status=${hFallback.elements.get('compact-status-msg').textContent}`);
+    const sendBody = JSON.parse(sendReq.options.body);
+    assert.equal(sendBody.cascadeId, cid);
+    assert.deepEqual(sendBody.items, [{ item: { slashCommand: { info: { name: 'compact', type: 'SLASH_COMMAND_TYPE_SYSTEM' } } } }]);
+    sendReq.resolve({ ok: true, json: async () => ({}) });
+    await flush();
+    await flush();
+    await flush();
+    assert.match(hFallback.elements.get('compact-status-msg').textContent, /\/compact/);
+  } finally {
+    hFallback.sandbox.__AGContextMeter.dispose();
+  }
+});

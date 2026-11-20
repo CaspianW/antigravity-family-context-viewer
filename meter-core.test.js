@@ -4940,3 +4940,157 @@ test('collectTokenHistoryAsync upgrades multi-turn same-step provisional calls a
     fs.rmSync(cliDir, { recursive: true, force: true });
   }
 });
+
+test('autoCompact 配置默认值、边界归一化与 custom_plan_settings 持久化不破坏其余字段', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {
+    DEFAULT_AUTO_COMPACT_CONFIG,
+    sanitizeAutoCompactConfig,
+    getPluginSettings,
+    savePluginSettings
+  } = require('./meter-collector');
+
+  assert.deepEqual(DEFAULT_AUTO_COMPACT_CONFIG, { enabled: false, minRemainingPct: 15 });
+  assert.deepEqual(sanitizeAutoCompactConfig(null), { enabled: false, minRemainingPct: 15 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: 1, minRemainingPct: 0 }), { enabled: false, minRemainingPct: 1 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 0 }), { enabled: true, minRemainingPct: 1 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 120 }), { enabled: true, minRemainingPct: 80 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: false, thresholdPct: 24.6 }), { enabled: false, minRemainingPct: 25 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 'bad' }), { enabled: true, minRemainingPct: 15 });
+
+  const agDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-autocompact-cfg-'));
+  try {
+    const initial = getPluginSettings({ agDir });
+    assert.deepEqual(initial.autoCompact, { enabled: false, minRemainingPct: 15 });
+
+    const pre = savePluginSettings({
+      customPlan: { tier: 'pro', monthlyUSD: 20 },
+      savedHeatView: 'monthly'
+    }, { agDir });
+    assert.equal(pre.ok, true);
+
+    const saved = savePluginSettings({
+      autoCompact: { enabled: true, minRemainingPct: 22 }
+    }, { agDir });
+    assert.equal(saved.ok, true);
+    assert.equal(saved.autoCompact.enabled, true);
+    assert.equal(saved.autoCompact.minRemainingPct, 22);
+
+    // 后续保存其他字段不应抹除 autoCompact
+    savePluginSettings({ savedHeatView: 'yearly' }, { agDir });
+    const reloaded = getPluginSettings({ agDir });
+    assert.equal(reloaded.autoCompact.enabled, true);
+    assert.equal(reloaded.autoCompact.minRemainingPct, 22);
+    assert.equal(reloaded.savedHeatView, 'yearly');
+    assert.equal(reloaded.customPlan?.monthlyUSD, 20);
+  } finally {
+    fs.rmSync(agDir, { recursive: true, force: true });
+  }
+});
+
+test('compactConversation 在空闲态发送标准 /compact SlashCommandScopeItem，生成中与空会话拒绝发送，且支持 401 重试 CSRF', async () => {
+  const { compactConversation } = require('./meter-collector');
+  const origin = 'https://127.0.0.1:59876';
+  const cid = '11111111-2222-3333-4444-555555555555';
+
+  const badOrigin = await compactConversation('https://evil.example.com', cid);
+  assert.equal(badOrigin.ok, false);
+  const badId = await compactConversation(origin, 'not-a-uuid');
+  assert.equal(badId.ok, false);
+
+  // 1. 生成中 (RUNNING) 时拒绝压缩，严禁发送 SendUserCascadeMessage
+  const busyCalls = [];
+  const busyRes = await compactConversation(origin, cid, {
+    force: true,
+    requestFn: async (_orig, method) => {
+      busyCalls.push(method);
+      if (method === null) return '<script>window.__APP_CONFIG__ = {"csrfToken":"tok_busy"};</script>';
+      if (method === 'GetCascadeTrajectory') {
+        return {
+          status: 'CASCADE_RUN_STATUS_RUNNING',
+          numTotalSteps: 4,
+          trajectory: { steps: [{}, {}, {}, {}] }
+        };
+      }
+      throw new Error(`unexpected call ${method}`);
+    }
+  });
+  assert.equal(busyRes.ok, false);
+  assert.equal(busyRes.busy, true);
+  assert.deepEqual(busyCalls, [null, 'GetCascadeTrajectory']);
+
+  // 2. 空会话拒绝压缩
+  const emptyCalls = [];
+  const emptyRes = await compactConversation(origin, cid, {
+    force: true,
+    requestFn: async (_orig, method) => {
+      emptyCalls.push(method);
+      if (method === null) return '<script>window.__APP_CONFIG__ = {"csrfToken":"tok_empty"};</script>';
+      if (method === 'GetCascadeTrajectory') {
+        return { status: 'CASCADE_RUN_STATUS_IDLE', numTotalSteps: 0, trajectory: { steps: [] } };
+      }
+      throw new Error(`unexpected call ${method}`);
+    }
+  });
+  assert.equal(emptyRes.ok, false);
+  assert.equal(emptyRes.empty, true);
+  assert.deepEqual(emptyCalls, [null, 'GetCascadeTrajectory']);
+
+  // 3. 空闲有历史会话：401 刷新 CSRF 并按 proto 契约发送 /compact + cascadeConfig + metadata
+  const okCalls = [];
+  let tokenCounter = 0;
+  let rejectedFirstSend = false;
+  const okRes = await compactConversation(origin, cid, {
+    force: true,
+    metadata: { ideName: 'antigravity', ideVersion: '1.2.3', apiKey: 'ya29.test' },
+    cascadeConfig: { plannerConfig: { conversational: { agenticMode: true } } },
+    requestFn: async (_orig, method, body, token) => {
+      okCalls.push({ method, token, body });
+      if (method === null) {
+        tokenCounter += 1;
+        return `<script>window.__APP_CONFIG__ = {"csrfToken":"tok_v${tokenCounter}"};</script>`;
+      }
+      if (method === 'GetCascadeTrajectory') {
+        return {
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          numTotalSteps: 12,
+          numTotalGeneratorMetadata: 5,
+          trajectory: { steps: [{}, {}] }
+        };
+      }
+      if (method === 'SendUserCascadeMessage') {
+        if (!rejectedFirstSend) {
+          rejectedFirstSend = true;
+          throw new Error('HTTP 401 unauthorized');
+        }
+        return { queued: true };
+      }
+      throw new Error(`unexpected call ${method}`);
+    }
+  });
+
+  assert.equal(okRes.ok, true);
+  assert.equal(okRes.cascadeId, cid);
+  assert.equal(okRes.stepCountBefore, 12);
+  assert.equal(okRes.statusBefore, 'CASCADE_RUN_STATUS_IDLE');
+  const sendCalls = okCalls.filter(c => c.method === 'SendUserCascadeMessage');
+  assert.equal(sendCalls.length, 2);
+  assert.equal(sendCalls[0].token, 'tok_v1');
+  assert.equal(sendCalls[1].token, 'tok_v2');
+  assert.deepEqual(sendCalls[1].body.items, [
+    {
+      item: {
+        slashCommand: {
+          info: {
+            name: 'compact',
+            type: 'SLASH_COMMAND_TYPE_SYSTEM'
+          }
+        }
+      }
+    }
+  ]);
+  assert.deepEqual(sendCalls[1].body.metadata, { ideName: 'antigravity', ideVersion: '1.2.3', apiKey: 'ya29.test' });
+  assert.deepEqual(sendCalls[1].body.cascadeConfig, { plannerConfig: { conversational: { agenticMode: true } } });
+});

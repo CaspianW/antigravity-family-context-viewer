@@ -13,6 +13,7 @@ try {
 } catch {}
 const {
   collect,
+  compactConversation,
   collectTokenHistory,
   collectTokenHistoryAsync,
   collectSessionTimelineAsync,
@@ -36,6 +37,7 @@ const { PROJECT_VERSION } = require('./modules-config');
 const MAIN_STARTED_AT = Date.now();
 const MAIN_CAPABILITIES = {
   scan: true,
+  compactContext: true,
   tokenHistory: true,
   sessionTimeline: true,
   quota: true,
@@ -542,6 +544,13 @@ function registerMeterIpcHandlers(ipcMain) {
     const url = isLocalMainFrameSender(event);
     if (!url) throw new Error('仅允许本机主聊天窗口');
     try { return { ok: true, data: await collect(url.origin, id, { force: force === true, supersedePrevious: true }) }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  ipcMain.handle('context-meter:compact-context', async (event, id, options) => {
+    const url = isLocalMainFrameSender(event);
+    if (!url) throw new Error('仅允许本机主聊天窗口');
+    try { return await compactConversation(url.origin, id, options || {}); }
     catch (e) { return { ok: false, error: e.message }; }
   });
 
