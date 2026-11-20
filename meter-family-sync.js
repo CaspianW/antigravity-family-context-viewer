@@ -334,6 +334,17 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
       try {
         const work = [];
         const calls = ledgerCalls();
+        const activeCallEventIds = new Set();
+        const matchedSentByKey = new Map();
+        for (const [callId, call] of Object.entries(calls)) {
+          if (!call || isSyntheticCall(callId, call) || call.isKeepalive) continue;
+          const id = hash(cfg.deviceId + ':' + callId);
+          activeCallEventIds.add(id);
+          const saved = syncState.sent[id];
+          if (saved?.key) {
+            matchedSentByKey.set(saved.key, (matchedSentByKey.get(saved.key) || 0) + 1);
+          }
+        }
         // Revocations are reconstructed from durable acknowledgments even if the ledger was trimmed.
         const revoked = new Set();
         const retract = id => {
@@ -342,7 +353,12 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           work.push({ id, remove: true });
         };
         for (const [id, saved] of Object.entries(syncState.sent)) {
-          if (!['shared', 'personal_separate'].includes(cfg.accountRules[saved.key]?.mode)) retract(id);
+          const ruleAllowed = ['shared', 'personal_separate'].includes(cfg.accountRules[saved.key]?.mode);
+          const orphanedReconciledKey = !activeCallEventIds.has(id) && (
+            saved.syntheticStepKey === true ||
+            (matchedSentByKey.get(saved.key) || 0) > 0
+          );
+          if (!ruleAllowed || orphanedReconciledKey) retract(id);
         }
         for (const [callId, call] of Object.entries(calls)) {
           if (!call || isSyntheticCall(callId, call) || call.isKeepalive) continue;
@@ -360,7 +376,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           const signature = hash(JSON.stringify(event));
           if (syncState.sent[id]?.signature !== signature) {
             revoked.delete(id);
-            work.push({ id, key, signature, event });
+            work.push({ id, key, signature, event, syntheticStepKey: /#[0-9]+/.test(callId) });
           }
         }
         const withdrawQuota = Object.entries(syncState.quotas)
@@ -390,7 +406,7 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
           const revision = Math.max(now(), syncState.revision + 1);
           syncState.revision = revision;
           // Mark possibly delivered IDs before sending. A lost reply must not prevent a later withdrawal.
-          for (const item of events) syncState.sent[item.id] = { key: item.key, signature: null };
+          for (const item of events) syncState.sent[item.id] = { key: item.key, signature: null, syntheticStepKey: Boolean(item.syntheticStepKey) };
           if (quotaSnapshot) {
             syncState.quotas[quotaSnapshot.accountScopeKey] = { key: quota.key, account: quotaSnapshot.accountScopeKey, observedAt: null };
           }
