@@ -71,12 +71,48 @@ function accountKey(secret, scopeKey) {
   return createHmac('sha256', secret).update('family-account:' + scopeKey).digest('hex');
 }
 
-function eventTime(call) {
-  if (call.dateIsProvisional || call.dateSource === 'provisional') return null;
-  const raw = call.created_at ?? call.timestampMs ?? call.timestamp;
-  if (typeof raw === 'string' && !/T\d{2}:\d{2}/.test(raw)) return null;
-  const value = typeof raw === 'string' ? Date.parse(raw) : raw;
+function parseEventTimestamp(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    const ms = raw < 1e11 ? Math.round(raw * 1000) : Math.round(raw);
+    return Number.isSafeInteger(ms) && ms > 0 ? ms : null;
+  }
+  const str = String(raw).trim();
+  if (!str) return null;
+  if (/^\d{10,13}(?:\.\d+)?$/.test(str)) {
+    const num = Number(str);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    const ms = num < 1e11 ? Math.round(num * 1000) : Math.round(num);
+    return Number.isSafeInteger(ms) && ms > 0 ? ms : null;
+  }
+  if (!/T\d{2}:\d{2}/.test(str)) return null;
+  const value = Date.parse(str);
   return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function eventTime(call) {
+  if (!call || typeof call !== 'object') return null;
+  const isProv = Boolean(call.dateIsProvisional || call.dateSource === 'provisional');
+  if (!isProv) {
+    return parseEventTimestamp(call.created_at ?? call.timestampMs ?? call.timestamp);
+  }
+  // Provisional date only indicates the RPC lacked created_at at capture time.
+  // Trust explicit request bounds or live-confirmed observation timestamps, while still rejecting browse-time Date.now() on old chats.
+  const explicit = call.created_at ?? call.createdAt ?? call.requestEndMs ?? call.endTimeMs ?? call.endTime ??
+    call.completedAt ?? call.requestStartMs ?? call.startTimeMs ?? call.startTime ?? call.startedAt;
+  const explicitMs = parseEventTimestamp(explicit);
+  if (explicitMs !== null) return explicitMs;
+  if (call.liveRealtimeConfirmed === true) {
+    const liveMs = parseEventTimestamp(call.liveObservedAtMs ?? call.timestampMs ?? call.timestamp);
+    if (liveMs !== null) return liveMs;
+  }
+  if (call.accountAttributionConfidence === 'repaired_session_window' ||
+      call.accountAttributionConfidence === 'session_window_verified') {
+    const verifiedObs = parseEventTimestamp(call.liveObservedAtMs);
+    if (verifiedObs !== null) return verifiedObs;
+  }
+  return null;
 }
 
 function eventForCall(eventId, call, timestamp, scopeKey, rule, secret) {

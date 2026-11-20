@@ -1307,11 +1307,19 @@ function mergeSameCallRecords(baseEntry, incomingEntry, canonicalKey, explicitSt
 
   // 保留账号归属元数据，避免后续无账号扫描富化抹除已确认的账号归属
   const attributionMerged = mergeAccountAttributionFields(baseEntry, incomingEntry);
+  const preservedLiveConfirmed = Boolean(baseEntry.liveRealtimeConfirmed || incomingEntry.liveRealtimeConfirmed);
+  const baseObsMs = parseTimestampToMs(baseEntry.liveObservedAtMs);
+  const incObsMs = parseTimestampToMs(incomingEntry.liveObservedAtMs);
+  const preservedLiveObsMs = (baseObsMs != null && incObsMs != null)
+    ? Math.min(baseObsMs, incObsMs)
+    : (baseObsMs ?? incObsMs);
 
   const merged = {
     ...baseEntry,
     ...(!incomingIsStaleStatus && takeIncUsage ? incomingEntry : {}),
     ...(chosenDateInfo === incDateInfo && incomingEntry.timestamp !== undefined ? { timestamp: incomingEntry.timestamp } : {}),
+    ...(preservedLiveConfirmed ? { liveRealtimeConfirmed: true } : {}),
+    ...(preservedLiveObsMs != null ? { liveObservedAtMs: preservedLiveObsMs } : {}),
     callId: canonicalKey,
     source: baseEntry.source || incomingEntry.source || 'desktop',
     ...(resolvedCascadeId ? { cascadeId: resolvedCascadeId } : {}),
@@ -5120,6 +5128,8 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
   };
   const seenEvents = new Map();
   const recentRequests = [];
+  // 记录同会话+同 step 的精确用量时间戳与步骤级时间戳提示，用于同步骤多轮 PLANNER_RESPONSE 或无 usage 日志行补齐 provisional 调用时间
+  const stepDateHints = new Map();
 
   for (let jIdx = 0; jIdx < transcriptJobs.length; jIdx++) {
     const job = transcriptJobs[jIdx];
@@ -5176,12 +5186,12 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
           }
 
           const tot = inp + outp + cap;
+          const cascadeId = String(event.cascadeId || (brainMatch ? brainMatch[1] : path.basename(job.path, '.jsonl')));
+          const rawStep = event.step_index ?? event.stepIndex;
+          const parsedStep = rawStep !== undefined && rawStep !== null && rawStep !== '' ? Number(rawStep) : NaN;
+          const stepIndex = Number.isInteger(parsedStep) && parsedStep >= 0 ? parsedStep : null;
           if (tot > 0) {
             // 唯一事件标识去重 (避免复制/软链接/重复日志相加)
-            const cascadeId = String(event.cascadeId || (brainMatch ? brainMatch[1] : path.basename(job.path, '.jsonl')));
-            const rawStep = event.step_index ?? event.stepIndex;
-            const parsedStep = rawStep !== undefined && rawStep !== null && rawStep !== '' ? Number(rawStep) : NaN;
-            const stepIndex = Number.isInteger(parsedStep) && parsedStep >= 0 ? parsedStep : null;
             const fallbackScope = (event.cascadeId || brainMatch) ? cascadeId : job.path;
             const eventId = extractCallId(event, fallbackScope, stepIndex ?? i);
 
@@ -5189,6 +5199,7 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
               eventId,
               cascadeId,
               stepIndex,
+              eventType: String(event.type || ''),
               model,
               ...(modelExactId ? { modelExactId } : {}),
               ...(modelLabel ? { modelLabel } : {}),
@@ -5201,6 +5212,12 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
             });
           } else {
             fileRecords.push({
+              ...(cascadeId ? { cascadeId } : {}),
+              ...(stepIndex !== null ? { stepIndex } : {}),
+              eventType: String(event.type || ''),
+              inp: 0,
+              outp: 0,
+              cap: 0,
               tot: 0,
               created_at: event.created_at
             });
@@ -5221,6 +5238,33 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
         if (Number.isNaN(parsedDate.getTime())) continue;
         const dateKey = formatLocalDateKey(parsedDate);
         registerDate(dateKey);
+        if (rec.cascadeId && rec.stepIndex !== null && rec.stepIndex !== undefined) {
+          const hKey = `${job.source || 'desktop'}:${String(rec.cascadeId).toLowerCase()}#${rec.stepIndex}`;
+          let hintBucket = stepDateHints.get(hKey);
+          if (!hintBucket) {
+            hintBucket = { byUsage: new Map(), plannerDates: new Map(), stepDates: new Map() };
+            stepDateHints.set(hKey, hintBucket);
+          }
+          const tsMs = parsedDate.getTime();
+          if (rec.tot > 0) {
+            const uKey = `${rec.inp || 0}:${rec.cap || 0}:${rec.outp || 0}`;
+            const prevU = hintBucket.byUsage.get(uKey);
+            if (!prevU || tsMs > prevU.tsMs) {
+              hintBucket.byUsage.set(uKey, { created_at: rec.created_at, dateKey, tsMs });
+            }
+          } else {
+            if (rec.eventType === 'PLANNER_RESPONSE') {
+              const prevP = hintBucket.plannerDates.get(dateKey);
+              if (!prevP || tsMs > prevP.tsMs) {
+                hintBucket.plannerDates.set(dateKey, { created_at: rec.created_at, tsMs });
+              }
+            }
+            const prevS = hintBucket.stepDates.get(dateKey);
+            if (!prevS || tsMs > prevS.tsMs) {
+              hintBucket.stepDates.set(dateKey, { created_at: rec.created_at, tsMs });
+            }
+          }
+        }
         if (!rec.tot || !rec.eventId) continue;
 
         const existingReq = seenEvents.get(rec.eventId);
@@ -5650,6 +5694,74 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
         const [ledgerKey, c, cidKey] = lEntry;
         applyTranscriptMatch(ledgerKey, c, cidKey, targetReq);
       }
+    }
+  }
+
+  // Pass 3: 同步骤多轮 PLANNER_RESPONSE（transcript 无 responseId 碰撞被去重）或无 usage 步骤日志时间回填：
+  // 仅升级账本中仍处于 provisional (rank <= 1) 且具有明确 cascadeId + stepIndex 的条目，绝不改变 token/用量统计
+  for (const [ledgerKey, c] of unmatchedLedgerPass2) {
+    if (!c || matchedLedgerKeys.has(ledgerKey) || !c.cascadeId) continue;
+    if (extractNormalizedDateInfo(c).rank >= 2) continue;
+    const cSrc = c.source || 'desktop';
+    const cCid = String(c.cascadeId).toLowerCase();
+    const candSteps = extractCallStepNumbers(c, ledgerKey);
+    if (!candSteps.length) continue;
+    const uC = getCallTokenBreakdown(c);
+    let hintMatch = null;
+    let hintStepIdx = null;
+    for (const stIdx of candSteps) {
+      const hKey = `${cSrc}:${cCid}#${stIdx}`;
+      const bucket = stepDateHints.get(hKey);
+      if (!bucket) continue;
+      if (uC.tot > 0) {
+        const uKey = `${uC.inp}:${uC.cap}:${uC.out}`;
+        const exactHint = bucket.byUsage.get(uKey);
+        if (exactHint) {
+          hintMatch = exactHint;
+          hintStepIdx = stIdx;
+          break;
+        }
+      }
+      if ((realLedgerCountByStepKey.get(hKey) || 0) <= 1 && candSteps.length === 1) {
+        if (bucket.plannerDates.size === 1) {
+          const onlyPlanner = [...bucket.plannerDates.values()][0];
+          hintMatch = { ...onlyPlanner, dateKey: [...bucket.plannerDates.keys()][0] };
+          hintStepIdx = stIdx;
+          break;
+        }
+        if (bucket.stepDates.size === 1 && bucket.byUsage.size === 0) {
+          const onlyStep = [...bucket.stepDates.values()][0];
+          hintMatch = { ...onlyStep, dateKey: [...bucket.stepDates.keys()][0] };
+          hintStepIdx = stIdx;
+          break;
+        }
+      }
+    }
+    if (hintMatch && hintStepIdx !== null) {
+      const cidKey = String(c.callId || ledgerKey);
+      const hintMerged = mergeSameCallRecords(c, {
+        callId: cidKey,
+        source: cSrc,
+        cascadeId: c.cascadeId,
+        stepIndex: hintStepIdx,
+        model: c.model || '',
+        inputTokens: uC.inp,
+        cacheTokens: uC.cap,
+        cacheReadTokens: uC.cap,
+        outputTokens: uC.out,
+        thinkingTokens: uC.think,
+        totalTokens: uC.tot,
+        status: c.status || 'final',
+        date: hintMatch.dateKey,
+        created_at: hintMatch.created_at,
+        timestamp: hintMatch.tsMs,
+        dateSource: 'transcript',
+        dateIsProvisional: false
+      }, cidKey, hintStepIdx, false, true);
+      ledgerEnrichmentCalls.push(hintMerged);
+      inMemoryEnrichments.set(ledgerKey, { targetCallId: cidKey, merged: hintMerged });
+      callEffectiveDate.set(ledgerKey, hintMatch.dateKey);
+      if (cidKey !== ledgerKey) callEffectiveDate.set(cidKey, hintMatch.dateKey);
     }
   }
 

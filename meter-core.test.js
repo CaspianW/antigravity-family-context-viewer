@@ -4791,3 +4791,152 @@ test('v0.8.8 i18n/货币基础能力: 48国预设含完整 nameTw/nameEn 且无�
   assert.equal(norm.currentPeriod.periodType, 'calendar_month');
   assert.doesNotMatch(norm.currentPeriod.label, /[\u4e00-\u9fff]/);
 });
+
+test('collectTokenHistoryAsync upgrades multi-turn same-step provisional calls and zero-usage PLANNER_RESPONSE steps via transcript hints without double-counting', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { recordModelCalls, loadPricingLedger, buildAccountScopeKey } = require('./meter-collector');
+
+  const agDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-step-hint-upgrade-'));
+  const cliDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-step-hint-cli-'));
+  try {
+    const cid = '26f58db8-c436-4d43-97e4-e1dbb23e6592';
+    const scopeKey = buildAccountScopeKey('shared@example.com');
+    const logDir = path.join(agDir, 'brain', cid, '.system_generated', 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+
+    // 1. Two distinct PLANNER_RESPONSE turns on the SAME step_index (12) without responseId, plus step 15 with zero usage
+    fs.writeFileSync(
+      path.join(logDir, 'transcript.jsonl'),
+      [
+        JSON.stringify({
+          step_index: 12,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-20T03:45:16Z',
+          input_tokens: 2401,
+          cache_read_tokens: 305062,
+          output_tokens: 83
+        }),
+        JSON.stringify({
+          step_index: 12,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-20T03:46:16Z',
+          input_tokens: 2066,
+          cache_read_tokens: 309067,
+          output_tokens: 5328
+        }),
+        JSON.stringify({
+          step_index: 15,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-20T03:48:00Z'
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    // Ledger has real RPC callIds with liveRealtimeConfirmed provisional timestamps matching the 2nd line of step 12 and step 15
+    recordModelCalls([
+      {
+        callId: `${cid}#12`,
+        cascadeId: cid,
+        stepIndex: 12,
+        source: 'desktop',
+        model: 'Orchestrator (Neon)',
+        inputTokens: 2401,
+        cacheReadTokens: 305062,
+        outputTokens: 83,
+        totalTokens: 307546,
+        date: '2026-11-20',
+        dateSource: 'transcript',
+        dateIsProvisional: false,
+        created_at: '2026-11-20T03:45:16Z',
+        accountScopeKey: scopeKey,
+        accountAttributionConfidence: 'session_window_verified'
+      },
+      {
+        callId: 'call_neon_sub2',
+        cascadeId: cid,
+        stepIndex: 12,
+        source: 'desktop',
+        model: 'Orchestrator (Neon)',
+        inputTokens: 2066,
+        cacheReadTokens: 309067,
+        outputTokens: 5328,
+        totalTokens: 316461,
+        date: '2026-11-20',
+        dateSource: 'provisional',
+        dateIsProvisional: true,
+        created_at: null,
+        timestamp: 1795146400000,
+        liveRealtimeConfirmed: true,
+        liveObservedAtMs: 1795146400000,
+        accountScopeKey: scopeKey,
+        accountAttributionConfidence: 'repaired_session_window'
+      },
+      {
+        callId: 'call_neon_step15',
+        cascadeId: cid,
+        stepIndex: 15,
+        source: 'desktop',
+        model: 'Orchestrator (Neon)',
+        inputTokens: 1000,
+        cacheReadTokens: 5000,
+        outputTokens: 200,
+        totalTokens: 6200,
+        date: '2026-11-20',
+        dateSource: 'provisional',
+        dateIsProvisional: true,
+        created_at: null,
+        timestamp: 1795146500000,
+        liveRealtimeConfirmed: true,
+        liveObservedAtMs: 1795146500000,
+        accountScopeKey: scopeKey,
+        accountAttributionConfidence: 'repaired_session_window'
+      },
+      {
+        callId: 'call_unmatched_step99',
+        cascadeId: cid,
+        stepIndex: 99,
+        source: 'desktop',
+        model: 'Gemini 4 Hydrogen',
+        inputTokens: 500,
+        cacheReadTokens: 0,
+        outputTokens: 100,
+        totalTokens: 600,
+        date: '2026-11-20',
+        dateSource: 'provisional',
+        dateIsProvisional: true,
+        created_at: null,
+        timestamp: 1795146600000
+      }
+    ], { agDir });
+
+    const hist = await collectTokenHistoryAsync({ force: true, agDir, agCliDir: cliDir });
+    const persisted = loadPricingLedger(agDir).calls;
+
+    assert.equal(persisted.call_neon_sub2.created_at, '2026-11-20T03:46:16Z');
+    assert.equal(persisted.call_neon_sub2.dateSource, 'transcript');
+    assert.equal(persisted.call_neon_sub2.dateIsProvisional, false);
+    assert.equal(persisted.call_neon_sub2.liveRealtimeConfirmed, true);
+    assert.equal(persisted.call_neon_sub2.accountScopeKey, scopeKey);
+
+    assert.equal(persisted.call_neon_step15.created_at, '2026-11-20T03:48:00Z');
+    assert.equal(persisted.call_neon_step15.dateSource, 'transcript');
+    assert.equal(persisted.call_neon_step15.dateIsProvisional, false);
+
+    // Unmatched old provisional call without transcript or live confirmation stays provisional
+    assert.equal(persisted.call_unmatched_step99.dateIsProvisional, true);
+    assert.equal(persisted.call_unmatched_step99.created_at, null);
+
+    // Ledger keeps all 4 records accurately priced/unpriced without double counting
+    assert.equal(hist.costEstimate.pricedRequestsCount, 1);
+    assert.equal(hist.costEstimate.pricedTokens, 600);
+    assert.equal(hist.costEstimate.unpricedRequestsCount, 3);
+    assert.equal(hist.costEstimate.unpricedTokens, 630207);
+    assert.equal(hist.costEstimate.pricedTokens + hist.costEstimate.unpricedTokens, 630807);
+  } finally {
+    fs.rmSync(agDir, { recursive: true, force: true });
+    fs.rmSync(cliDir, { recursive: true, force: true });
+  }
+});
