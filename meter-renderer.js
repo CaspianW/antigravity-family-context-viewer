@@ -5496,7 +5496,8 @@ const PANEL_I18N = {
   'family.pieNoteQuota': { 'zh-CN': "额度快照 {time} · {basis}", 'zh-TW': "額度快照 {time} · {basis}", en: "Snapshot {time} · {basis}" },
   'family.pieBasisCost': { 'zh-CN': "成员占比按本周已上报调用参考费用估算", 'zh-TW': "成員佔比依本週已上報呼叫參考費用估算", en: "Estimated by reported weekly API cost" },
   'family.pieBasisTokens': { 'zh-CN': "成员占比按本周已上报调用 Token 估算", 'zh-TW': "成員佔比依本週已上報呼叫 Token 估算", en: "Estimated by reported weekly tokens" },
-  'family.pieBasisWeighted': { 'zh-CN': "成员占比按本周模型加权等效价值估算", 'zh-TW': "成員佔比依本週模型加權等效價值估算", en: "Estimated by weighted model value" },
+  'family.pieBasisWeighted': { 'zh-CN': "成员占比按近 7 天模型加权等效价值估算", 'zh-TW': "成員佔比依近 7 天模型加權等效價值估算", en: "Estimated by 7-day weighted model value" },
+  'family.pieBasisDrift': { 'zh-CN': "各端上报 {min}%~{max}%（已按最高已用 {max}% 锁定防回退）· ", 'zh-TW': "各端上報 {min}%~{max}%（已按最高已用 {max}% 鎖定防回退）· ", en: "Device cache range {min}%-{max}% (locked at max {max}%) · " },
   'family.pieBasisNone': { 'zh-CN': "暂无可用于分摊的本周调用记录，已用额度暂未归属", 'zh-TW': "暫無可用於分攤的本週呼叫記錄，已用額度暫未歸屬", en: "No attributed weekly calls yet" },
   'family.pieBasisZero': { 'zh-CN': "当前共享池尚无已用额度", 'zh-TW': "目前共享池尚無已用額度", en: "No pool quota used yet" },
   'family.pieNoteUsage': { 'zh-CN': "当前筛选口径：{metric}", 'zh-TW': "目前篩選口徑：{metric}", en: "Current breakdown: {metric}" },
@@ -16520,41 +16521,86 @@ function closeAllDropdowns(exceptWrap = null) {
     return value < 0.05 ? '<0.1%' : Number(value.toFixed(1)) + '%';
   }
 
-  function deriveWeeklyPoolsFromSnapshots(data, enriched) {
+  const isClaudeGptPoolName = name => /claude|gpt/i.test(String(name || ''));
+  const isClaudeGptModelName = name => /claude|gpt|sonnet|opus|haiku|\bo[134]\b/i.test(String(name || ''));
+
+  function computeFamilyMemberPoolWeighted(member, poolName) {
+    const models = Array.isArray(member?.models) ? member.models : [];
+    if (!models.length) return computeFamilyMemberWeighted(member);
+    const wantClaudeGpt = isClaudeGptPoolName(poolName);
+    let effectiveUSD = 0;
+    let estimatedUSD = 0;
+    let hasEstimate = false;
+    for (const m of models) {
+      if (isClaudeGptModelName(m?.model) !== wantClaudeGpt) continue;
+      const w = computeFamilyRowWeightedCost(m);
+      effectiveUSD += w.effectiveUSD;
+      estimatedUSD += w.estimatedUSD;
+      if (w.hasEstimate) hasEstimate = true;
+    }
+    return { effectiveUSD, estimatedUSD, hasEstimate };
+  }
+
+  function collectWeeklySnapshotStats(data) {
+    const nowMs = Date.now();
     const snapshots = Array.isArray(data?.quotaSnapshots) ? data.quotaSnapshots : [];
-    const byPool = new Map();
+    const perPoolEntries = new Map();
     for (const snap of snapshots) {
       const obs = Number(snap?.observedAt || 0);
       for (const w of snap?.windows || []) {
         if (w?.window !== 'weekly' || typeof w.remainingPct !== 'number' || !Number.isFinite(w.remainingPct)) continue;
-        const prev = byPool.get(w.pool);
-        if (!prev || obs >= prev.observedAt) {
-          byPool.set(w.pool, {
-            pool: w.pool,
-            usedPct: Math.max(0, Math.min(100, Number((100 - w.remainingPct).toFixed(1)))),
-            expiresAt: Number(w.resetAt || (Date.now() + 3600000)),
-            observedAt: obs
-          });
-        }
+        const resetAt = Number(w.resetAt || 0);
+        if (resetAt && resetAt <= nowMs) continue;
+        const usedPct = Math.max(0, Math.min(100, Number((100 - w.remainingPct).toFixed(1))));
+        const list = perPoolEntries.get(w.pool) || [];
+        list.push({ usedPct, resetAt, observedAt: obs });
+        perPoolEntries.set(w.pool, list);
       }
     }
-    if (!byPool.size) return [];
-    const totalW = enriched.reduce((s, m) => s + Number(m.effectiveUSD || 0), 0);
-    const totalTok = enriched.reduce((s, m) => s + Number(m.totalTokens || 0), 0);
-    const useWeighted = totalW > 0;
-    const denom = useWeighted ? totalW : totalTok;
-    return [...byPool.values()].map(entry => {
+    const result = new Map();
+    for (const [pool, list] of perPoolEntries) {
+      const latestResetAt = Math.max(...list.map(x => x.resetAt || 0));
+      const cycleItems = latestResetAt > 0
+        ? list.filter(x => !x.resetAt || x.resetAt >= latestResetAt - 6 * 3600000)
+        : list;
+      const minUsedPct = Math.min(...cycleItems.map(x => x.usedPct));
+      const maxUsedPct = Math.max(...cycleItems.map(x => x.usedPct));
+      const latestObservedAt = Math.max(...cycleItems.map(x => x.observedAt || 0));
+      result.set(pool, {
+        pool,
+        usedPct: maxUsedPct,
+        minUsedPct,
+        maxUsedPct,
+        expiresAt: latestResetAt || (nowMs + 3600000),
+        observedAt: latestObservedAt
+      });
+    }
+    return result;
+  }
+
+  function deriveWeeklyPoolsFromSnapshots(data, enriched) {
+    const statsMap = collectWeeklySnapshotStats(data);
+    if (!statsMap.size) return [];
+    return [...statsMap.values()].map(entry => {
       if (entry.usedPct <= 0) {
         return { ...entry, estimates: [], unattributedPct: 0, basis: null };
       }
+      const scored = enriched
+        .map(m => ({ name: m.name, val: computeFamilyMemberPoolWeighted(m, entry.pool).effectiveUSD }))
+        .filter(item => item.val > 0);
+      const totalPoolW = scored.reduce((s, item) => s + item.val, 0);
+      const fallbackScored = totalPoolW > 0
+        ? scored
+        : enriched.map(m => ({ name: m.name, val: Number(m.totalTokens || 0) })).filter(item => item.val > 0);
+      const denom = fallbackScored.reduce((s, item) => s + item.val, 0);
       if (denom <= 0) {
         return { ...entry, estimates: [], unattributedPct: entry.usedPct, basis: null };
       }
-      const estimates = enriched
-        .map(m => ({ name: m.name, val: useWeighted ? Number(m.effectiveUSD || 0) : Number(m.totalTokens || 0) }))
-        .filter(item => item.val > 0)
-        .map(item => ({ name: item.name, pct: Number(((item.val / denom) * entry.usedPct).toFixed(2)) }));
-      return { ...entry, estimates, unattributedPct: 0, basis: useWeighted ? 'weighted' : 'tokens' };
+      const estimates = fallbackScored.map(item => ({
+        name: item.name,
+        pct: Number(((item.val / denom) * entry.usedPct).toFixed(2))
+      }));
+      return { ...entry, estimates, unattributedPct: 0, basis: totalPoolW > 0 ? 'weighted' : 'tokens' };
     });
   }
 
@@ -16563,12 +16609,19 @@ function closeAllDropdowns(exceptWrap = null) {
     if (!card) return;
     card.hidden = false;
     const nowMs = Date.now();
+    const weeklySource = (Array.isArray(data?.weeklyMembers) && data.weeklyMembers.length)
+      ? data.weeklyMembers.map(member => {
+          const w = computeFamilyMemberWeighted(member);
+          return { ...member, effectiveUSD: w.effectiveUSD, estimatedUSD: w.estimatedUSD, hasEstimate: w.hasEstimate };
+        })
+      : enriched;
+    const snapStats = collectWeeklySnapshotStats(data);
     const serverPools = (Array.isArray(data?.familyWeekly) ? data.familyWeekly : [])
       .filter(p => p && (!p.expiresAt || p.expiresAt > nowMs));
     const scopeVal = el('family-scope')?.value || 'shared';
     const weeklyPools = scopeVal === 'personal'
       ? []
-      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, enriched));
+      : (serverPools.length ? serverPools : deriveWeeklyPoolsFromSnapshots(data, weeklySource));
     const canQuotaMode = weeklyPools.length > 0;
     const effectiveMode = (familyView.pieMode === 'usage' || !canQuotaMode) ? 'usage' : 'quota';
 
@@ -16602,14 +16655,46 @@ function closeAllDropdowns(exceptWrap = null) {
         poolSelect.hidden = poolNames.length < 1;
       }
       const poolObj = weeklyPools.find(p => p.pool === familyView.selectedPool) || weeklyPools[0];
-      const usedPct = Math.max(0, Math.min(100, Number(poolObj?.usedPct || 0)));
-      const estimates = Array.isArray(poolObj?.estimates) ? poolObj.estimates : [];
+      const snapStat = snapStats.get(poolObj?.pool);
+      const serverUsedPct = Math.max(0, Math.min(100, Number(poolObj?.usedPct || 0)));
+      // 同一重置周期内多设备缓存的 remainingPct 可能存在 0.5%~1% 延迟，取最高已用值防止额度倒退与来回跳动
+      const usedPct = snapStat ? Math.max(serverUsedPct, snapStat.maxUsedPct) : serverUsedPct;
+      const minReported = snapStat ? Math.min(serverUsedPct, snapStat.minUsedPct) : usedPct;
+
+      let estimates = Array.isArray(poolObj?.estimates) ? poolObj.estimates : [];
+      let unattr = Math.max(0, Number(poolObj?.unattributedPct || 0));
+      let effectiveBasis = poolObj?.basis || null;
+
+      // 当服务端因未定价模型退回 tokens 口径时，改用近 7 天按模型加权等效价值分摊，避免低价缓存 Token 抢占高配额占比
+      const weightedScores = weeklySource
+        .filter(m => !m.archived)
+        .map(m => ({ name: m.name, val: computeFamilyMemberPoolWeighted(m, poolObj?.pool).effectiveUSD }))
+        .filter(item => item.val > 0);
+      const weightedSum = weightedScores.reduce((s, item) => s + item.val, 0);
+
+      if (usedPct <= 0) {
+        estimates = [];
+        unattr = 0;
+        effectiveBasis = null;
+      } else if (poolObj?.basis !== 'cost' && weightedSum > 0) {
+        estimates = weightedScores.map(item => ({
+          name: item.name,
+          pct: Number(((item.val / weightedSum) * usedPct).toFixed(2))
+        }));
+        unattr = 0;
+        effectiveBasis = 'weighted';
+      } else if (serverUsedPct > 0 && usedPct !== serverUsedPct && estimates.length) {
+        const scale = usedPct / serverUsedPct;
+        estimates = estimates.map(item => ({ name: item.name, pct: Number((Number(item.pct || 0) * scale).toFixed(2)) }));
+        unattr = Number((unattr * scale).toFixed(2));
+      }
+
       const byMemberName = new Map(estimates.map(item => [item.name, Number(item.pct || 0)]));
       const memberNames = new Set([
-        ...enriched.filter(m => !m.archived).map(m => m.name),
+        ...weeklySource.filter(m => !m.archived).map(m => m.name),
         ...byMemberName.keys()
       ]);
-      const idByName = new Map(enriched.map(m => [m.name, m.id || m.name]));
+      const idByName = new Map(weeklySource.map(m => [m.name, m.id || m.name]));
       slices = [...memberNames].sort((a, b) => a.localeCompare(b)).map((name, idx) => ({
         key: 'm:' + name,
         label: name,
@@ -16617,7 +16702,6 @@ function closeAllDropdowns(exceptWrap = null) {
         pct: Math.max(0, byMemberName.get(name) ?? 0),
         sub: ''
       }));
-      const unattr = Math.max(0, Number(poolObj?.unattributedPct || 0));
       if (unattr > 0) {
         slices.push({ key: 'unattr', label: t('family.pieUnattributed'), color: '#64748b', pct: unattr, sub: '' });
       }
@@ -16633,15 +16717,19 @@ function closeAllDropdowns(exceptWrap = null) {
       centerLbl = t('family.pieCenterQuota');
       const basisKey = usedPct <= 0
         ? 'family.pieBasisZero'
-        : poolObj?.basis === 'cost'
+        : effectiveBasis === 'cost'
           ? 'family.pieBasisCost'
-          : poolObj?.basis === 'tokens'
+          : effectiveBasis === 'tokens'
             ? 'family.pieBasisTokens'
-            : poolObj?.basis === 'weighted'
+            : effectiveBasis === 'weighted'
               ? 'family.pieBasisWeighted'
               : 'family.pieBasisNone';
-      noteText = t('family.pieNoteQuota', {
-        time: poolObj?.observedAt ? new Date(poolObj.observedAt).toLocaleString() : '—',
+      const driftPrefix = (usedPct - minReported >= 0.05)
+        ? t('family.pieBasisDrift', { min: Number(minReported.toFixed(1)), max: Number(usedPct.toFixed(1)) })
+        : '';
+      const obsTime = Math.max(Number(poolObj?.observedAt || 0), Number(snapStat?.observedAt || 0));
+      noteText = driftPrefix + t('family.pieNoteQuota', {
+        time: obsTime ? new Date(obsTime).toLocaleString() : '—',
         basis: t(basisKey)
       });
     } else {

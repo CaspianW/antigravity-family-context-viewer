@@ -79,12 +79,14 @@ test('createFamilySync remembers defaultServerUrl after connect, omits secret in
     assert.equal(saved.data.serverUrl, 'https://example-family.test');
     assert.equal(saved.data.hasSecret, true);
 
-    // 3. Dashboard passes familyWeekly=1
+    // 3. Dashboard passes familyWeekly=1 and fetches 7d weeklyMembers when range=today
     const dash = await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480 });
     assert.equal(dash.ok, true);
-    const dashReq = requests.find(r => r.url.includes('/api/v1/dashboard'));
-    assert.ok(dashReq);
-    assert.equal(new URL(dashReq.url).searchParams.get('familyWeekly'), '1');
+    assert.equal(Array.isArray(dash.data.weeklyMembers), true);
+    const dashReqs = requests.filter(r => r.url.includes('/api/v1/dashboard'));
+    assert.equal(dashReqs.length, 2);
+    assert.equal(dashReqs.some(r => new URL(r.url).searchParams.get('familyWeekly') === '1'), true);
+    assert.equal(dashReqs.some(r => new URL(r.url).searchParams.get('range') === '7d'), true);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

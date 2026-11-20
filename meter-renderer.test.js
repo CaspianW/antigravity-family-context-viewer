@@ -6128,16 +6128,25 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
             familyWeekly: [
               {
                 pool: 'Gemini Models',
-                usedPct: 11,
+                usedPct: 17.2,
                 expiresAt: Date.now() + 3600000,
-                observedAt: 1795092000000,
-                estimates: [{ name: 'Caspian', pct: 11 }],
+                observedAt: 1795148639335,
+                estimates: [{ name: 'Caspian', pct: 4.9 }, { name: 'Larry', pct: 12.3 }],
                 unattributedPct: 0,
-                basis: 'weighted'
+                basis: 'tokens'
               }
             ],
             quotaSnapshots: [
-              { accountScopeKey: 'scope_1', usedPct: 11, remainingPct: 89 }
+              {
+                memberName: 'JacksonMo',
+                observedAt: 1795148639335,
+                windows: [{ pool: 'Gemini Models', window: 'weekly', remainingPct: 82.8, resetAt: Date.now() + 3600000 }]
+              },
+              {
+                memberName: 'WinDesktop',
+                observedAt: 1795148628118,
+                windows: [{ pool: 'Gemini Models', window: 'weekly', remainingPct: 81.9, resetAt: Date.now() + 3600000 }]
+              }
             ],
             members: [
               {
@@ -6249,15 +6258,17 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     assert.match(caspianDetailText, /WinDesktop/);
     assert.match(caspianDetailText, /Orchestrator \(Neon\) \(估算\)/);
 
-    // 验证紫色环形饼图（周额度占比 -> 11% 共享池已用，零成员无误分 5.5%）及模式切换
+    // 验证紫色环形饼图（同周期取各端最高已用 18.1% 防回退跳动 + 当服务端退回 tokens 时改用模型加权等效价值分摊）
     const pieCard = h.elements.get('family-pie-card');
     assert.equal(pieCard.hidden, false);
-    assert.match(collectText(h.elements.get('family-pie-center')), /^11% 共享池已用$/);
+    assert.match(collectText(h.elements.get('family-pie-center')), /^18\.1% 共享池已用$/);
     const pieLegendText = collectText(h.elements.get('family-pie-legend'));
-    assert.match(pieLegendText, /Caspian 11%/);
-    assert.match(pieLegendText, /Larry 0%/);
-    assert.match(pieLegendText, /剩余额度 89%/);
-    assert.ok(h.elements.get('family-pie-svg-wrap').querySelectorAll('circle').length >= 2);
+    // Caspian weighted $5.72 / $7.72 = 74.09% -> 13.4%; Larry $2.00 / $7.72 = 25.91% -> 4.7%
+    assert.match(pieLegendText, /Caspian 13\.4%/);
+    assert.match(pieLegendText, /Larry 4\.7%/);
+    assert.match(pieLegendText, /剩余额度 81\.9%/);
+    assert.match(collectText(h.elements.get('family-pie-note')), /各端上报 17\.2%~18\.1%.*最高已用 18\.1%.*加权等效价值/);
+    assert.ok(h.elements.get('family-pie-svg-wrap').querySelectorAll('circle').length >= 3);
 
     h.elements.get('family-pie-mode-usage').click();
     assert.match(collectText(h.elements.get('family-pie-center')), /^\$7\.72 家庭合计$/);

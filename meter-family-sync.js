@@ -466,13 +466,26 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
         case 'backfill': return { ok: true, data: await synchronize({ manual: true, origin, range: input.range }) };
         case 'dashboard': {
           const cfg = getConfig();
+          const reqRange = input.range || 'today';
+          const reqScope = input.scope || 'shared';
           const query = new URLSearchParams({
-            range: input.range || 'today',
-            scope: input.scope || 'shared',
+            range: reqRange,
+            scope: reqScope,
             tzOffset: input.tzOffset ?? 0,
             familyWeekly: '1'
           });
-          return { ok: true, data: await api(cfg, 'dashboard?' + query) };
+          const needWeekly = reqScope !== 'personal' && reqRange !== '7d';
+          const weekQuery = needWeekly ? new URLSearchParams({
+            range: '7d',
+            scope: reqScope,
+            tzOffset: input.tzOffset ?? 0
+          }) : null;
+          const [data, weekData] = await Promise.all([
+            api(cfg, 'dashboard?' + query),
+            weekQuery ? api(cfg, 'dashboard?' + weekQuery).catch(() => null) : Promise.resolve(null)
+          ]);
+          if (Array.isArray(weekData?.members)) data.weeklyMembers = weekData.members;
+          return { ok: true, data };
         }
         default: throw new Error('Unknown family action');
       }
