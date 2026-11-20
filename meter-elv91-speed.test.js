@@ -377,7 +377,7 @@ test('ELV-91 5: UI 面板三阶段展示、闪电颜色联动、最新卡片/时
     assert.ok(gridChildren.some(c => /综合效率评分/.test(c.children[0].textContent)));
     assert.ok(gridChildren.every(c => !/elv91-v1|ELV-91/i.test(c.children[0].textContent)), '用户可见面板不得暴露内部规则编号或 Linear 编号');
 
-    // 3. 同一记录同步进入最新调用卡片与时间线且字段统一（清除 override）
+    // 3. 同一记录同步进入独立速度面板速览（清除 override）且支持多语言，最新调用卡片已从上下文面板精简移除
     h.api.setSpeedEvaluationForTest(null, { openBreakdown: false });
     h.api.setSessionCallsForTest([{
       callId: 'elv91-call-1',
@@ -392,14 +392,33 @@ test('ELV-91 5: UI 面板三阶段展示、闪电颜色联动、最新卡片/时
       status: 'final',
       timestamp: 1700000000000
     }], { replace: true });
+    h.api.setContextLatestForTest({
+      model: 'Orchestrator (Carbon)',
+      modelId: 'gemini-4-carbon',
+      status: 'reported',
+      input: 1000,
+      actual: 1433,
+      used: 1433,
+      budget: 256000,
+      speed: {
+        tps: 3.0,
+        streamingTps: 129.6,
+        ttft: 138.65,
+        streamingSec: 3.34,
+        duration: 141.99,
+        outputTokens: 433,
+        totalInputTokens: 1000
+      }
+    });
 
-    const cardScore = h.elements.get('latest-call-score-inline');
-    assert.equal(cardScore.hidden, false);
+    sp = h.api.getSpeedPanelStateForTest();
     // 此处传入了 inputTokens: 1000（参与 N_work 体量加权），独立计算结果精确为 13.4 分 · F
-    assert.match(cardScore.textContent, /13\.4分 · F/);
+    assert.match(sp.badgeText, /13\.4 分 · F/);
+    assert.equal(sp.badgeColor, '#DC2626');
+    assert.equal(h.elements.get('latest-call-score-inline'), undefined, '最新调用卡片已从会话面板精简移除');
 
     await h.api.setPanelLanguage('en', { persist: false });
-    assert.match(h.elements.get('latest-call-score-inline').textContent, /13\.4 pts · F/);
+    assert.match(h.api.getSpeedPanelStateForTest().badgeText, /13\.4 pts · F/);
   } finally {
     h.api.dispose();
   }

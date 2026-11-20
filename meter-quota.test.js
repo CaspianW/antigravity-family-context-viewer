@@ -714,9 +714,10 @@ test('顶栏入口顺序、独立弹窗锚点、防底裁切 maxHeight 与 Notic
   const idxSpeed = tpl.indexOf('id="badge-speed"');
   const idxTokens = tpl.indexOf('id="badge-tokens"');
   const idxCli = tpl.indexOf('id="badge-cli"');
+  const idxSettings = tpl.indexOf('id="badge-settings"');
   const idxOverflow = tpl.indexOf('id="badge-overflow"');
   assert.ok(idxQuota > 0 && idxQuota < idxBadge, '额度入口必须位于工具组最左侧');
-  assert.ok(idxBadge < idxSpeed && idxSpeed < idxTokens && idxTokens < idxCli && idxCli < idxOverflow);
+  assert.ok(idxBadge < idxSpeed && idxSpeed < idxTokens && idxTokens < idxCli && idxCli < idxSettings && idxSettings < idxOverflow);
   const betweenBadgeAndSpeed = tpl.slice(idxBadge, idxSpeed);
   assert.equal(betweenBadgeAndSpeed.includes('badge-quota'), false, '上下文与速度必须紧邻，不能被额度入口隔开');
   assert.ok(tpl.includes('id="quota-usage-tip"'), '面板底部应包含简短用量贴士节点');
@@ -747,7 +748,8 @@ test('顶栏入口顺序、独立弹窗锚点、防底裁切 maxHeight 与 Notic
       'badge-quota': { left: 740, top: 6, width: 64, height: 28, right: 804, bottom: 38 },
       badge: { left: 806, top: 6, width: 52, height: 28, right: 858, bottom: 38 },
       'badge-speed': { left: 860, top: 6, width: 68, height: 28, right: 928, bottom: 38 },
-      'badge-tokens': { left: 930, top: 6, width: 58, height: 28, right: 988, bottom: 38 }
+      'badge-tokens': { left: 930, top: 6, width: 58, height: 28, right: 988, bottom: 38 },
+      'badge-settings': { left: 1020, top: 6, width: 28, height: 28, right: 1048, bottom: 38 }
     }
   });
   const api = h.sandbox.__AGContextMeter;
@@ -757,12 +759,24 @@ test('顶栏入口顺序、独立弹窗锚点、防底裁切 maxHeight 与 Notic
   const pMaxH = parseInt(pQuota.style.maxHeight, 10);
   assert.ok(Number.isFinite(pMaxH) && pTop + pMaxH <= 540 - 14, `面板顶+最大高(${pTop}+${pMaxH})绝不可超出视口`);
 
-  // 点击 speed 与 badge 触发不同的面板锚点，互不串用
+  // 点击 speed、badge、settings 各自打开独立浮窗并锚定自身按钮右缘，互不串用
   h.elements.get('badge-speed').click();
-  const panelLeftFromSpeed = parseInt(h.elements.get('panel').style.left, 10);
-  h.elements.get('badge').click(); // close since already open at speed? clicking badge switches anchor and stays open
+  assert.equal(h.elements.get('panel-speed').hidden, false, '点击速度入口应打开独立速度面板');
+  assert.equal(h.elements.get('panel').hidden, true, '打开速度面板时上下文面板必须收起');
+  const panelLeftFromSpeed = parseInt(h.elements.get('panel-speed').style.left, 10);
+
+  h.elements.get('badge').click();
+  assert.equal(h.elements.get('panel').hidden, false);
+  assert.equal(h.elements.get('panel-speed').hidden, true);
   const panelLeftFromBadge = parseInt(h.elements.get('panel').style.left, 10);
+
+  h.elements.get('badge-settings').click();
+  assert.equal(h.elements.get('panel-settings').hidden, false, '点击设置入口应打开独立设置面板');
+  assert.equal(h.elements.get('panel').hidden, true);
+  const panelLeftFromSettings = parseInt(h.elements.get('panel-settings').style.left, 10);
+
   assert.notEqual(panelLeftFromSpeed, panelLeftFromBadge, '速度与上下文入口应各自锚定自身按钮右缘');
+  assert.notEqual(panelLeftFromSettings, panelLeftFromBadge, '设置与上下文入口应各自锚定自身按钮右缘');
   assert.notEqual(pQuota.style.left, h.elements.get('panel').style.left, '额度与上下文弹窗锚点必须独立');
   api.dispose();
 });

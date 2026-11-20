@@ -240,16 +240,19 @@ function createTestHarness(options = {}) {
   };
 }
 
-test('0.8.3 修复验证 1: 四 Tab 导航布局、平级配置页与 setting 英文统一', async () => {
+test('0.8.3 修复验证 1: 双 Tab 上下文导航 + 独立速度/设置浮窗与 setting 英文统一', async () => {
   const h = createTestHarness();
   const api = h.api;
 
-  // 1. 验证存在 4 个平级 Tab
+  // 1. 验证上下文面板精简为 2 个 Tab（当前会话 / 上下文配置），速度与设置独立拆分为顶栏浮窗
   const btnSession = h.elements.get('tab-ctx-session');
   const btnModels = h.elements.get('tab-ctx-models');
-  const btnSpeed = h.elements.get('tab-ctx-speed');
-  const btnSettings = h.elements.get('tab-ctx-settings');
-  assert.ok(btnSession && btnModels && btnSpeed && btnSettings, '必须同时存在 4 个平级 Tab');
+  const badgeSpeed = h.elements.get('badge-speed');
+  const badgeSettings = h.elements.get('badge-settings');
+  assert.ok(btnSession && btnModels, '上下文面板必须包含 2 个平级 Tab');
+  assert.equal(h.elements.get('tab-ctx-speed'), undefined, '速度页已拆分为独立浮窗，不再位于上下文 Tab 栏');
+  assert.equal(h.elements.get('tab-ctx-settings'), undefined, '设置页已拆分为独立浮窗，不再位于上下文 Tab 栏');
+  assert.ok(badgeSpeed && badgeSettings, '顶栏必须提供独立的速度与设置入口按钮');
 
   // 2. 检查默认简体与繁体名称均为「配置」
   api.setPanelLanguage('zh-CN');
@@ -261,12 +264,13 @@ test('0.8.3 修复验证 1: 四 Tab 导航布局、平级配置页与 setting �
   api.setPanelLanguage('en');
   assert.equal(api.translateForTest('tab.settings'), 'setting', '英文必须严格显示「setting」');
 
-  // 4. 点击配置 Tab -> 正确切换到配置分页，主导航 tabs bar 保持平级可见
-  btnSettings.click();
+  // 4. 点击独立设置按钮 -> 打开 #panel-settings 且隐藏 #panel，设置主体直接可见
+  badgeSettings.click();
   const st = api.getContextPreferencesState();
-  assert.equal(st.activeContextTab, 'settings', '当前活动 Tab 应为 settings');
-  assert.equal(h.elements.get('pane-ctx-settings').hidden, false, '配置页应显示');
-  assert.equal(h.elements.get('ctx-tabs-bar').hidden, false, '主导航栏在四 Tab 架构下必须保持平级可见');
+  assert.equal(st.isContextSettingsView, true, '独立设置浮窗打开后 isContextSettingsView 应为 true');
+  assert.equal(h.elements.get('panel-settings').hidden, false, '独立设置浮窗应显示');
+  assert.equal(h.elements.get('panel').hidden, true, '上下文面板应互斥隐藏');
+  assert.equal(h.elements.get('pane-ctx-settings').hidden, false, '配置页主体应直接显示');
   h.api.dispose();
 });
 

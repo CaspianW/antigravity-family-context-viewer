@@ -469,6 +469,9 @@
     if (modelViewEl && modelViewEl.style && modelViewEl.style.display === 'block' && typeof renderModelUsageView === 'function') {
       renderModelUsageView();
     }
+    if (el('panel-speed') && !el('panel-speed').hidden && typeof renderSpeedComparisonTab === 'function') {
+      renderSpeedComparisonTab();
+    }
   }
 
   function applyCustomColors() {
@@ -540,7 +543,7 @@
     host.setAttribute('data-theme', activeTheme);
     const hostBg = getHostZeroLevelBg(activeTheme === 'light');
     host.style.setProperty('--ag-host-bg', hostBg);
-    const btns = [el('theme-toggle'), el('theme-toggle-tokens')].filter(Boolean);
+    const btns = [el('theme-toggle'), el('theme-toggle-tokens'), el('theme-toggle-speed'), el('theme-toggle-settings')].filter(Boolean);
     btns.forEach(btn => {
       if (currentThemeMode === 'auto') {
         btn.textContent = activeTheme === 'light' ? '🌗' : '🌓';

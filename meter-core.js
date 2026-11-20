@@ -640,7 +640,7 @@
     const usedVal = actual ?? (estimate > 0 ? estimate : null);
     const percentVal = actual !== null && budget > 0 && !exceeded ? (actual / budget * 100) : null;
 
-    return {
+    const summary = {
       used: usedVal,
       actual,
       estimate: estimate > 0 ? estimate : null,
@@ -660,6 +660,162 @@
       modelRaw,
       status,
       speed
+    };
+    if (options.latestCheckpoint) {
+      return applyPostCompactCheckpoint(summary, {
+        metadata,
+        latestCheckpoint: options.latestCheckpoint,
+        lastAssistantAt: options.lastAssistantAt,
+        latestGeneratorStepIndex: options.latestGeneratorStepIndex,
+        system: options.system,
+        definitions: options.definitions,
+        postCheckpointTotal: options.postCheckpointTotal,
+        currentCallId: options.currentCallId,
+        preCompactCallId: options.preCompactCallId
+      });
+    }
+    return summary;
+  }
+
+  function getGeneratorMaxStepIndex(metadata) {
+    if (!metadata || typeof metadata !== 'object') return -1;
+    let maxStep = -1;
+    if (Array.isArray(metadata.stepIndices)) {
+      for (const v of metadata.stepIndices) {
+        const n = Number(v);
+        if (Number.isInteger(n) && n > maxStep) maxStep = n;
+      }
+    }
+    const startIdx = Number(metadata.chatModel?.chatStartMetadata?.startStepIndex);
+    if (Number.isInteger(startIdx) && startIdx > maxStep) maxStep = startIdx;
+    const directIdx = Number(metadata.stepIndex ?? metadata.step_index);
+    if (Number.isInteger(directIdx) && directIdx > maxStep) maxStep = directIdx;
+    return maxStep;
+  }
+
+  function estimatePostCompactTokens(options = {}) {
+    const cp = options.latestCheckpoint;
+    if (!cp || typeof cp !== 'object') {
+      return {
+        estimate: null,
+        summaryTokens: null,
+        summaryTokensSource: null,
+        basePromptTokens: null,
+        postCheckpointTokens: null
+      };
+    }
+    const midOf = (g) => {
+      if (!g || typeof g !== 'object') return 0;
+      const lo = number(g.low) || 0;
+      const hi = number(g.high) || 0;
+      if (lo <= 0 && hi <= 0) return 0;
+      return Math.round((lo + hi) / 2);
+    };
+    const cpOut = number(cp.summaryOutputTokens);
+    const cpEst = number(cp.estimatedSummaryTokens);
+    const cpMeasureMid = ((number(cp.summaryLow) || 0) > 0 || (number(cp.summaryHigh) || 0) > 0)
+      ? Math.round(((number(cp.summaryLow) || 0) + (number(cp.summaryHigh) || 0)) / 2)
+      : 0;
+    let summaryTokens = null;
+    let summaryTokensSource = null;
+    if (cpOut !== null && cpOut > 0) {
+      summaryTokens = Math.round(cpOut);
+      summaryTokensSource = 'checkpoint_usage';
+    } else if (cpEst !== null && cpEst > 0) {
+      summaryTokens = Math.round(cpEst);
+      summaryTokensSource = 'summary_measure';
+    } else if (cpMeasureMid > 0) {
+      summaryTokens = cpMeasureMid;
+      summaryTokensSource = 'summary_measure';
+    }
+    const basePromptRaw = midOf(options.system) + midOf(options.definitions);
+    const basePromptTokens = basePromptRaw > 0 ? basePromptRaw : null;
+    const postCheckpointRaw = midOf(options.postCheckpointTotal);
+    const postCheckpointTokens = postCheckpointRaw > 0 ? postCheckpointRaw : null;
+    const totalEst = (summaryTokens || 0) + (basePromptTokens || 0) + (postCheckpointTokens || 0);
+    return {
+      estimate: totalEst > 0 ? totalEst : null,
+      summaryTokens,
+      summaryTokensSource,
+      basePromptTokens,
+      postCheckpointTokens
+    };
+  }
+
+  /**
+   * 当最新已完成 CHECKPOINT 严格晚于最新 generatorMetadata / plannerResponse 时，
+   * 清除过期的压缩前上下文实测值，并给出诚实的压缩后预估上下文状态（不伪造服务端 actual）。
+   */
+  function applyPostCompactCheckpoint(latest, options = {}) {
+    if (!latest || typeof latest !== 'object') return latest;
+    const cp = options.latestCheckpoint;
+    if (!cp || typeof cp !== 'object') return latest;
+    const cpIdx = Number(cp.index);
+    if (!Number.isInteger(cpIdx) || cpIdx < 0) return latest;
+
+    const genStep = Number.isInteger(options.latestGeneratorStepIndex)
+      ? options.latestGeneratorStepIndex
+      : (Number.isInteger(latest.latestGeneratorStepIndex)
+          ? latest.latestGeneratorStepIndex
+          : getGeneratorMaxStepIndex(options.metadata));
+    if (
+      genStep < 0 &&
+      options.currentCallId &&
+      options.preCompactCallId &&
+      String(options.currentCallId) !== String(options.preCompactCallId)
+    ) {
+      return latest;
+    }
+    const lastAssistantAt = Number.isInteger(options.lastAssistantAt) ? options.lastAssistantAt : -1;
+    const lastActiveStep = Math.max(genStep, lastAssistantAt);
+    if (lastActiveStep < 0 || cpIdx <= lastActiveStep) {
+      return latest;
+    }
+
+    const est = estimatePostCompactTokens({
+      latestCheckpoint: cp,
+      system: options.system,
+      definitions: options.definitions,
+      postCheckpointTotal: options.postCheckpointTotal
+    });
+    const budget = number(latest.budget);
+    const estimatedPercent = (est.estimate !== null && budget !== null && budget > 0)
+      ? Math.min(100, Math.max(0, (est.estimate / budget) * 100))
+      : null;
+    const preCompactActual = number(latest.actual) ?? number(latest.preCompactActual) ?? null;
+    const preCompactPercent = (latest.percent !== undefined && latest.percent !== null && Number.isFinite(Number(latest.percent)))
+      ? Number(latest.percent)
+      : ((latest.preCompactPercent !== undefined && latest.preCompactPercent !== null && Number.isFinite(Number(latest.preCompactPercent)))
+          ? Number(latest.preCompactPercent)
+          : null);
+
+    return {
+      ...latest,
+      used: est.estimate,
+      actual: null,
+      estimate: est.estimate,
+      estimated: true,
+      percent: null,
+      estimatedPercent,
+      budget: budget && budget > 0 ? budget : null,
+      exceeded: false,
+      network: false,
+      error: '',
+      errorClassification: { kind: 'none' },
+      input: null,
+      cached: 0,
+      output: null,
+      status: 'compacted',
+      compacted: true,
+      compactedAt: cp.completedAt || null,
+      checkpointStepIndex: cpIdx,
+      latestGeneratorStepIndex: genStep >= 0 ? genStep : null,
+      preCompactActual,
+      preCompactPercent,
+      summaryTokens: est.summaryTokens,
+      summaryTokensSource: est.summaryTokensSource,
+      basePromptTokens: est.basePromptTokens,
+      postCheckpointTokens: est.postCheckpointTokens
     };
   }
   function measure(text, outAcc = null) {
@@ -702,9 +858,12 @@
   function add(a, b) { for (const k of ['chars', 'bytes', 'low', 'high']) a[k] += b[k] || 0; return a; }
   const empty = () => ({ chars: 0, bytes: 0, low: 0, high: 0 });
   function analyzeSteps(steps) {
+    const stepList = Array.isArray(steps) ? steps : [];
     const groups = { user: empty(), assistant: empty(), thinking: empty(), tools: empty(), summaries: empty() };
     const media = new Map();
     let userMessages = 0, assistantMessages = 0, latestStepError = null, lastUserAt = -1, lastAssistantAt = -1;
+    let latestCheckpoint = null, latestRunningCheckpoint = null;
+    let postCheckpoint = empty();
     const skip = new Set(['metadata', 'userConfig', 'lastUserConfig', 'userAgentSpec', 'activeUserState', 'thinkingSignature', 'thumbnail', 'inlineData', 'media', 'modelUsage', 'tokenUsage', 'mendelExperimentIds']);
     // 直接按与原 content()+measure() 等价的逻辑流式累计 chars/bytes/cjk，避免分配巨型中间拼接字符串
     const toolAcc = { chars: 0, bytes: 0, cjk: 0 };
@@ -756,24 +915,66 @@
       }
       for (const [key, v] of Object.entries(value)) if (!skip.has(key) || key === 'media') attachments(v, source, withinStep);
     }
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
+    for (let i = 0; i < stepList.length; i++) {
+      const s = stepList[i];
+      if (!s || typeof s !== 'object') continue;
       if (s.userInput) {
         userMessages++; lastUserAt = i;
         const u = s.userInput;
-        add(groups.user, measure(u.userResponse || (u.items || []).map(item => item.text || '').join('\n')));
+        const userStats = measure(u.userResponse || (u.items || []).map(item => item.text || '').join('\n'));
+        add(groups.user, userStats);
+        if (latestCheckpoint) add(postCheckpoint, userStats);
         // Canonical media and item inline previews represent the same upload.
         attachments(u.media?.length ? u.media : u.items, 'user');
       } else if (s.plannerResponse) {
         assistantMessages++; lastAssistantAt = i;
-        add(groups.assistant, measure(s.plannerResponse.modifiedResponse || s.plannerResponse.response || ''));
-        add(groups.thinking, measure(s.plannerResponse.thinking || ''));
+        const asstStats = measure(s.plannerResponse.modifiedResponse || s.plannerResponse.response || '');
+        const thinkStats = measure(s.plannerResponse.thinking || '');
+        add(groups.assistant, asstStats);
+        add(groups.thinking, thinkStats);
+        if (latestCheckpoint) {
+          add(postCheckpoint, asstStats);
+          add(postCheckpoint, thinkStats);
+        }
         attachments(s.plannerResponse, 'assistant');
       } else if (s.errorMessage) {
         const e = s.errorMessage.error || {};
         latestStepError = { index: i, text: e.modelErrorMessage || e.shortError || e.fullError || '', id: e.errorId || '' };
-      } else if (s.checkpoint) {
-        add(groups.summaries, measure(s.checkpoint.sessionSummary || ''));
+      } else if (s.checkpoint || /^CORTEX_STEP_TYPE_CHECKPOINT$|^CHECKPOINT$/i.test(String(s.type || '').trim())) {
+        const cpObj = (s.checkpoint && typeof s.checkpoint === 'object') ? s.checkpoint : {};
+        const cpStatus = String(s.status || '').trim();
+        const summaryText = String(cpObj.sessionSummary || cpObj.summary || '');
+        const summaryStats = measure(summaryText);
+        add(groups.summaries, summaryStats);
+        const mu = s.metadata?.modelUsage || s.metadata?.tokenUsage || null;
+        const respOut = number(mu?.responseOutputTokens);
+        const totalOut = number(mu?.outputTokens);
+        const summaryOutputTokens = (respOut !== null && respOut > 0)
+          ? respOut
+          : ((totalOut !== null && totalOut > 0) ? totalOut : null);
+        const isFailedCp = /ERROR|FAIL|CANCEL/i.test(cpStatus);
+        const isRunningCp = /RUNNING|GENERATING|PENDING|WAITING|QUEUED/i.test(cpStatus);
+        const isUnspecifiedEmpty = ((/UNSPECIFIED/i.test(cpStatus) || s.status === 0) && !summaryText && summaryOutputTokens === null);
+        const isStubTypeOnly = (!s.checkpoint && !summaryText && summaryOutputTokens === null && !/DONE/i.test(cpStatus) && s.status !== 3);
+        if (isRunningCp || isUnspecifiedEmpty || isStubTypeOnly) {
+          latestRunningCheckpoint = { index: i, status: cpStatus || String(s.status ?? '') };
+        } else if (!isFailedCp) {
+          const summaryMeasuredMid = (summaryStats.low > 0 || summaryStats.high > 0)
+            ? Math.round((summaryStats.low + summaryStats.high) / 2)
+            : null;
+          latestCheckpoint = {
+            index: i,
+            checkpointIndex: number(cpObj.checkpointIndex) ?? i,
+            status: cpStatus || 'CORTEX_STEP_STATUS_DONE',
+            completedAt: s.metadata?.completedAt || s.metadata?.createdAt || null,
+            summaryChars: summaryStats.chars,
+            summaryLow: summaryStats.low,
+            summaryHigh: summaryStats.high,
+            summaryOutputTokens,
+            estimatedSummaryTokens: summaryOutputTokens ?? summaryMeasuredMid
+          };
+          postCheckpoint = empty();
+        }
       } else {
         toolAcc.chars = 0; toolAcc.bytes = 0; toolAcc.cjk = 0;
         const stepKeys = Object.keys(s);
@@ -796,18 +997,38 @@
         }
         if (toolAcc.chars > 0 || toolAcc.bytes > 0) {
           const middle = (toolAcc.chars - toolAcc.cjk) / 4 + toolAcc.cjk * 1.2;
-          add(groups.tools, {
+          const toolStats = {
             chars: toolAcc.chars,
             bytes: toolAcc.bytes,
             low: Math.ceil(middle * .7),
             high: Math.ceil(Math.max(middle * 1.6, toolAcc.bytes / 2))
-          });
+          };
+          add(groups.tools, toolStats);
+          if (latestCheckpoint) add(postCheckpoint, toolStats);
         }
       }
     }
     const total = Object.values(groups).reduce(add, empty());
-    const currentError = latestStepError && latestStepError.index > Math.max(lastUserAt, lastAssistantAt) ? latestStepError : null;
-    return { groups, total, media: [...media.values()], steps: steps.length, userMessages, assistantMessages, currentError };
+    const latestGoodBoundary = Math.max(lastUserAt, lastAssistantAt, latestCheckpoint ? latestCheckpoint.index : -1);
+    const currentError = latestStepError && latestStepError.index > latestGoodBoundary ? latestStepError : null;
+    const compactingInProgress = Boolean(
+      latestRunningCheckpoint &&
+      (!latestCheckpoint || latestRunningCheckpoint.index > latestCheckpoint.index)
+    );
+    return {
+      groups,
+      total,
+      media: [...media.values()],
+      steps: stepList.length,
+      userMessages,
+      assistantMessages,
+      lastUserAt,
+      lastAssistantAt,
+      currentError,
+      latestCheckpoint,
+      compactingInProgress,
+      postCheckpointTotal: latestCheckpoint ? postCheckpoint : null
+    };
   }
 
   // 官方 Developer API Standard 公开费率表 (USD / 百万 Token)
@@ -7022,6 +7243,9 @@
 
   const api = {
     summarize,
+    getGeneratorMaxStepIndex,
+    estimatePostCompactTokens,
+    applyPostCompactCheckpoint,
     classifyRequestError,
     resolveModelQuota,
     getModelPoolKey,

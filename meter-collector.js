@@ -55,6 +55,8 @@ const {
 const {
   analyzeSteps,
   summarize,
+  getGeneratorMaxStepIndex,
+  applyPostCompactCheckpoint,
   add,
   empty,
   measure,
@@ -627,7 +629,7 @@ async function collect(origin, id, options = {}) {
   const previous = conversations.get(key);
   if (previous?.pending) return previous.pending;
   if (options.force) filesCache.clear();
-  if (!options.force && previous?.result && Date.now() - previous.at < 12000) return previous.result;
+  if (!options.force && !options.bypassCache && previous?.result && Date.now() - previous.at < 12000) return previous.result;
   const task = (async () => {
     const signal = abortController?.signal || null;
     try {
@@ -646,7 +648,7 @@ async function collect(origin, id, options = {}) {
       if (!trajectory) throw new Error('未取得会话历史，无法完整统计');
       const wsPath = extractWorkspaceFromTrajectory(trajectory);
       if (wsPath) conversationWorkspaces.set(id.toLowerCase(), wsPath);
-      const steps = trajectory.steps || [];
+      const steps = Array.isArray(trajectory.steps) ? trajectory.steps.slice() : [];
       const expected = Number(full.numTotalSteps ?? steps.length);
       while (steps.length < expected) {
         if (isSuperseded()) return { version: PROJECT_VERSION, conversation: id, abortedStale: true, scannedAt: Date.now(), errors: [] };
@@ -668,7 +670,7 @@ async function collect(origin, id, options = {}) {
       let cachedHostUserStatus = cachedUserStatusByOrigin.get(normalizeQuotaOriginScope({ origin }))?.status || null;
       let knownCascadeConfigs = Array.isArray(cachedHostUserStatus?.cascadeModelConfigs) ? cachedHostUserStatus.cascadeModelConfigs : [];
       const hasAnyCap = knownCascadeConfigs.some(c => Number.isFinite(c?.maxTokens) && c.maxTokens > 0);
-      if (!knownCascadeConfigs.length || !hasAnyCap) {
+      if ((!knownCascadeConfigs.length || !hasAnyCap) && !options.requestFn) {
         try {
           const freshStatus = await fetchUserStatusFromHost({ origin });
           if (freshStatus) cachedHostUserStatus = freshStatus;
@@ -683,6 +685,7 @@ async function collect(origin, id, options = {}) {
         stepCapabilities
       );
       let latestModel = null;
+      let latestMetadata = null;
       let latestCallId = null;
       let latestCallRecord = null;
       const recentGeneratorCalls = [];
@@ -697,6 +700,7 @@ async function collect(origin, id, options = {}) {
         latest = summarize(m, { cascadeModelConfigs: mergedCascadeConfigs });
         if (latest) {
           latestModel = m.chatModel;
+          latestMetadata = m;
           const callMeta = parseGeneratorCall(m, id, 'desktop', { cascadeModelConfigs: mergedCascadeConfigs });
           latestCallId = callMeta?.callId || null;
           if (callMeta) {
@@ -709,6 +713,17 @@ async function collect(origin, id, options = {}) {
       const definitions = latestModel ? measure(JSON.stringify(latestModel.tools || [])) : empty();
       session.groups.system = system; session.groups.definitions = definitions;
       add(total, system); add(total, definitions);
+      if (latest && session.latestCheckpoint) {
+        latest = applyPostCompactCheckpoint(latest, {
+          metadata: latestMetadata,
+          latestGeneratorStepIndex: getGeneratorMaxStepIndex(latestMetadata),
+          latestCheckpoint: session.latestCheckpoint,
+          lastAssistantAt: session.lastAssistantAt,
+          system,
+          definitions,
+          postCheckpointTotal: session.postCheckpointTotal
+        });
+      }
       if (session.currentError) {
         const fromStep = summarize({ chatModel: { retryInfos: [{ error: session.currentError.text }] } }, {
           currentModel: latest?.model || latestModel?.modelDisplayName || latestModel?.model || '',
@@ -736,7 +751,7 @@ async function collect(origin, id, options = {}) {
       ...(cachedHostUserStatus?.availableModelDetails || {}),
       ...stepCapabilities
     };
-    const result = { version: PROJECT_VERSION, conversation: id, workspacePath: wsPath || null, latest, latestCallId, latestCallRecord, recentGeneratorCalls, generatorCount: count, cascadeModelConfigs: compactCascadeConfigs, modelCapabilitiesById, session: { ...session, media: undefined, attachmentTotal, total, attachments, unknownFiles, complete: unknownFiles === 0, scope: '全量可读取历史 + 上传附件 + 当前系统提示与工具定义；不将每轮重复输入累加；非服务端分词结果' }, scannedAt: Date.now(), errors: [] };
+    const result = { version: PROJECT_VERSION, conversation: id, workspacePath: wsPath || null, trajectoryStatus: full.status || null, latest, latestCallId, latestCallRecord, recentGeneratorCalls, generatorCount: count, cascadeModelConfigs: compactCascadeConfigs, modelCapabilitiesById, session: { ...session, media: undefined, attachmentTotal, total, attachments, unknownFiles, complete: unknownFiles === 0, scope: '全量可读取历史 + 上传附件 + 当前系统提示与工具定义；不将每轮重复输入累加；非服务端分词结果' }, scannedAt: Date.now(), errors: [] };
     if (isSuperseded()) {
       conversations.delete(key);
       return { version: PROJECT_VERSION, conversation: id, abortedStale: true, scannedAt: Date.now(), errors: [] };
@@ -788,6 +803,8 @@ async function compactConversation(origin, id, options = {}) {
         error: '当前对话尚无历史内容，无需压缩'
       };
     }
+    const preAnalysis = analyzeSteps(Array.isArray(trajectory.steps) ? trajectory.steps : []);
+    const checkpointIndexBefore = preAnalysis.latestCheckpoint ? preAnalysis.latestCheckpoint.index : -1;
 
     const sendPayload = {
       cascadeId: id,
@@ -812,12 +829,52 @@ async function compactConversation(origin, id, options = {}) {
     };
     const response = await rpc.call('SendUserCascadeMessage', sendPayload);
     conversations.delete(`${safeOrigin}/${id}`);
-    return {
+    const baseResult = {
       ok: true,
       cascadeId: id,
       stepCountBefore: stepCount,
+      generatorCountBefore: genCount,
+      checkpointIndexBefore,
       statusBefore: status || null,
       response: response || null
+    };
+    if (options.waitForCheckpoint !== true) {
+      return baseResult;
+    }
+
+    const waitTimeoutMs = Math.max(500, Math.min(120000, Number(options.waitTimeoutMs) || 60000));
+    const pollIntervalMs = Math.max(100, Math.min(5000, Number(options.pollIntervalMs) || 1500));
+    const sleepFn = typeof options.sleepFn === 'function'
+      ? options.sleepFn
+      : (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const deadline = Date.now() + waitTimeoutMs;
+    let completed = false;
+    let snapshot = null;
+
+    while (Date.now() <= deadline) {
+      await sleepFn(pollIntervalMs);
+      conversations.delete(`${safeOrigin}/${id}`);
+      const nextSnap = await collect(safeOrigin, id, { bypassCache: true, requestFn: options.requestFn });
+      snapshot = nextSnap;
+      const runStatus = String(nextSnap?.trajectoryStatus || '').trim();
+      const isRunning = runStatus === 'CASCADE_RUN_STATUS_RUNNING' ||
+        runStatus === 'CASCADE_RUN_STATUS_BUSY' ||
+        runStatus === 'CASCADE_RUN_STATUS_CANCELING';
+      const nextCpIdx = nextSnap?.session?.latestCheckpoint ? nextSnap.session.latestCheckpoint.index : -1;
+      const hasNewCheckpoint = nextCpIdx > checkpointIndexBefore && nextCpIdx >= stepCount;
+      const hasNewGenerator = Number(nextSnap?.generatorCount ?? 0) > genCount;
+      if ((!isRunning && !nextSnap?.session?.compactingInProgress && hasNewCheckpoint) || hasNewGenerator) {
+        completed = true;
+        break;
+      }
+      if (Date.now() >= deadline) break;
+    }
+
+    return {
+      ...baseResult,
+      waited: true,
+      completed,
+      snapshot
     };
   } catch (err) {
     return {
@@ -3056,14 +3113,21 @@ function sanitizeContextPreferencesMap(rawMap) {
 }
 
 const DEFAULT_AUTO_COMPACT_CONFIG = Object.freeze({
-  enabled: false,
-  minRemainingPct: 15
+  enabled: true,
+  minRemainingPct: 20
 });
 
 function sanitizeAutoCompactConfig(raw) {
   const base = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  const enabled = base.enabled === true;
-  const rawPct = Number(base.minRemainingPct ?? base.thresholdPct ?? DEFAULT_AUTO_COMPACT_CONFIG.minRemainingPct);
+  const enabled = typeof base.enabled === 'boolean'
+    ? base.enabled
+    : DEFAULT_AUTO_COMPACT_CONFIG.enabled;
+  const rawPct = Number(
+    base.minRemainingPct ??
+    base.thresholdRemainingPct ??
+    base.thresholdPct ??
+    DEFAULT_AUTO_COMPACT_CONFIG.minRemainingPct
+  );
   const minRemainingPct = Number.isFinite(rawPct)
     ? Math.max(1, Math.min(80, Math.round(rawPct)))
     : DEFAULT_AUTO_COMPACT_CONFIG.minRemainingPct;
@@ -3441,11 +3505,14 @@ function savePluginSettings(payload = {}, options = {}) {
       settings.autoCompact = { ...DEFAULT_AUTO_COMPACT_CONFIG, updatedAt: new Date().toISOString() };
     } else if (typeof payload.autoCompact === 'object' && !Array.isArray(payload.autoCompact)) {
       const prevAc = sanitizeAutoCompactConfig(settings.autoCompact);
+      const nextRawPct = payload.autoCompact.minRemainingPct !== undefined
+        ? payload.autoCompact.minRemainingPct
+        : (payload.autoCompact.thresholdRemainingPct !== undefined
+            ? payload.autoCompact.thresholdRemainingPct
+            : (payload.autoCompact.thresholdPct !== undefined ? payload.autoCompact.thresholdPct : prevAc.minRemainingPct));
       settings.autoCompact = sanitizeAutoCompactConfig({
         enabled: payload.autoCompact.enabled !== undefined ? payload.autoCompact.enabled : prevAc.enabled,
-        minRemainingPct: payload.autoCompact.minRemainingPct !== undefined
-          ? payload.autoCompact.minRemainingPct
-          : (payload.autoCompact.thresholdPct !== undefined ? payload.autoCompact.thresholdPct : prevAc.minRemainingPct),
+        minRemainingPct: nextRawPct,
         updatedAt: new Date().toISOString()
       });
     } else {

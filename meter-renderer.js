@@ -17,19 +17,25 @@
         const readVal = id => prevRoot.getElementById(id)?.value;
         const readChk = id => Boolean(prevRoot.getElementById(id)?.checked);
         const pCtx = prevRoot.getElementById('panel');
+        const pSpeed = prevRoot.getElementById('panel-speed');
+        const pSettings = prevRoot.getElementById('panel-settings');
         const pTokens = prevRoot.getElementById('panel-tokens');
         const pQuota = prevRoot.getElementById('panel-quota');
-        const openPanel = (pQuota && !pQuota.hidden) ? 'quota'
-          : ((pTokens && !pTokens.hidden) ? 'tokens'
-            : ((pCtx && !pCtx.hidden) ? 'context' : 'none'));
         const activeTab = ['session', 'models', 'speed', 'settings'].find(
           k => prevRoot.getElementById(`tab-ctx-${k}`)?.classList?.contains('active')
         ) || null;
+        let openPanel = (pQuota && !pQuota.hidden) ? 'quota'
+          : ((pTokens && !pTokens.hidden) ? 'tokens'
+            : ((pSpeed && !pSpeed.hidden) ? 'speed'
+              : ((pSettings && !pSettings.hidden) ? 'settings'
+                : ((pCtx && !pCtx.hidden) ? 'context' : 'none'))));
+        if (openPanel === 'context' && activeTab === 'speed') openPanel = 'speed';
+        if (openPanel === 'context' && activeTab === 'settings') openPanel = 'settings';
         const activeTokenTab = ['tokens', 'models', 'cost', 'family'].find(
           k => prevRoot.getElementById(`tok-view-${k}`)?.classList?.contains('active')
         ) || null;
         const scrollTops = {};
-        for (const sId of ['panel', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
+        for (const sId of ['panel', 'panel-speed', 'panel-settings', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
           const n = prevRoot.getElementById(sId);
           if (n && Number(n.scrollTop) > 0) scrollTops[sId] = Number(n.scrollTop);
         }
@@ -47,9 +53,9 @@
         inheritedHotReloadState = {
           capturedAt: Date.now(),
           openPanel,
-          activeContextTab: activeTab,
+          activeContextTab: (activeTab === 'session' || activeTab === 'models') ? activeTab : 'session',
           activeTokenView: activeTokenTab,
-          isContextSettingsView: activeTab === 'settings',
+          isContextSettingsView: openPanel === 'settings',
           scrollTops,
           openDrawers,
           drafts: {
@@ -427,10 +433,10 @@
       stroke:var(--ag-custom-ring-track,var(--ag-ring-track-default));
     }
     .quota-ring-fill{
-      stroke:#22c55e;
+      stroke:#10b981;
       transition:stroke-dashoffset .22s cubic-bezier(0.22,1,0.36,1),stroke .18s ease,opacity .15s ease;
     }
-    #badge-quota[data-quota-state="available"] .quota-ring-fill{ stroke:#22c55e; }
+    #badge-quota[data-quota-state="available"] .quota-ring-fill{ stroke:#10b981; }
     #badge-quota[data-quota-state="low"] .quota-ring-fill{ stroke:#f59e0b; }
     #badge-quota[data-quota-state="exhausted"] .quota-ring-fill{ stroke:#ef4444; }
     #badge-quota[data-quota-state="no_permission"] .quota-ring-fill{ stroke:#a855f7; }
@@ -602,6 +608,20 @@
       color:#dc2626;
     }
 
+    /* 单元 4B: 插件设置图标按钮 */
+    #badge-settings.ag-unit-settings{
+      width:28px;height:28px;padding:0;
+      color:var(--ag-toolbar-fg);
+    }
+    #badge-settings.ag-unit-settings:hover,
+    #badge-settings.ag-unit-settings:focus-visible,
+    #badge-settings.ag-unit-settings[aria-expanded="true"]{
+      color:var(--ag-toolbar-fg-hover);
+    }
+    .settings-icon{
+      width:14px;height:14px;display:block;flex-shrink:0;
+    }
+
     /* 单元 5: 窄屏溢出菜单入口 */
     #badge-overflow{
       width:28px;height:28px;padding:0;display:none;
@@ -622,9 +642,11 @@
     :host([data-layout="minimal"]) #badge-speed,
     :host([data-layout="minimal"]) #badge-tokens,
     :host([data-layout="minimal"]) #badge-cli,
+    :host([data-layout="minimal"]) #badge-settings,
     :host([data-layout="ring-only"]) #badge-speed,
     :host([data-layout="ring-only"]) #badge-tokens,
-    :host([data-layout="ring-only"]) #badge-cli{
+    :host([data-layout="ring-only"]) #badge-cli,
+    :host([data-layout="ring-only"]) #badge-settings{
       display:none!important;
     }
     :host([data-layout="minimal"]) #badge-overflow,
@@ -1287,8 +1309,139 @@
       flex:1 1 auto;min-height:0;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;
       padding:10px 14px 20px;box-sizing:border-box;
     }
-    #panel{width:472px;max-width:calc(100vw - 24px)}
-    #panel-quota{width:460px;max-width:calc(100vw - 24px)}
+    #panel,#panel-speed,#panel-settings{width:472px;max-width:calc(100vw - 24px)}
+    #panel-quota{
+      width:460px;max-width:calc(100vw - 24px);
+      /* 高级墨绿色主题 (Deep Emerald / Forest Green - Dark Mode) */
+      --ag-bg-panel:#081914;
+      --ag-unified-bg:#0a1f19;
+      --ag-bg-card:rgba(15,76,58,0.34);
+      --ag-bg-card-hover:rgba(15,76,58,0.52);
+      --ag-border-card:rgba(16,185,129,0.24);
+      --ag-bg-subcard:rgba(10,40,31,0.68);
+      --ag-border-subcard:rgba(16,185,129,0.20);
+      --ag-border-subtle:rgba(16,185,129,0.16);
+      --ag-text-primary:#ecfdf5;
+      --ag-text-secondary:#b6e8d4;
+      --ag-text-muted:#73a996;
+      --ag-btn-bg:rgba(15,76,58,0.44);
+      --ag-btn-hover:rgba(16,185,129,0.22);
+      --ag-btn-border:rgba(16,185,129,0.30);
+      --ag-btn-border-hover:rgba(52,211,153,0.54);
+      --ag-btn-text:#d1fae5;
+      --ag-toolbar-bg-hover:rgba(16,185,129,0.18);
+      --ag-pill-muted-bg:rgba(15,76,58,0.42);
+      --ag-pill-muted-border:rgba(52,211,153,0.22);
+      --ag-pill-muted-text:#99d6be;
+      --ag-track-bg:rgba(16,185,129,0.16);
+      --ag-bg-input:rgba(6,28,21,0.82);
+      --ag-select-option-bg:#0c261e;
+      --ag-select-option-fg:#ecfdf5;
+      --ag-scrollbar-thumb:rgba(16,185,129,0.28);
+      --ag-scrollbar-hover:rgba(52,211,153,0.46);
+      background:linear-gradient(180deg,#0b211b 0%,#071612 100%);
+      border-color:rgba(16,185,129,0.32);
+      box-shadow:0 18px 44px rgba(2,12,9,0.72),0 0 0 1px rgba(52,211,153,0.08) inset;
+    }
+    #panel-quota .panel-header-bar{
+      background:linear-gradient(180deg,#0f2d23 0%,#0b211a 100%);
+      border-bottom-color:rgba(16,185,129,0.24);
+    }
+    #panel-quota .panel-title-text{color:#d1fae5 !important}
+    :host([data-theme="light"]) #panel-quota,
+    :host([data-panel-tone="light"]) #panel-quota{
+      /* 高级墨绿色主题 (Deep Emerald / Forest Green - Light Mode) */
+      --ag-bg-panel:#f2faf6;
+      --ag-unified-bg:#f2faf6;
+      --ag-bg-card:#ffffff;
+      --ag-bg-card-hover:#f5fcf8;
+      --ag-border-card:rgba(15,76,58,0.18);
+      --ag-bg-subcard:#eaf6f0;
+      --ag-border-subcard:rgba(15,76,58,0.14);
+      --ag-border-subtle:rgba(15,76,58,0.12);
+      --ag-text-primary:#0b2920;
+      --ag-text-secondary:#1f4d3d;
+      --ag-text-muted:#4b7365;
+      --ag-btn-bg:#ffffff;
+      --ag-btn-hover:#ddf2e7;
+      --ag-btn-border:rgba(15,76,58,0.22);
+      --ag-btn-border-hover:rgba(5,150,105,0.48);
+      --ag-btn-text:#0f4c3a;
+      --ag-toolbar-bg-hover:rgba(15,76,58,0.09);
+      --ag-pill-muted-bg:#e4f3ec;
+      --ag-pill-muted-border:rgba(15,76,58,0.18);
+      --ag-pill-muted-text:#1f4d3d;
+      --ag-track-bg:rgba(15,76,58,0.12);
+      --ag-bg-input:#ffffff;
+      --ag-select-option-bg:#ffffff;
+      --ag-select-option-fg:#0b2920;
+      --ag-scrollbar-thumb:rgba(15,76,58,0.22);
+      --ag-scrollbar-hover:rgba(15,76,58,0.38);
+      background:linear-gradient(180deg,#f2faf6 0%,#e7f4ed 100%);
+      border-color:rgba(15,76,58,0.26);
+      box-shadow:0 16px 38px rgba(6,46,34,0.16),0 2px 8px rgba(6,46,34,0.08);
+    }
+    :host([data-theme="light"]) #panel-quota .panel-header-bar,
+    :host([data-panel-tone="light"]) #panel-quota .panel-header-bar{
+      background:linear-gradient(180deg,#e0f2e8 0%,#eaf6ef 100%);
+      border-bottom-color:rgba(15,76,58,0.18);
+    }
+    :host([data-theme="light"]) #panel-quota .panel-title-text,
+    :host([data-panel-tone="light"]) #panel-quota .panel-title-text{color:#0f4c3a !important}
+    #panel-quota .switch-pill-btn{
+      background:rgba(15,76,58,0.36);border:1px solid rgba(16,185,129,0.26);color:#b6e8d4;
+      border-radius:6px;transition:background .15s ease,border-color .15s ease,color .15s ease;
+    }
+    #panel-quota .switch-pill-btn:hover:not(:disabled){
+      background:rgba(16,185,129,0.22);border-color:rgba(52,211,153,0.52);color:#ecfdf5;
+    }
+    #panel-quota .switch-pill-btn.active{
+      background:linear-gradient(135deg,#0f4c3a 0%,#059669 100%);
+      border-color:rgba(52,211,153,0.58);color:#ecfdf5;font-weight:600;
+      box-shadow:0 1px 6px rgba(5,150,105,0.28);
+    }
+    #panel-quota .switch-pill-btn.active:hover:not(:disabled){
+      background:linear-gradient(135deg,#14532d 0%,#10b981 100%);
+      border-color:#34d399;color:#ffffff;
+    }
+    :host([data-theme="light"]) #panel-quota .switch-pill-btn,
+    :host([data-panel-tone="light"]) #panel-quota .switch-pill-btn{
+      background:#ffffff;border-color:rgba(15,76,58,0.22);color:#1f4d3d;
+    }
+    :host([data-theme="light"]) #panel-quota .switch-pill-btn:hover:not(:disabled),
+    :host([data-panel-tone="light"]) #panel-quota .switch-pill-btn:hover:not(:disabled){
+      background:#ddf2e7;border-color:rgba(5,150,105,0.48);color:#0f4c3a;
+    }
+    :host([data-theme="light"]) #panel-quota .switch-pill-btn.active,
+    :host([data-panel-tone="light"]) #panel-quota .switch-pill-btn.active{
+      background:linear-gradient(135deg,#0f4c3a 0%,#059669 100%);
+      border-color:#0f4c3a;color:#ffffff;box-shadow:0 1px 5px rgba(15,76,58,0.22);
+    }
+    :host([data-theme="light"]) #panel-quota .switch-pill-btn.active:hover:not(:disabled),
+    :host([data-panel-tone="light"]) #panel-quota .switch-pill-btn.active:hover:not(:disabled){
+      background:linear-gradient(135deg,#14532d 0%,#10b981 100%);border-color:#059669;color:#ffffff;
+    }
+    #panel-quota .ag-dropdown-trigger{
+      background:var(--ag-bg-input);border-color:var(--ag-border-card);color:var(--ag-text-primary);
+    }
+    #panel-quota .ag-dropdown-trigger:hover,
+    #panel-quota .ag-dropdown-wrapper.is-open .ag-dropdown-trigger{
+      border-color:rgba(16,185,129,0.58);box-shadow:0 0 0 2px rgba(16,185,129,0.18);
+    }
+    #panel-quota .ag-dropdown-menu{
+      background:#0b211b;border-color:rgba(16,185,129,0.34);
+    }
+    :host([data-theme="light"]) #panel-quota .ag-dropdown-menu,
+    :host([data-panel-tone="light"]) #panel-quota .ag-dropdown-menu{
+      background:#ffffff;border-color:rgba(15,76,58,0.24);
+    }
+    #panel-quota .ag-modal-card{
+      background:#0a1f19;border-color:rgba(16,185,129,0.34);
+    }
+    :host([data-theme="light"]) #panel-quota .ag-modal-card,
+    :host([data-panel-tone="light"]) #panel-quota .ag-modal-card{
+      background:#ffffff;border-color:rgba(15,76,58,0.24);
+    }
     #panel-tokens{width:730px;transition:width .22s cubic-bezier(0.16,1,0.3,1),max-width .22s cubic-bezier(0.16,1,0.3,1),opacity .16s cubic-bezier(0.16,1,0.3,1),transform .16s cubic-bezier(0.16,1,0.3,1)}
     #panel-tokens.cost-compact-view{width:400px!important;max-width:calc(100vw - 24px)}
     .ag-panel[hidden]{display:block!important;opacity:0;transform:translateY(-6px);visibility:hidden;pointer-events:none}
@@ -1320,18 +1473,19 @@
       display:inline-flex;align-items:center;justify-content:center;gap:3px;
     }
     .panel-icon-btn:hover{color:var(--ag-text-primary);background:var(--ag-toolbar-bg-hover)}
-    #close,#close-tokens,#close-quota{font-size:16px;padding:2px 7px}
+    #close,#close-tokens,#close-quota,#close-speed,#close-settings{font-size:16px;padding:2px 7px}
 
-    /* 模型额度看板面板 (#panel-quota) */
+    /* 模型额度看板面板 (#panel-quota 墨绿主题细部) */
     .quota-refresh-feedback{
       display:inline-flex;align-items:center;
-      font-size:10.5px;font-weight:500;color:#22c55e;
-      background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.28);
+      font-size:10.5px;font-weight:500;color:#34d399;
+      background:rgba(16,185,129,0.16);border:1px solid rgba(52,211,153,0.34);
       padding:1px 6px;border-radius:10px;white-space:nowrap;
       opacity:1;visibility:visible;
       transition:opacity .18s ease,visibility .18s ease;
     }
-    :host([data-theme="light"]) .quota-refresh-feedback{color:#15803d;background:#dcfce7;border-color:#86efac}
+    :host([data-theme="light"]) .quota-refresh-feedback,
+    :host([data-panel-tone="light"]) .quota-refresh-feedback{color:#0f4c3a;background:#d1fae5;border-color:#6ee7b7}
     .quota-refresh-feedback[hidden]{display:inline-flex!important;opacity:0;visibility:hidden;pointer-events:none}
     .quota-refresh-btn{gap:4px;font-size:11.5px;padding:3px 8px;border:1px solid var(--ag-btn-border);border-radius:6px;background:var(--ag-btn-bg);color:var(--ag-text-secondary);transition:background .15s ease,border-color .15s ease,color .15s ease}
     .quota-refresh-btn:not(:disabled):hover{color:var(--ag-text-primary);background:var(--ag-btn-hover);border-color:var(--ag-btn-border-hover)}
@@ -1363,7 +1517,7 @@
     .quota-pct-num{display:inline-block;min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
     .quota-bucket-est{font-size:10px;color:var(--ag-text-muted);line-height:1.35;font-variant-numeric:tabular-nums}
     .quota-bar-track{position:relative;width:100%;height:5px;border-radius:3px;background:var(--ag-track-bg);overflow:hidden}
-    .quota-bar-fill{width:100%;height:100%;border-radius:3px;background:#22c55e;transform-origin:left center;transform:scaleX(var(--quota-scale,0));transition:transform .22s cubic-bezier(0.22,1,0.36,1),background-color .18s ease;will-change:transform}
+    .quota-bar-fill{width:100%;height:100%;border-radius:3px;background:linear-gradient(90deg,#0f4c3a 0%,#059669 48%,#10b981 100%);transform-origin:left center;transform:scaleX(var(--quota-scale,0));transition:transform .22s cubic-bezier(0.22,1,0.36,1),background-color .18s ease;will-change:transform}
     .quota-bar-fill[data-status="low"]{background:#f59e0b}
     .quota-bar-fill[data-status="exhausted"]{background:#ef4444}
     .quota-bar-fill[data-status="no_permission"]{background:#a855f7}
@@ -1371,7 +1525,7 @@
     .quota-bar-charge-stage{
       position:absolute;left:0;top:0;bottom:0;width:0;
       border-radius:3px;overflow:hidden;pointer-events:none;
-      --quota-charge-bg:linear-gradient(90deg,rgba(34,197,94,0.92) 0%,#4ade80 62%,#bbf7d0 100%);
+      --quota-charge-bg:linear-gradient(90deg,rgba(15,76,58,0.96) 0%,#059669 45%,#34d399 82%,#a7f3d0 100%);
     }
     .quota-bar-charge-stage[hidden]{display:none!important}
     .quota-bar-charge-stage[data-status="low"]{
@@ -1380,13 +1534,16 @@
     .quota-bar-charge-stage[data-status="exhausted"]{
       --quota-charge-bg:linear-gradient(90deg,rgba(239,68,68,0.92) 0%,#f87171 62%,#fecaca 100%);
     }
-    :host([data-theme="light"]) .quota-bar-charge-stage{
-      --quota-charge-bg:linear-gradient(90deg,rgba(22,163,74,0.94) 0%,#4ade80 68%,#dcfce7 100%);
+    :host([data-theme="light"]) .quota-bar-charge-stage,
+    :host([data-panel-tone="light"]) .quota-bar-charge-stage{
+      --quota-charge-bg:linear-gradient(90deg,rgba(15,76,58,0.96) 0%,#059669 58%,#6ee7b7 100%);
     }
-    :host([data-theme="light"]) .quota-bar-charge-stage[data-status="low"]{
+    :host([data-theme="light"]) .quota-bar-charge-stage[data-status="low"],
+    :host([data-panel-tone="light"]) .quota-bar-charge-stage[data-status="low"]{
       --quota-charge-bg:linear-gradient(90deg,rgba(217,119,6,0.94) 0%,#fbbf24 68%,#fef3c7 100%);
     }
-    :host([data-theme="light"]) .quota-bar-charge-stage[data-status="exhausted"]{
+    :host([data-theme="light"]) .quota-bar-charge-stage[data-status="exhausted"],
+    :host([data-panel-tone="light"]) .quota-bar-charge-stage[data-status="exhausted"]{
       --quota-charge-bg:linear-gradient(90deg,rgba(220,38,38,0.94) 0%,#f87171 68%,#fee2e2 100%);
     }
     .quota-bar-charge-fill{
@@ -1423,27 +1580,46 @@
     .quota-pools-list{display:flex;flex-direction:column;gap:8px}
     .quota-pool-card{
       background:var(--ag-bg-card);border:1px solid var(--ag-border-card);
-      border-radius:8px;padding:9px 10px;cursor:pointer;transition:border-color .14s ease,background-color .14s ease;
+      border-radius:8px;padding:9px 10px;cursor:pointer;transition:border-color .14s ease,background-color .14s ease,box-shadow .14s ease;
     }
-    .quota-pool-card:hover{border-color:var(--ag-btn-border-hover)}
-    .quota-pool-card[data-active-current="true"]{border-color:rgba(34,197,94,0.45)}
-    .quota-pool-card[data-browsing="true"]{box-shadow:inset 0 0 0 1px rgba(24,144,255,0.45)}
+    .quota-pool-card:hover{border-color:var(--ag-btn-border-hover);background:var(--ag-bg-card-hover)}
+    .quota-pool-card[data-active-current="true"]{
+      border-color:rgba(16,185,129,0.62);
+      background:linear-gradient(135deg,rgba(15,76,58,0.56),rgba(10,40,31,0.72));
+      box-shadow:0 2px 12px rgba(5,150,105,0.16);
+    }
+    :host([data-theme="light"]) .quota-pool-card[data-active-current="true"],
+    :host([data-panel-tone="light"]) .quota-pool-card[data-active-current="true"]{
+      border-color:rgba(5,150,105,0.52);
+      background:linear-gradient(135deg,#e4f6ed,#ffffff);
+      box-shadow:0 2px 10px rgba(15,76,58,0.08);
+    }
+    .quota-pool-card[data-browsing="true"]{box-shadow:inset 0 0 0 1px rgba(52,211,153,0.58)}
+    :host([data-theme="light"]) .quota-pool-card[data-browsing="true"],
+    :host([data-panel-tone="light"]) .quota-pool-card[data-browsing="true"]{box-shadow:inset 0 0 0 1px rgba(15,76,58,0.48)}
     .quota-pool-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
     .quota-pool-title{font-size:12px;font-weight:600;color:var(--ag-text-primary);line-height:1.35}
     .quota-pool-tags{display:flex;align-items:center;gap:4px;flex-shrink:0;flex-wrap:wrap}
-    .quota-current-tag{font-size:10px;padding:1px 6px;border-radius:9px;background:rgba(24,144,255,0.14);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);font-weight:600}
-    :host([data-theme="light"]) .quota-current-tag{color:#0284c7;background:#e0f2fe;border-color:#7dd3fc}
+    .quota-current-tag{font-size:10px;padding:1px 6px;border-radius:9px;background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(52,211,153,0.42);font-weight:600}
+    :host([data-theme="light"]) .quota-current-tag,
+    :host([data-panel-tone="light"]) .quota-current-tag{color:#0f4c3a;background:#d1fae5;border-color:#6ee7b7}
     .quota-models-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;padding-top:6px;border-top:1px solid var(--ag-border-subcard)}
     .quota-model-chip{
       display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;
       font-size:10.5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-secondary);
     }
-    .quota-model-chip[data-current-model="true"]{border-color:rgba(56,189,248,0.5);color:var(--ag-text-primary);font-weight:600}
+    .quota-model-chip[data-current-model="true"]{border-color:rgba(52,211,153,0.58);background:rgba(15,76,58,0.52);color:var(--ag-text-primary);font-weight:600}
+    :host([data-theme="light"]) .quota-model-chip[data-current-model="true"],
+    :host([data-panel-tone="light"]) .quota-model-chip[data-current-model="true"]{border-color:rgba(5,150,105,0.55);background:#d1fae5;color:#0f4c3a}
     .quota-chip-efforts{font-size:9.5px;color:var(--ag-text-muted)}
-    .quota-chip-notice{font-size:9.5px;padding:0 4px;border-radius:3px;background:rgba(24,144,255,0.14);color:#60a5fa}
+    .quota-chip-notice{font-size:9.5px;padding:0 4px;border-radius:3px;background:rgba(16,185,129,0.18);color:#34d399}
+    :host([data-theme="light"]) .quota-chip-notice,
+    :host([data-panel-tone="light"]) .quota-chip-notice{background:#d1fae5;color:#0f4c3a}
     .quota-chip-noperm{font-size:9.5px;padding:0 4px;border-radius:3px;background:rgba(168,85,247,0.15);color:#c084fc}
     .quota-basis-note{margin-top:10px;padding-top:8px;border-top:1px solid var(--ag-border-subtle);font-size:10.5px;color:var(--ag-text-muted);line-height:1.45}
-    .quota-usage-tip{margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);font-size:10.5px;color:var(--ag-text-secondary);line-height:1.45}
+    .quota-usage-tip{margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-left:2.5px solid #10b981;font-size:10.5px;color:var(--ag-text-secondary);line-height:1.45}
+    :host([data-theme="light"]) .quota-usage-tip,
+    :host([data-panel-tone="light"]) .quota-usage-tip{border-left-color:#0f4c3a}
 
     h3{margin:0;font-size:13px;font-weight:600;color:var(--ag-text-primary)}
     h4{margin:12px 0 5px;font-size:11.5px;font-weight:600;color:var(--ag-text-secondary)}
@@ -1870,7 +2046,7 @@
     .ag-vendor-dot{width:7px;height:7px;border-radius:999px;display:inline-block;flex-shrink:0;background:var(--ag-text-muted)}
     .ag-dropdown-badge{font-size:9.5px;padding:0 5px;border-radius:9px;background:rgba(56,189,248,0.14);color:var(--ag-link,#38bdf8);border:1px solid rgba(56,189,248,0.3);margin-left:4px;flex-shrink:0}
 
-    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
+    .ctx-tabs-bar{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;padding:3px;margin-bottom:9px;box-sizing:border-box;width:100%}
     .ctx-tab-btn{display:flex;align-items:center;justify-content:center;min-width:0;border:1px solid transparent;background:transparent;color:var(--ag-text-muted);font-size:11.5px;font-weight:500;padding:5px 4px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background-color .15s ease,color .15s ease,border-color .15s ease,transform .05s ease}
     .ctx-tab-btn:hover{color:var(--ag-text-primary);background:rgba(255,255,255,0.05)}
     .ctx-tab-btn:active{transform:scale(0.97);background:rgba(255,255,255,0.08)}
@@ -1886,6 +2062,7 @@
     .ctx-lang-top-segmented .ctx-seg-btn.active{background:var(--ag-unified-bg);color:var(--ag-text-primary);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.2);border:1px solid var(--ag-border-card)}
 
     .ag-modal-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:agFadeIn .15s ease-out}
+    .ag-modal-overlay.ag-modal-global{position:fixed;inset:0;z-index:2147483700}
     .ag-modal-overlay[hidden]{display:none !important}
     .ag-modal-card{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:10px;padding:16px 18px;max-width:340px;width:100%;box-shadow:0 16px 40px rgba(0,0,0,0.6),0 2px 10px rgba(0,0,0,0.3);display:flex;flex-direction:column;gap:12px}
     .ag-modal-title{font-size:13px;font-weight:600;color:var(--ag-text-primary)}
@@ -2209,120 +2386,20 @@
     .ref-cost-fill-cache{background:#34d399}
     .ref-cost-fill-output{background:#a78bfa}
 
-    /* 最新调用卡片与当前会话请求时间线 */
-    @keyframes agCallEnter{
-      from{opacity:0;transform:translateY(5px)}
-      to{opacity:1;transform:translateY(0)}
-    }
-    .latest-call-card{
-      background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;
-      padding:9px 11px;margin-top:8px;display:flex;flex-direction:column;gap:6px;min-width:0;
-    }
-    .latest-call-card[hidden]{display:none!important}
-    .latest-call-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
-    .latest-call-title-wrap{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
-    .latest-call-title{font-size:11.5px;font-weight:600;color:var(--ag-text-primary);white-space:nowrap}
-    .latest-call-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
-    .latest-call-time{font-size:10.5px;color:var(--ag-text-muted);font-variant-numeric:tabular-nums}
+    /* 生成速度拆解按钮与详情网格 */
     .latest-call-link-btn{
       background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-secondary);
       border-radius:5px;padding:2px 8px;font-size:10.5px;cursor:pointer;white-space:nowrap;
     }
     .latest-call-link-btn:hover{background:var(--ag-btn-hover);color:var(--ag-text-primary);border-color:var(--ag-btn-border-hover)}
-    .call-agent-badge{
-      display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;
-      background:rgba(59,130,246,0.14);color:#60a5fa;border:1px solid rgba(59,130,246,0.28);white-space:nowrap;
-    }
-    .call-agent-badge.is-subagent{
-      background:rgba(167,139,250,0.14);color:var(--ag-custom-token-accent,#a78bfa);border-color:rgba(167,139,250,0.34);
-    }
-    .call-agent-badge.is-unknown{
-      background:var(--ag-bg-subcard);color:var(--ag-text-muted);border-color:var(--ag-border-subcard);
-    }
-    :host([data-theme="light"]) .call-agent-badge{color:#2563eb;background:rgba(37,99,235,0.10)}
-    :host([data-theme="light"]) .call-agent-badge.is-subagent{color:#7c3aed;background:rgba(124,58,237,0.10)}
-    .latest-call-new-banner{
-      width:100%;text-align:center;padding:4px 8px;border-radius:5px;font-size:10.5px;font-weight:600;cursor:pointer;
-      background:rgba(37,99,235,0.14);color:#60a5fa;border:1px solid rgba(37,99,235,0.35);
-    }
-    :host([data-theme="light"]) .latest-call-new-banner{color:#1d4ed8;background:rgba(37,99,235,0.09)}
-    .latest-call-new-banner[hidden]{display:none!important}
-    .latest-call-body{min-width:0}
-    .latest-call-body.is-entering{animation:agCallEnter .21s cubic-bezier(0.16,1,0.3,1) both}
-    .latest-call-summary-row{
-      display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
-      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;
-      padding:6px 8px;cursor:pointer;min-width:0;
-    }
-    .latest-call-summary-row:hover{border-color:var(--ag-btn-border-hover);background:var(--ag-bg-card-hover)}
-    .latest-call-model-wrap{display:flex;align-items:center;gap:5px;min-width:0;flex:1 1 140px}
-    .latest-call-model{font-size:11.5px;font-weight:600;color:var(--ag-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-    .call-effort-tag{
-      font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0;
-      background:var(--ag-bg-card);border:1px solid var(--ag-border-card);color:var(--ag-text-secondary);
-    }
-    .latest-call-metrics{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10.5px;color:var(--ag-text-secondary);font-variant-numeric:tabular-nums;min-width:0}
-    .latest-call-metric-item{white-space:nowrap}
-    .latest-call-expand-caret{font-size:10px;color:var(--ag-text-muted);flex-shrink:0;transition:transform .16s ease}
-    .latest-call-summary-row[aria-expanded="true"] .latest-call-expand-caret{transform:rotate(180deg)}
-    .latest-call-details{
-      margin-top:6px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
-      border-radius:6px;padding:8px 9px;font-size:10.5px;line-height:1.45;min-width:0;overflow:hidden;
-    }
     .call-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;min-width:0}
     .call-detail-cell{display:flex;flex-direction:column;gap:1px;min-width:0}
     .call-detail-k{font-size:9.5px;color:var(--ag-text-muted);overflow-wrap:anywhere;white-space:normal}
     .call-detail-v{font-size:11px;font-weight:500;color:var(--ag-text-primary);overflow-wrap:anywhere;word-break:break-word;white-space:normal;font-variant-numeric:tabular-nums}
     .call-detail-note{font-size:10px;line-height:1.4;color:var(--ag-text-secondary);margin-top:2px;overflow-wrap:anywhere;white-space:normal}
     .tier-color-swatch{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:4px;vertical-align:middle;flex-shrink:0}
-    .call-detail-error{
-      margin-top:6px;padding:5px 7px;border-radius:5px;font-size:10.5px;overflow-wrap:anywhere;
-      background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.28);color:#f87171;
-    }
-    :host([data-theme="light"]) .call-detail-error{color:#dc2626}
-    .call-detail-error[hidden]{display:none!important}
 
-    .session-timeline-drawer{
-      margin-top:6px;padding-top:7px;border-top:1px solid var(--ag-border-subtle);
-      display:flex;flex-direction:column;gap:7px;min-width:0;
-    }
-    .session-timeline-summary{
-      flex:0 0 auto;font-size:10px;color:var(--ag-text-muted);line-height:1.45;background:var(--ag-bg-subcard);
-      border:1px solid var(--ag-border-subcard);border-radius:6px;padding:6px 8px;
-    }
-    .session-timeline-list{display:flex;flex-direction:column;gap:6px;flex:0 0 auto;max-height:min(360px,46vh);min-height:0;overflow-y:auto;overscroll-behavior:auto;padding-right:2px}
-    .timeline-turn-card{
-      flex:0 0 auto;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;overflow:visible;min-width:0;
-    }
-    .timeline-turn-hdr{
-      width:100%;flex:0 0 auto;min-height:28px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;
-      background:transparent;border:none;border-radius:6px;color:inherit;cursor:pointer;text-align:left;min-width:0;
-    }
-    .timeline-turn-hdr:hover{background:var(--ag-bg-card-hover)}
-    .timeline-turn-left{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
-    .timeline-turn-idx{font-size:10px;font-weight:700;color:var(--ag-custom-token-accent,#60a5fa);white-space:nowrap;flex-shrink:0}
-    .timeline-turn-prompt{font-size:11px;font-weight:500;color:var(--ag-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-    .timeline-turn-meta{font-size:10px;color:var(--ag-text-muted);white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
-    .timeline-turn-body{padding:0 8px 7px;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--ag-border-subtle)}
-    .timeline-call-row{
-      flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 6px;margin-top:4px;
-      border-radius:5px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);
-      font-size:10.5px;cursor:pointer;min-width:0;flex-wrap:wrap;
-    }
-    .timeline-call-row:hover{border-color:var(--ag-btn-border-hover)}
-    .timeline-call-row.is-subagent{margin-left:14px;border-left:2px solid var(--ag-custom-token-accent,#a78bfa)}
-    .timeline-call-row.is-selected{border-color:var(--ag-custom-token-accent,#60a5fa)}
-    .timeline-call-main{display:flex;align-items:center;gap:5px;min-width:0;flex:1 1 130px}
-    .timeline-call-stats{display:flex;align-items:center;gap:6px;color:var(--ag-text-secondary);font-size:10px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
-    .session-timeline-unlinked{
-      flex:0 0 auto;background:var(--ag-bg-subcard);border:1px dashed var(--ag-border-subcard);border-radius:6px;padding:6px 8px;
-      display:flex;flex-direction:column;gap:4px;
-    }
-    .session-timeline-unlinked-title{font-size:10px;font-weight:600;color:var(--ag-text-muted)}
-    .session-timeline-more-wrap{flex:0 0 auto;display:flex;justify-content:center;padding-top:2px}
-    .session-timeline-more-wrap[hidden],.session-timeline-unlinked[hidden]{display:none!important}
-
-    /* ELV-91 生成体验面板联动样式（闪电颜色、副标签、E评分徽章与拆解网格） */
+    /* ELV-91 生成体验面板联动样式（闪电颜色、副标签与拆解网格） */
     .speed-badge-group{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
     .speed-bolt-icon{display:inline-block;transition:color .18s ease}
     .speed-sub-label{
@@ -2334,29 +2411,22 @@
       margin-top:7px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
       border-radius:6px;padding:7px 9px;font-size:10.5px;line-height:1.4;min-width:0;overflow:hidden;
     }
-    .call-score-badge{
-      display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;
-      border:1px solid transparent;white-space:nowrap;font-variant-numeric:tabular-nums;
-    }
-    .call-score-badge[hidden]{display:none!important}
     #badge-speed .speed-icon{transition:color .18s ease}
     @media (max-width:480px){
       .tcb-ratio-item{margin-left:0}
-      .latest-call-metrics{gap:6px}
-      .timeline-call-row.is-subagent{margin-left:8px}
       #speed-summary .key-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}
       .panel-header-bar{gap:5px}
       .ctx-lang-top-segmented .ctx-seg-btn{padding:2px 4px;font-size:10px}
       .panel-icon-btn{width:22px;height:22px}
     }
     @media (prefers-reduced-motion: reduce){
-      *,.ag-unit,.ring-fill,.quota-ring-fill,.ctx-quota-ring-fill,.ctx-model-quota-chip,.quota-bar-fill,.quota-bar-charge-stage,.quota-bar-charge-fill,.quota-bar-charge-sheen,.quota-refresh-icon,.key-bar-fill,.ag-panel,#context-tooltip,.heat-cell,.w-bar-fill,.latest-call-body,.latest-call-body.is-entering{
+      *,.ag-unit,.ring-fill,.quota-ring-fill,.ctx-quota-ring-fill,.ctx-model-quota-chip,.quota-bar-fill,.quota-bar-charge-stage,.quota-bar-charge-fill,.quota-bar-charge-sheen,.quota-refresh-icon,.key-bar-fill,.ag-panel,#context-tooltip,.heat-cell,.w-bar-fill{
         transition:none!important;animation:none!important;
       }
       .quota-bar-charge-stage{display:none!important}
     }
     @media(max-width:500px){
-      #panel{width:calc(100vw - 24px)}
+      #panel,#panel-speed,#panel-settings{width:calc(100vw - 24px)}
     }
     @media(max-width:760px){
       #panel-tokens:not(.cost-compact-view){width:calc(100vw - 24px)}
@@ -2387,7 +2457,17 @@
       background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:7px;
       padding:7px 9px;font-size:10.5px;display:flex;flex-direction:column;gap:4px;min-width:0;
     }
-    .quota-acct-card.is-active,.quota-compare-card.is-active{border-color:rgba(59,130,246,0.45)}
+    .quota-acct-card.is-active,.quota-compare-card.is-active{
+      border-color:rgba(16,185,129,0.58);
+      background:linear-gradient(135deg,rgba(15,76,58,0.48),rgba(10,40,31,0.68));
+    }
+    :host([data-theme="light"]) .quota-acct-card.is-active,
+    :host([data-theme="light"]) .quota-compare-card.is-active,
+    :host([data-panel-tone="light"]) .quota-acct-card.is-active,
+    :host([data-panel-tone="light"]) .quota-compare-card.is-active{
+      border-color:rgba(5,150,105,0.50);
+      background:linear-gradient(135deg,#e4f6ed,#ffffff);
+    }
     .quota-compare-families{display:flex;flex-direction:column;gap:5px;margin-top:2px}
     .quota-compare-fam-row{display:flex;flex-direction:column;gap:3px;padding:5px 7px;border-radius:6px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card)}
     .quota-compare-fam-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
@@ -2395,7 +2475,7 @@
     .quota-compare-fam-tag{font-size:9.5px;font-weight:500;padding:0 5px;border-radius:999px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-muted)}
     .quota-compare-fam-pct{font-size:10.5px;font-weight:600;color:var(--ag-text-primary);font-variant-numeric:tabular-nums}
     .quota-compare-bar-track{position:relative;width:100%;height:3.5px;border-radius:999px;background:var(--ag-track-bg);overflow:hidden}
-    .quota-compare-bar-fill{height:100%;border-radius:999px;background:#22c55e;transition:width .2s ease}
+    .quota-compare-bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#0f4c3a 0%,#059669 52%,#10b981 100%);transition:width .2s ease}
     .quota-compare-bar-fill[data-status="low"]{background:#f59e0b}
     .quota-compare-bar-fill[data-status="exhausted"]{background:#ef4444}
     .quota-compare-bar-fill[data-status="no_permission"]{background:#a855f7}
@@ -2411,17 +2491,19 @@
     :host([data-theme="light"]) .quota-acct-remove-btn{color:#dc2626}
     :host([data-theme="light"]) .quota-acct-remove-btn:hover:not(:disabled){color:#b91c1c}
     .quota-acct-feedback{
-      padding:5px 8px;border-radius:6px;font-size:10.5px;background:rgba(59,130,246,0.12);
-      border:1px solid rgba(59,130,246,0.3);color:var(--ag-text-primary);overflow-wrap:anywhere;
+      padding:5px 8px;border-radius:6px;font-size:10.5px;background:rgba(16,185,129,0.14);
+      border:1px solid rgba(52,211,153,0.34);color:var(--ag-text-primary);overflow-wrap:anywhere;
     }
     .quota-acct-feedback.is-error{
       background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.35);color:#fca5a5;
     }
     .quota-acct-feedback.is-success{
-      background:rgba(34,197,94,0.1);border-color:rgba(34,197,94,0.35);color:#86efac;
+      background:rgba(16,185,129,0.18);border-color:rgba(52,211,153,0.42);color:#a7f3d0;
     }
-    :host([data-theme="light"]) .quota-acct-feedback.is-error{color:#dc2626}
-    :host([data-theme="light"]) .quota-acct-feedback.is-success{color:#15803d}
+    :host([data-theme="light"]) .quota-acct-feedback.is-error,
+    :host([data-panel-tone="light"]) .quota-acct-feedback.is-error{color:#dc2626}
+    :host([data-theme="light"]) .quota-acct-feedback.is-success,
+    :host([data-panel-tone="light"]) .quota-acct-feedback.is-success{color:#0f4c3a;background:#d1fae5;border-color:#6ee7b7}
     .quota-switch-lbl{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ag-text-primary);cursor:pointer}
     .auto-switch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:4px}
     .quota-field-lbl{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--ag-text-muted);min-width:0}
@@ -2452,8 +2534,8 @@
     }
     .quota-compact-input:focus,.quota-compact-input:focus-visible{
       outline:none;
-      border-color:#a78bfa;
-      box-shadow:0 0 0 2px rgba(139,92,246,0.25);
+      border-color:#10b981;
+      box-shadow:0 0 0 2px rgba(16,185,129,0.28);
     }
 
     .ag-datepicker-wrapper{
@@ -2795,6 +2877,17 @@
   <span id="cli-label">CLI</span>
 </button>
 
+<!-- 顶部基本单元 4B: 插件设置入口 -->
+<button id="badge-settings" class="ag-unit ag-unit-settings" type="button" aria-label="插件设置"
+  data-i18n-aria="badge.settings.aria" title="插件设置（语言、代理、外观与底层参数）" data-i18n-title="badge.settings.title"
+  aria-expanded="false">
+  <svg class="settings-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+    stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="8" cy="8" r="2.2"></circle>
+    <path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"></path>
+  </svg>
+</button>
+
 <!-- 顶部基本单元 5: 窄屏溢出菜单按钮 -->
 <button id="badge-overflow" class="ag-unit" type="button" aria-label="更多统计指标" data-i18n-aria="badge.overflow.aria"
   aria-expanded="false">
@@ -2835,9 +2928,13 @@
         终端</span></span>
     <span id="overflow-cli-val" class="overflow-item-val">agy</span>
   </button>
+  <button id="overflow-settings-btn" class="overflow-item" type="button">
+    <span class="overflow-item-label"><span>⚙</span><span data-i18n="overflow.settings">插件设置</span></span>
+    <span class="overflow-item-val">›</span>
+  </button>
 </div>
 
-<!-- 弹出式面板 1: 会话上下文与速度监控 (#panel, 450px) -->
+<!-- 弹出式面板 1: 当前会话上下文 (#panel, 472px) -->
 <section id="panel" class="ag-panel" hidden aria-label="会话与上下文详情" data-i18n-aria="panel.ctx.aria">
   <div class="panel-header-bar">
     <div class="panel-title">
@@ -2847,33 +2944,6 @@
       <span id="v">0.8.8 α</span>
     </div>
     <div class="panel-header-actions ctx-header-actions">
-      <!-- 插件面板三语言快速切换分段按钮 -->
-      <div id="panel-lang-top-segmented" class="ctx-segmented ctx-lang-top-segmented" role="group" aria-label="插件面板语言"
-        data-i18n-aria="settings.panelLang.aria">
-        <button id="btn-top-lang-zh-CN" class="ctx-seg-btn active" type="button" data-panel-lang="zh-CN" title="简体中文"
-          aria-label="简体中文">简</button>
-        <button id="btn-top-lang-zh-TW" class="ctx-seg-btn" type="button" data-panel-lang="zh-TW" title="繁體中文"
-          aria-label="繁體中文">繁</button>
-        <button id="btn-top-lang-en" class="ctx-seg-btn" type="button" data-panel-lang="en" title="English"
-          aria-label="English">EN</button>
-      </div>
-      <button id="btn-github-repo-ctx" class="panel-icon-btn" type="button" aria-label="打开 GitHub 仓库"
-        data-i18n-aria="header.github.aria" title="打开 GitHub 仓库" data-i18n-title="header.github.aria">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-          <path
-            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
-          </path>
-        </svg>
-      </button>
-      <button id="btn-check-update-ctx" class="panel-icon-btn update-btn" type="button" aria-label="检查插件更新"
-        data-i18n-aria="header.update.aria" title="检查插件更新" data-i18n-title="header.update.aria"
-        style="position:relative">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 8A6 6 0 1 1 8 2M14 2v6h-6"></path>
-        </svg>
-        <span id="update-badge-dot-ctx" class="update-badge-dot" style="display:none"></span>
-      </button>
       <button id="btn-panel-palette" class="panel-icon-btn" type="button" aria-label="外观与调色设置"
         data-i18n-aria="header.palette.aria" title="外观与调色设置" data-i18n-title="header.palette.aria">🎨</button>
       <button id="theme-toggle" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
@@ -2885,16 +2955,12 @@
   </div>
 
   <div id="view-context">
-    <!-- 顶部 4 分页标签栏 -->
+    <!-- 顶部 2 分页标签栏：仅上下文会话与模型长度设置 -->
     <div id="ctx-tabs-bar" class="ctx-tabs-bar" role="tablist" aria-label="上下文面板分页" data-i18n-aria="tabs.aria">
       <button id="tab-ctx-session" class="ctx-tab-btn active" type="button" role="tab" aria-selected="true"
         data-ctx-tab="session" data-i18n="tab.session">当前会话</button>
       <button id="tab-ctx-models" class="ctx-tab-btn" type="button" role="tab" aria-selected="false"
         data-ctx-tab="models" data-i18n="tab.models">模型设置</button>
-      <button id="tab-ctx-speed" class="ctx-tab-btn" type="button" role="tab" aria-selected="false" data-ctx-tab="speed"
-        data-i18n="tab.speed">速度对比</button>
-      <button id="tab-ctx-settings" class="ctx-tab-btn" type="button" role="tab" aria-selected="false"
-        data-ctx-tab="settings" data-i18n="tab.settings">配置</button>
     </div>
 
     <!-- 分页 1: 当前会话 -->
@@ -2935,99 +3001,12 @@
             <button id="btn-compact-context" class="unlock-btn unlock-btn-primary key-compact-btn" type="button"
               data-i18n="session.compact.btnNow">⚡ 一键压缩上下文</button>
             <label class="key-auto-compact-toggle" for="chk-auto-compact-quick">
-              <input id="chk-auto-compact-quick" type="checkbox">
+              <input id="chk-auto-compact-quick" type="checkbox" checked>
               <span data-i18n="session.compact.autoQuickLabel">自动压缩</span>
-              <span id="ctx-auto-compact-badge" class="key-pill pill-muted">未开启 · 15%</span>
+              <span id="ctx-auto-compact-badge" class="key-pill pill-good">已开启 · ≤20%</span>
             </label>
           </div>
           <div id="compact-status-msg" class="key-compact-status" hidden></div>
-        </div>
-      </div>
-
-      <!-- 卡片 2: 生成体验、纯流式速度与 E 评分速览 -->
-      <div id="speed-summary"
-        style="background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:11px 12px;margin:8px 0 10px;">
-        <div class="key-header">
-          <span class="key-title" style="color:var(--ag-custom-speed,var(--ag-text-primary));">
-            <span id="speed-summary-bolt" class="speed-bolt-icon" aria-hidden="true">⚡</span>
-            <span data-i18n="session.speedSummary.titleNoBolt">最新生成体验与速度</span>
-          </span>
-          <div class="speed-badge-group">
-            <span id="speed-mock-tag" class="key-pill pill-warn" hidden style="font-size:9.5px;padding:1px 5px;" data-i18n="session.speed.mockTag">模拟验收</span>
-            <span id="speed-badge" class="key-pill pill-muted" data-i18n="session.speed.pending">待生成</span>
-            <button id="btn-speed-breakdown-toggle" class="latest-call-link-btn" type="button" aria-expanded="false" hidden data-i18n="session.speed.details">拆解</button>
-          </div>
-        </div>
-        <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
-          <div class="key-stat">
-            <div class="key-stat-label" id="speed-val-label" data-i18n="session.speed.streamRate">纯流式速度</div>
-            <div id="speed-val" class="key-stat-val" style="color:var(--ag-custom-speed,var(--ag-text-primary));">—
-            </div>
-          </div>
-          <div class="key-stat">
-            <div class="key-stat-label" data-i18n="session.speed.duration">生成耗时</div>
-            <div id="speed-duration" class="key-stat-val">—</div>
-          </div>
-          <div class="key-stat">
-            <div class="key-stat-label" data-i18n="session.speed.ttft">首字延迟</div>
-            <div id="speed-ttft" class="key-stat-val">—</div>
-          </div>
-          <div class="key-stat">
-            <div class="key-stat-label" data-i18n="session.speed.tokens">本次输出</div>
-            <div id="speed-tokens" class="key-stat-val">—</div>
-          </div>
-        </div>
-        <div id="speed-sub-label" class="speed-sub-label" hidden></div>
-        <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
-        <div id="speed-breakdown-details" class="speed-breakdown-details" style="display:none;">
-          <div class="call-detail-grid" id="speed-breakdown-grid"></div>
-        </div>
-      </div>
-
-      <!-- 最新模型调用与当前会话请求时间线 -->
-      <div id="latest-call-card" class="latest-call-card" hidden>
-        <div class="latest-call-header">
-          <div class="latest-call-title-wrap">
-            <span class="latest-call-title" data-i18n="session.latestCall.title">最新调用</span>
-            <span id="latest-call-status-pill" class="key-pill pill-muted">--</span>
-            <span id="latest-call-agent-pill" class="call-agent-badge" hidden data-i18n="session.latestCall.agentMain">主代理</span>
-          </div>
-          <div class="latest-call-actions">
-            <span id="latest-call-time" class="latest-call-time">—</span>
-            <button id="btn-session-history-toggle" class="latest-call-link-btn" type="button" aria-expanded="false" data-i18n="session.timeline.viewHistory">查看历史</button>
-          </div>
-        </div>
-
-        <button id="latest-call-new-banner" class="latest-call-new-banner" type="button" hidden data-i18n="session.latestCall.newAvailable">有新调用完成 · 点击查看最新</button>
-
-        <div id="latest-call-body" class="latest-call-body">
-          <div id="latest-call-summary-row" class="latest-call-summary-row" role="button" tabindex="0" aria-expanded="false">
-            <div class="latest-call-model-wrap">
-              <span id="latest-call-model" class="latest-call-model">—</span>
-              <span id="latest-call-effort" class="call-effort-tag" hidden>—</span>
-            </div>
-            <div class="latest-call-metrics">
-              <span id="latest-call-score-inline" class="call-score-badge" hidden>—</span>
-              <span id="latest-call-tokens-inline" class="latest-call-metric-item">—</span>
-              <span id="latest-call-cache-inline" class="latest-call-metric-item">—</span>
-              <span id="latest-call-duration-inline" class="latest-call-metric-item">—</span>
-            </div>
-            <span id="btn-latest-call-toggle" class="latest-call-expand-caret" aria-hidden="true">▾</span>
-          </div>
-
-          <div id="latest-call-details" class="latest-call-details" style="display:none;">
-            <div class="call-detail-grid" id="latest-call-detail-grid"></div>
-            <div id="latest-call-error-box" class="call-detail-error" hidden></div>
-          </div>
-        </div>
-
-        <div id="session-timeline-drawer" class="session-timeline-drawer" style="display:none;">
-          <div id="session-timeline-summary" class="session-timeline-summary"></div>
-          <div id="session-timeline-list" class="session-timeline-list"></div>
-          <div id="session-timeline-unlinked" class="session-timeline-unlinked" hidden></div>
-          <div id="session-timeline-more-wrap" class="session-timeline-more-wrap" hidden>
-            <button id="btn-timeline-load-more" class="ctx-compact-link-btn" type="button" data-i18n="session.timeline.loadMore">加载更多轮次</button>
-          </div>
         </div>
       </div>
 
@@ -3051,72 +3030,12 @@
             data-i18n="session.compact.inlinePctLabel">默认自动压缩阈值：剩余 ≤</label>
           <div class="ctx-auto-compact-inline-ctrl">
             <input id="inp-auto-compact-pct" class="ctx-auto-compact-pct-input" type="number" min="1" max="80" step="1"
-              value="15" inputmode="numeric">
+              value="20" inputmode="numeric">
             <span class="ctx-auto-compact-unit">%</span>
             <button id="btn-auto-compact-inline-save" class="ctx-compact-link-btn" type="button"
               data-i18n="session.compact.saveThreshold">保存</button>
           </div>
           <span id="ctx-auto-compact-inline-feedback" class="ctx-auto-compact-inline-feedback" hidden></span>
-        </div>
-      </div>
-
-      <!-- 底层技术参数与附件审计 -->
-      <div class="tech-drawer">
-        <button id="btn-toggle-details" class="drawer-trigger" aria-expanded="false" type="button">
-          <span class="drawer-trigger-left">
-            <span data-i18n="session.techDrawer.title">📋 底层技术参数与附件审计</span>
-          </span>
-          <span id="drawer-arrow" class="drawer-arrow" data-i18n="session.techDrawer.expand">▼ 点击展开明细</span>
-        </button>
-        <div id="drawer-body" class="drawer-body" style="display:none;">
-          <p id="status" data-i18n="session.tech.checking">正在核对请求和附件…</p>
-          <p id="model"></p>
-          <h4 data-i18n="session.tech.latestReq">最近一次模型请求</h4>
-          <dl>
-            <dt data-i18n="session.tech.reqStatus">请求状态</dt>
-            <dd id="request-status">—</dd>
-            <dt data-i18n="session.tech.actual">模型返回输入＋输出</dt>
-            <dd id="actual">—</dd>
-            <dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt>
-            <dd id="estimate">—</dd>
-            <dt data-i18n="session.tech.budget">客户端预算字段</dt>
-            <dd id="budget">—</dd>
-            <dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt>
-            <dd id="service-limit">—</dd>
-            <dt data-i18n="session.tech.percent">相对客户端预算</dt>
-            <dd id="percent">—</dd>
-          </dl>
-          <h4 data-i18n="session.tech.sessionHeading">整个会话累计内容 · 本地估算</h4>
-          <dl>
-            <dt data-i18n="session.tech.sessionTotal">可读取文本 token 估算</dt>
-            <dd id="session-total" data-i18n="session.tech.scanning">扫描中…</dd>
-            <dt data-i18n="session.tech.characters">实际读取文字字符数</dt>
-            <dd id="characters">—</dd>
-            <dt data-i18n="session.tech.user">用户消息</dt>
-            <dd id="user">—</dd>
-            <dt data-i18n="session.tech.assistant">模型回复</dt>
-            <dd id="assistant">—</dd>
-            <dt data-i18n="session.tech.thinking">可见思考内容</dt>
-            <dd id="thinking">—</dd>
-            <dt data-i18n="session.tech.tools">工具调用与工具输出</dt>
-            <dd id="tools">—</dd>
-            <dt data-i18n="session.tech.summaries">历史压缩摘要</dt>
-            <dd id="summaries">—</dd>
-            <dt data-i18n="session.tech.system">当前系统提示与工具定义</dt>
-            <dd id="system">—</dd>
-            <dt data-i18n="session.tech.attachments">上传／输出附件文本</dt>
-            <dd id="attachment-total">—</dd>
-            <dt data-i18n="session.tech.steps">历史步骤完整性</dt>
-            <dd id="steps">—</dd>
-          </dl>
-          <p id="coverage"></p>
-          <h4 data-i18n="session.tech.filesHeading">附件逐项检查</h4>
-          <div id="files"></div><button id="refresh" type="button" data-i18n="session.tech.rescan">重新扫描整段会话与附件</button>
-          <p id="note" data-i18n-html="session.tech.note">会话累计包括可读取的全部归档历史；已压缩内容仍计入累计。它不等于当前实际发送给模型的上下文，不能用累计值除以 1M
-            判断剩余空间。附件原文与工具读出的文本可能在历史中分别出现，各按一次出现计入。尚未发送的草稿与待上传附件不在归档内，暂未计入；新上传可能使下一次请求明显增长。<br><br>本地 token
-            区间是文本启发式估算，不是 Gemini
-            分词结果，也不是严格上下界。图像、音视频、加密文件、不可访问文件和未解析部分会明确列为未知。未知内容不按零处理；只有服务端返回的用量才标为实际统计。此功能不向外部发送文件，不执行宏或公式。</p>
-          <p id="updated"></p>
         </div>
       </div>
     </div>
@@ -3491,9 +3410,68 @@
         </div>
       </div>
     </div>
+  </div>
+</section>
 
-    <!-- 分页 3: 速度对比 -->
-    <div id="pane-ctx-speed" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-speed" hidden>
+<!-- 弹出式面板 1B: 模型输出速度 (#panel-speed, 472px) -->
+<section id="panel-speed" class="ag-panel" hidden aria-label="模型输出速度与对比" data-i18n-aria="panel.speed.aria">
+  <div class="panel-header-bar">
+    <div class="panel-title">
+      <span class="panel-title-text" style="font-size:13px;font-weight:600;color:var(--ag-text-primary)"
+        data-i18n="panel.speed.title">⚡ 模型输出速度</span>
+    </div>
+    <div class="panel-header-actions">
+      <button id="theme-toggle-speed" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
+        data-i18n-aria="header.theme.aria" title="当前：跟随IDE（点击切换：浅色 / 深色 / 自动）"
+        data-i18n-title="header.theme.title">🌓</button>
+      <button id="close-speed" class="panel-icon-btn" type="button" aria-label="收起详情"
+        data-i18n-aria="header.close.aria">×</button>
+    </div>
+  </div>
+
+  <div id="view-speed">
+    <!-- 生成体验、纯流式速度与 E 评分速览 -->
+    <div id="speed-summary"
+      style="background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:11px 12px;margin:0 0 10px;">
+      <div class="key-header">
+        <span class="key-title" style="color:var(--ag-custom-speed,var(--ag-text-primary));">
+          <span id="speed-summary-bolt" class="speed-bolt-icon" aria-hidden="true">⚡</span>
+          <span data-i18n="session.speedSummary.titleNoBolt">最新生成体验与速度</span>
+        </span>
+        <div class="speed-badge-group">
+          <span id="speed-mock-tag" class="key-pill pill-warn" hidden style="font-size:9.5px;padding:1px 5px;" data-i18n="session.speed.mockTag">模拟验收</span>
+          <span id="speed-badge" class="key-pill pill-muted" data-i18n="session.speed.pending">待生成</span>
+          <button id="btn-speed-breakdown-toggle" class="latest-call-link-btn" type="button" aria-expanded="false" hidden data-i18n="session.speed.details">拆解</button>
+        </div>
+      </div>
+      <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
+        <div class="key-stat">
+          <div class="key-stat-label" id="speed-val-label" data-i18n="session.speed.streamRate">纯流式速度</div>
+          <div id="speed-val" class="key-stat-val" style="color:var(--ag-custom-speed,var(--ag-text-primary));">—
+          </div>
+        </div>
+        <div class="key-stat">
+          <div class="key-stat-label" data-i18n="session.speed.duration">生成耗时</div>
+          <div id="speed-duration" class="key-stat-val">—</div>
+        </div>
+        <div class="key-stat">
+          <div class="key-stat-label" data-i18n="session.speed.ttft">首字延迟</div>
+          <div id="speed-ttft" class="key-stat-val">—</div>
+        </div>
+        <div class="key-stat">
+          <div class="key-stat-label" data-i18n="session.speed.tokens">本次输出</div>
+          <div id="speed-tokens" class="key-stat-val">—</div>
+        </div>
+      </div>
+      <div id="speed-sub-label" class="speed-sub-label" hidden></div>
+      <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
+      <div id="speed-breakdown-details" class="speed-breakdown-details" style="display:none;">
+        <div class="call-detail-grid" id="speed-breakdown-grid"></div>
+      </div>
+    </div>
+
+    <!-- 速度对比图表区（直接展示，无需切换标签） -->
+    <div id="pane-ctx-speed" class="ctx-tab-pane">
       <div class="ctx-speed-toolbar">
         <div class="ctx-segmented" role="group" aria-label="时间范围" data-i18n-aria="speed.range.aria">
           <button id="speed-range-7d" class="ctx-seg-btn active" type="button" data-speed-range="7"
@@ -3565,14 +3543,60 @@
       <div id="speed-active-test-note" class="ctx-active-test-note" data-i18n="speed.activeTestNote">
         主动测试：未接通。目前没有可靠的指定模型调用入口，暂时只能使用日常对话的实测记录。</div>
     </div>
+  </div>
+</section>
 
-    <!-- 设置与系统配置 (第四分页: 配置 / setting) -->
-    <div id="pane-ctx-settings" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-settings" hidden>
+<!-- 弹出式面板 1C: 插件设置 (#panel-settings, 472px) -->
+<section id="panel-settings" class="ag-panel" hidden aria-label="插件设置" data-i18n-aria="panel.settings.aria">
+  <div class="panel-header-bar">
+    <div class="panel-title">
+      <span class="panel-title-text" style="font-size:13px;font-weight:600;color:var(--ag-text-primary)"
+        data-i18n="panel.settings.title">⚙ 插件设置</span>
+    </div>
+    <div class="panel-header-actions ctx-header-actions">
+      <!-- 插件面板三语言快速切换分段按钮 -->
+      <div id="panel-lang-top-segmented" class="ctx-segmented ctx-lang-top-segmented" role="group" aria-label="插件面板语言"
+        data-i18n-aria="settings.panelLang.aria">
+        <button id="btn-top-lang-zh-CN" class="ctx-seg-btn active" type="button" data-panel-lang="zh-CN" title="简体中文"
+          aria-label="简体中文">简</button>
+        <button id="btn-top-lang-zh-TW" class="ctx-seg-btn" type="button" data-panel-lang="zh-TW" title="繁體中文"
+          aria-label="繁體中文">繁</button>
+        <button id="btn-top-lang-en" class="ctx-seg-btn" type="button" data-panel-lang="en" title="English"
+          aria-label="English">EN</button>
+      </div>
+      <button id="btn-github-repo-ctx" class="panel-icon-btn" type="button" aria-label="打开 GitHub 仓库"
+        data-i18n-aria="header.github.aria" title="打开 GitHub 仓库" data-i18n-title="header.github.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+          <path
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+          </path>
+        </svg>
+      </button>
+      <button id="btn-check-update-ctx" class="panel-icon-btn update-btn" type="button" aria-label="检查插件更新"
+        data-i18n-aria="header.update.aria" title="检查插件更新" data-i18n-title="header.update.aria"
+        style="position:relative">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 8A6 6 0 1 1 8 2M14 2v6h-6"></path>
+        </svg>
+        <span id="update-badge-dot-ctx" class="update-badge-dot" style="display:none"></span>
+      </button>
+      <button id="theme-toggle-settings" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
+        data-i18n-aria="header.theme.aria" title="当前：跟随IDE（点击切换：浅色 / 深色 / 自动）"
+        data-i18n-title="header.theme.title">🌓</button>
+      <button id="close-settings" class="panel-icon-btn" type="button" aria-label="收起详情"
+        data-i18n-aria="header.close.aria">×</button>
+    </div>
+  </div>
+
+  <div id="view-settings">
+    <!-- 设置与系统配置主体 -->
+    <div id="pane-ctx-settings" class="ctx-tab-pane">
       <!-- 0. 上下文自动压缩配置 -->
       <div class="ctx-settings-card" id="auto-compact-settings-card">
         <div class="ctx-settings-card-hdr">
           <div class="ctx-settings-card-title" data-i18n="settings.autoCompact.title">⚡ 上下文自动压缩配置</div>
-          <span id="auto-compact-settings-badge" class="key-pill pill-muted">未开启 · 15%</span>
+          <span id="auto-compact-settings-badge" class="key-pill pill-good">已开启 · ≤20%</span>
         </div>
         <div class="ctx-settings-card-desc" data-i18n="settings.autoCompact.desc">
           当当前会话「剩余可用」比例低于或等于设定阈值，且会话处于空闲状态（非生成中）时，自动发送原生 /compact 压缩上下文（不降低模型预算上限）。
@@ -3582,14 +3606,14 @@
             <span class="ctx-toggle-row-title" data-i18n="settings.autoCompact.toggleTitle">启用到达阈值自动压缩</span>
             <span class="ctx-toggle-row-sub" data-i18n="settings.autoCompact.toggleSub">仅在会话空闲时触发，每轮仅触发一次，避免死循环重复压缩。</span>
           </div>
-          <input id="chk-auto-compact-settings" type="checkbox">
+          <input id="chk-auto-compact-settings" type="checkbox" checked>
         </label>
         <div class="ctx-auto-compact-settings-row">
           <label class="ctx-auto-compact-inline-lbl" for="inp-auto-compact-settings-pct"
             data-i18n="settings.autoCompact.pctLabel">默认剩余可用触发阈值（1%–80%）</label>
           <div class="ctx-auto-compact-inline-ctrl">
             <input id="inp-auto-compact-settings-pct" class="ctx-auto-compact-pct-input" type="number" min="1" max="80"
-              step="1" value="15" inputmode="numeric">
+              step="1" value="20" inputmode="numeric">
             <span class="ctx-auto-compact-unit">%</span>
           </div>
         </div>
@@ -3834,17 +3858,15 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- 保留：兼容隐藏旧中文折叠触发节点以防测试脚本寻找该 ID -->
-  <div id="chinese-i18n-drawer" hidden>
-    <button id="btn-toggle-chinese" type="button" hidden></button>
-    <div id="chinese-drawer-body" style="display:none;"><span id="chinese-drawer-arrow"></span></div>
-  </div>
+      <!-- 保留：兼容隐藏旧中文折叠触发节点以防测试脚本寻找该 ID -->
+      <div id="chinese-i18n-drawer" hidden>
+        <button id="btn-toggle-chinese" type="button" hidden></button>
+        <div id="chinese-drawer-body" style="display:none;"><span id="chinese-drawer-arrow"></span></div>
+      </div>
 
-  <!-- 5. 免 TUN 网络直连 (AntigravityProxyNoTun) -->
-  <div class="tech-drawer" id="proxy-notun-drawer">
+      <!-- 5. 免 TUN 网络直连 (AntigravityProxyNoTun) -->
+      <div class="tech-drawer" id="proxy-notun-drawer">
     <button id="btn-toggle-proxy" class="drawer-trigger" aria-expanded="false" type="button">
       <span class="drawer-trigger-left">
         <span data-i18n="settings.proxy.title">🌐 免 TUN 网络直连（本地代理）</span>
@@ -3983,27 +4005,87 @@
       </div>
     </div>
   </div>
-  </div>
-  </div>
 
-  <!-- 全局统一居中重启确认模态弹窗（立即可见，支持顶部、底部与配置区所有重启入口） -->
-  <div id="global-restart-modal" class="ag-modal-overlay" hidden role="dialog" aria-modal="true"
-    aria-labelledby="modal-restart-title">
-    <div class="ag-modal-card">
-      <div id="modal-restart-title" class="ag-modal-title" data-i18n="models.restartConfirm.title">重启 Antigravity 客户端
-      </div>
-      <div id="modal-restart-text" class="ag-modal-body" data-i18n="models.restartConfirm.text">重启会中断正在运行的任务。请先保存未保存的内容。
-      </div>
-      <div id="modal-restart-feedback" class="ag-modal-feedback" hidden></div>
-      <div class="ag-modal-actions">
-        <button id="btn-modal-restart-cancel" class="unlock-btn unlock-btn-secondary" type="button"
-          data-i18n="models.restartConfirm.cancel">取消</button>
-        <button id="btn-modal-restart-confirm" class="unlock-btn unlock-btn-primary" type="button"
-          data-i18n="models.restartConfirm.go">确认重启</button>
+      <!-- 7. 底层技术参数与附件审计（移至设置面板，保持上下文面板简洁） -->
+      <div class="tech-drawer" id="tech-audit-drawer">
+        <button id="btn-toggle-details" class="drawer-trigger" aria-expanded="false" type="button">
+          <span class="drawer-trigger-left">
+            <span data-i18n="session.techDrawer.title">📋 底层技术参数与附件审计</span>
+          </span>
+          <span id="drawer-arrow" class="drawer-arrow" data-i18n="session.techDrawer.expand">▼ 点击展开明细</span>
+        </button>
+        <div id="drawer-body" class="drawer-body" style="display:none;">
+          <p id="status" data-i18n="session.tech.checking">正在核对请求和附件…</p>
+          <p id="model"></p>
+          <h4 data-i18n="session.tech.latestReq">最近一次模型请求</h4>
+          <dl>
+            <dt data-i18n="session.tech.reqStatus">请求状态</dt>
+            <dd id="request-status">—</dd>
+            <dt data-i18n="session.tech.actual">模型返回输入＋输出</dt>
+            <dd id="actual">—</dd>
+            <dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt>
+            <dd id="estimate">—</dd>
+            <dt data-i18n="session.tech.budget">客户端预算字段</dt>
+            <dd id="budget">—</dd>
+            <dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt>
+            <dd id="service-limit">—</dd>
+            <dt data-i18n="session.tech.percent">相对客户端预算</dt>
+            <dd id="percent">—</dd>
+          </dl>
+          <h4 data-i18n="session.tech.sessionHeading">整个会话累计内容 · 本地估算</h4>
+          <dl>
+            <dt data-i18n="session.tech.sessionTotal">可读取文本 token 估算</dt>
+            <dd id="session-total" data-i18n="session.tech.scanning">扫描中…</dd>
+            <dt data-i18n="session.tech.characters">实际读取文字字符数</dt>
+            <dd id="characters">—</dd>
+            <dt data-i18n="session.tech.user">用户消息</dt>
+            <dd id="user">—</dd>
+            <dt data-i18n="session.tech.assistant">模型回复</dt>
+            <dd id="assistant">—</dd>
+            <dt data-i18n="session.tech.thinking">可见思考内容</dt>
+            <dd id="thinking">—</dd>
+            <dt data-i18n="session.tech.tools">工具调用与工具输出</dt>
+            <dd id="tools">—</dd>
+            <dt data-i18n="session.tech.summaries">历史压缩摘要</dt>
+            <dd id="summaries">—</dd>
+            <dt data-i18n="session.tech.system">当前系统提示与工具定义</dt>
+            <dd id="system">—</dd>
+            <dt data-i18n="session.tech.attachments">上传／输出附件文本</dt>
+            <dd id="attachment-total">—</dd>
+            <dt data-i18n="session.tech.steps">历史步骤完整性</dt>
+            <dd id="steps">—</dd>
+          </dl>
+          <p id="coverage"></p>
+          <h4 data-i18n="session.tech.filesHeading">附件逐项检查</h4>
+          <div id="files"></div><button id="refresh" type="button" data-i18n="session.tech.rescan">重新扫描整段会话与附件</button>
+          <p id="note" data-i18n-html="session.tech.note">会话累计包括可读取的全部归档历史；已压缩内容仍计入累计。它不等于当前实际发送给模型的上下文，不能用累计值除以 1M
+            判断剩余空间。附件原文与工具读出的文本可能在历史中分别出现，各按一次出现计入。尚未发送的草稿与待上传附件不在归档内，暂未计入；新上传可能使下一次请求明显增长。<br><br>本地 token
+            区间是文本启发式估算，不是 Gemini
+            分词结果，也不是严格上下界。图像、音视频、加密文件、不可访问文件和未解析部分会明确列为未知。未知内容不按零处理；只有服务端返回的用量才标为实际统计。此功能不向外部发送文件，不执行宏或公式。</p>
+          <p id="updated"></p>
+        </div>
       </div>
     </div>
   </div>
 </section>
+
+<!-- 全局统一居中重启确认模态弹窗（独立于单一面板，支持上下文/设置/额度/更新所有重启入口） -->
+<div id="global-restart-modal" class="ag-modal-overlay ag-modal-global" hidden role="dialog" aria-modal="true"
+  aria-labelledby="modal-restart-title">
+  <div class="ag-modal-card">
+    <div id="modal-restart-title" class="ag-modal-title" data-i18n="models.restartConfirm.title">重启 Antigravity 客户端
+    </div>
+    <div id="modal-restart-text" class="ag-modal-body" data-i18n="models.restartConfirm.text">重启会中断正在运行的任务。请先保存未保存的内容。
+    </div>
+    <div id="modal-restart-feedback" class="ag-modal-feedback" hidden></div>
+    <div class="ag-modal-actions">
+      <button id="btn-modal-restart-cancel" class="unlock-btn unlock-btn-secondary" type="button"
+        data-i18n="models.restartConfirm.cancel">取消</button>
+      <button id="btn-modal-restart-confirm" class="unlock-btn unlock-btn-primary" type="button"
+        data-i18n="models.restartConfirm.go">确认重启</button>
+    </div>
+  </div>
+</div>
 
 <!-- 弹出式面板 2: Token 用量一览 (#panel-tokens, 730px) -->
 <section id="panel-tokens" class="ag-panel" hidden aria-label="Token 用量一览" data-i18n-aria="badge.tokens.aria">
@@ -5464,6 +5546,8 @@ const PANEL_I18N = {
   'badge.tokens.aria': { 'zh-CN': 'Token 用量一览', 'zh-TW': 'Token 用量總覽', en: 'Token usage overview' },
   'badge.cli.aria': { 'zh-CN': '启动 CLI', 'zh-TW': '啟動 CLI', en: 'Launch CLI' },
   'badge.cli.title': { 'zh-CN': '一键启动 Antigravity CLI 终端（自动进入当前项目目录）', 'zh-TW': '一鍵啟動 Antigravity CLI 終端機（自動進入目前專案目錄）', en: 'Launch Antigravity CLI in the current workspace' },
+  'badge.settings.aria': { 'zh-CN': '插件设置', 'zh-TW': '外掛設定', en: 'Extension settings' },
+  'badge.settings.title': { 'zh-CN': '插件设置（语言、代理、外观与底层参数）', 'zh-TW': '外掛設定（語言、代理、外觀與底層參數）', en: 'Settings (Language, Proxy, Appearance & Diagnostics)' },
   'badge.overflow.aria': { 'zh-CN': '更多统计指标', 'zh-TW': '更多統計指標', en: 'More metrics' },
   'tip.title.default': { 'zh-CN': '上下文窗口：', 'zh-TW': 'Context 視窗：', en: 'Context window:' },
   'tip.pct.notReady': { 'zh-CN': '数据尚未就绪', 'zh-TW': '資料尚未就緒', en: 'Data not ready' },
@@ -5472,14 +5556,19 @@ const PANEL_I18N = {
   'overflow.speed': { 'zh-CN': '输出速度', 'zh-TW': '輸出速度', en: 'Output speed' },
   'overflow.tokens': { 'zh-CN': 'Token 用量一览', 'zh-TW': 'Token 用量總覽', en: 'Token usage' },
   'overflow.cli': { 'zh-CN': '启动 CLI 终端', 'zh-TW': '啟動 CLI 終端機', en: 'Launch CLI' },
+  'overflow.settings': { 'zh-CN': '插件设置', 'zh-TW': '外掛設定', en: 'Settings' },
   'cli.launching': { 'zh-CN': '正在打开 Antigravity CLI…', 'zh-TW': '正在開啟 Antigravity CLI…', en: 'Opening Antigravity CLI…' },
   'cli.launched': { 'zh-CN': '已启动 CLI：{path}', 'zh-TW': '已啟動 CLI：{path}', en: 'CLI launched: {path}' },
   'cli.error': { 'zh-CN': '启动 CLI 失败：{err}', 'zh-TW': '啟動 CLI 失敗：{err}', en: 'Failed to launch CLI: {err}' },
   'cli.unavailable': { 'zh-CN': '当前环境不支持启动 CLI', 'zh-TW': '目前環境不支援啟動 CLI', en: 'CLI launch is unavailable in this environment' },
 
-  // 上下文面板头部与分页
+  // 上下文、速度与设置面板头部与分页
   'panel.ctx.aria': { 'zh-CN': '会话与上下文详情', 'zh-TW': '對話與 Context 詳細資訊', en: 'Session & Context Details' },
   'panel.ctx.title': { 'zh-CN': '💬 当前会话上下文', 'zh-TW': '💬 目前對話 Context', en: 'ACM' },
+  'panel.speed.aria': { 'zh-CN': '模型输出速度与对比', 'zh-TW': '模型輸出速度與對比', en: 'Model Output Speed & Comparison' },
+  'panel.speed.title': { 'zh-CN': '⚡ 模型输出速度', 'zh-TW': '⚡ 模型輸出速度', en: '⚡ Model Speed' },
+  'panel.settings.aria': { 'zh-CN': '插件设置', 'zh-TW': '外掛設定', en: 'Extension Settings' },
+  'panel.settings.title': { 'zh-CN': '⚙ 插件设置', 'zh-TW': '⚙ 外掛設定', en: '⚙ Settings' },
   'panel.ctx.fullName': { 'zh-CN': 'Antigravity Context Meter', 'zh-TW': 'Antigravity Context Meter', en: 'Antigravity Context Meter' },
   'panel.ctx.viewModel': { 'zh-CN': '查看模型', 'zh-TW': '檢視模型', en: 'Model' },
   'panel.ctx.viewModelTitle': { 'zh-CN': '按厂商查看不同模型的上下文设置', 'zh-TW': '依廠商檢視不同模型的上下文設定', en: 'Inspect context settings by vendor and model' },
@@ -6214,11 +6303,15 @@ const PANEL_I18N = {
   'tip.detail.waitBg': { 'zh-CN': '正在等待后台更新统计数据', 'zh-TW': '正在等待背景更新統計資料', en: 'Waiting for background stats update' },
   'tip.detail.readingSession': { 'zh-CN': '正在读取当前会话上下文用量…', 'zh-TW': '正在讀取目前對話 Context 用量…', en: 'Reading current session context usage…' },
   'tip.detail.incSuffix': { 'zh-CN': '（含未知附件）', 'zh-TW': '（含未知附件）', en: ' (incl. unknown files)' },
+  'tip.title.compacted': { 'zh-CN': '上下文已压缩（压缩后估算）：', 'zh-TW': 'Context 已壓縮（壓縮後估算）：', en: 'Context compacted (estimated):' },
+  'tip.pct.compactedVal': { 'zh-CN': '约 {used}% 已用（剩余约 {rem}%）', 'zh-TW': '約 {used}% 已用（剩餘約 {rem}%）', en: '~{used}% used (~{rem}% remaining)' },
+  'tip.detail.compactedWait': { 'zh-CN': '已用约 {used} token，共 {budget} · 下次发消息同步精确值', 'zh-TW': '已用約 {used} token，共 {budget} · 下次發訊息同步精確值', en: '~{used} of {budget} tokens · exact value syncs on next turn' },
   'badge.noSession': { 'zh-CN': '未打开会话', 'zh-TW': '未打開對話', en: 'No active chat' },
   'badge.clickOpenCli': { 'zh-CN': ' · 点击查看或启动 CLI', 'zh-TW': ' · 點擊檢視或啟動 CLI', en: ' · Click to view or launch CLI' },
   'badge.contexts': { 'zh-CN': 'contexts', 'zh-TW': 'contexts', en: 'contexts' },
   'badge.delayed': { 'zh-CN': '统计延迟', 'zh-TW': '統計延遲', en: 'Delayed' },
   'badge.actualUnknown': { 'zh-CN': '真实量未知', 'zh-TW': '真實量未知', en: 'Actual unknown' },
+  'badge.compacted': { 'zh-CN': '已压缩', 'zh-TW': '已壓縮', en: 'Compacted' },
   'badge.tokensTitle': { 'zh-CN': 'Token 用量一览（点击展开详情）', 'zh-TW': 'Token 用量總覽（點擊展開詳細資訊）', en: 'Token Usage Overview (click to open)' },
   'badge.speedCalc': { 'zh-CN': '计算中…', 'zh-TW': '計算中…', en: 'Calculating…' },
   'badge.speedHoverIdle': { 'zh-CN': ' · 待生成', 'zh-TW': ' · 待生成', en: ' · Idle' },
@@ -6234,6 +6327,7 @@ const PANEL_I18N = {
   'badge.status.scanErr': { 'zh-CN': '全会话扫描未完成：{err}', 'zh-TW': '全工作階段掃描未完成：{err}', en: 'Session scan incomplete: {err}' },
   'badge.status.incomplete': { 'zh-CN': '存在 {count} 个附件含未知内容；会话总量仍未计全，不能据此保证不会超限。', 'zh-TW': '存在 {count} 個附件含未知內容；工作階段總量仍未計全，無法據此保證不會超限。', en: '{count} attachment(s) contain unreadable content; cumulative total is incomplete.' },
   'badge.status.estimated': { 'zh-CN': '只有客户端估算，附件等内容可能未计全；当前请求真实占用未知。', 'zh-TW': '僅有用戶端估算，附件等內容可能未計全；目前請求真實佔用未知。', en: 'Client estimate only; attachments may be omitted and actual usage is unknown.' },
+  'badge.status.compacted': { 'zh-CN': '已完成上下文压缩；当前为压缩后估算占用，下次发送消息后自动同步服务端精确统计。', 'zh-TW': '已完成上下文壓縮；目前為壓縮後估算佔用，下次發送訊息後自動同步伺服器端精確統計。', en: 'Context compacted; showing post-compact estimate until the next message syncs exact server usage.' },
   'badge.status.normal': { 'zh-CN': '请求用量与会话累计分别统计；会话 token 数始终为本地估算。', 'zh-TW': '請求用量與工作階段累計分別統計；工作階段 token 數始終為本機估算。', en: 'Request usage and cumulative session totals are tracked separately; session totals are local estimates.' },
   'update.title': { 'zh-CN': '🚀 检查更新', 'zh-TW': '🚀 檢查更新', en: '🚀 Check for Updates' },
   'update.checking': { 'zh-CN': '正在检测最新版本…', 'zh-TW': '正在偵測最新版本…', en: 'Checking for the latest version…' },
@@ -6280,11 +6374,14 @@ const PANEL_I18N = {
   'key.pill.elevated': { 'zh-CN': '偏高', 'zh-TW': '偏高', en: 'High' },
   'key.pill.normal': { 'zh-CN': '正常', 'zh-TW': '正常', en: 'Normal' },
   'key.pill.est': { 'zh-CN': '估算', 'zh-TW': '估算', en: 'Estimate' },
+  'key.pill.compacted': { 'zh-CN': '已压缩 · 估算', 'zh-TW': '已壓縮 · 估算', en: 'Compacted · Est.' },
   'key.pill.reading': { 'zh-CN': '读取中', 'zh-TW': '讀取中', en: 'Reading' },
   'key.takeaway.90': { 'zh-CN': '⚠ 上下文已消耗 {pct}%，仅剩约 {rem} tokens，接近预算上限！建议清理冗余上下文。', 'zh-TW': '⚠ 上下文已消耗 {pct}%，僅剩約 {rem} tokens，接近預算上限！建議清理多餘上下文。', en: '⚠ Context usage is at {pct}% (~{rem} tokens left), near the limit. Consider trimming context.' },
   'key.takeaway.75': { 'zh-CN': '⚡ 已使用 {pct}%，剩余可用空间约 {rem} tokens，注意大文件或长输出。', 'zh-TW': '⚡ 已使用 {pct}%，剩餘可用空間約 {rem} tokens，注意大型檔案或長輸出。', en: '⚡ {pct}% used (~{rem} tokens left). Watch large files or long outputs.' },
   'key.takeaway.ok': { 'zh-CN': '✔ 当前用量健康（{pct}%），剩余可用空间充足（约 {rem} tokens），可正常继续对话。', 'zh-TW': '✔ 目前用量健康（{pct}%），剩餘可用空間充足（約 {rem} tokens），可正常繼續對話。', en: '✔ Healthy usage ({pct}%), plenty of room (~{rem} tokens left).' },
   'key.takeaway.est': { 'zh-CN': 'ℹ 当前主要依赖本地估算或待服务端返回实际统计，暂不计算精确剩余空间。', 'zh-TW': 'ℹ 目前主要依賴本機估算或待伺服器端回傳實際統計，暫不計算精確剩餘空間。', en: 'ℹ Relying on local estimates or awaiting server stats; exact remaining space unavailable.' },
+  'key.takeaway.compacted': { 'zh-CN': '已完成压缩（约 {est}，占用约 {pct}%，剩余约 {rem}）；发送下一条消息后将自动同步精确 token。', 'zh-TW': '已完成壓縮（約 {est}，佔用約 {pct}%，剩餘約 {rem}）；發送下一則訊息後將自動同步精確 token。', en: 'Context compacted (~{est}, ~{pct}% used, ~{rem} remaining); exact usage will sync on the next message.' },
+  'key.takeaway.compactedFrom': { 'zh-CN': '已从 {before} 压缩至约 {est}（占用约 {pct}%，剩余约 {rem}）；下次发送消息后将同步服务端精确统计。', 'zh-TW': '已從 {before} 壓縮至約 {est}（佔用約 {pct}%，剩餘約 {rem}）；下次發送訊息後將同步伺服器端精確統計。', en: 'Compacted from {before} to ~{est} (~{pct}% used, ~{rem} remaining); exact usage will sync on the next message.' },
   'speed.pill.fast': { 'zh-CN': '极速', 'zh-TW': '極速', en: 'Fast' },
   'speed.pill.smooth': { 'zh-CN': '流畅', 'zh-TW': '流暢', en: 'Smooth' },
   'speed.pill.good': { 'zh-CN': '良好', 'zh-TW': '良好', en: 'Good' },
@@ -6302,6 +6399,7 @@ const PANEL_I18N = {
   'tech.req.network': { 'zh-CN': '网络故障（非超限）', 'zh-TW': '網路故障（非超限）', en: 'Network error (not overflow)' },
   'tech.req.failed': { 'zh-CN': '已失败', 'zh-TW': '已失敗', en: 'Failed' },
   'tech.req.reported': { 'zh-CN': '已返回实际统计', 'zh-TW': '已回傳實際統計', en: 'Actual stats returned' },
+  'tech.req.compacted': { 'zh-CN': '已压缩（等待下次请求返回精确值）', 'zh-TW': '已壓縮（等待下次請求回傳精確值）', en: 'Compacted (awaiting next request)' },
   'tech.req.estimated': { 'zh-CN': '只有本地估算', 'zh-TW': '只有本機估算', en: 'Local estimate only' },
   'tech.req.waiting': { 'zh-CN': '等待统计，未确认执行状态', 'zh-TW': '等待統計，未確認執行狀態', en: 'Awaiting stats; status unconfirmed' },
   'tech.actual.exceeded': { 'zh-CN': '>{val}（实际总数未返回）', 'zh-TW': '>{val}（實際總數未回傳）', en: '>{val} (actual total not returned)' },
@@ -9745,13 +9843,6 @@ function formatPeriodCalendarLabel(currentPeriod) {
     callsHydrated: false, syncedFinalMap: new Map(), pendingFinalCalls: new Map(),
     quarantinedOversizeMap: new Map(), flushFinalsBusy: false, pendingFlushForceSync: false,
     nextFlushRetryAt: 0, nextOversizeRetryAt: 0,
-    displayedCallRecord: null, displayedCallSig: '', pendingLatestCallRecord: null,
-    pinnedCallRecord: null, latestCallDetailOpen: false, lastAnimatedCallSig: '',
-    historyDrawerOpen: false, sessionTimeline: null, timelineLoading: false,
-    timelineError: '', expandedTurnKeys: new Set(), timelinePageLimit: 10,
-    timelineAutoExpandedRoute: null, timelineRenderedRoute: null,
-    lastTimelineFetchAt: 0, lastTimelineCallSig: '', callRenderTimer: null,
-    callEnterAnimTimer: null,
     speedBreakdownOpen: false, livePendingRequest: null, liveWaitTickTimer: null,
     streamSampleTracker: null, lastSpeedEval: null, speedOverrideForTest: null
   };
@@ -9765,14 +9856,15 @@ function formatPeriodCalendarLabel(currentPeriod) {
   let autoCheckUpdate = true;
   let cachedLatestRelease = null;
 
-  const DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT = 15;
+  const DEFAULT_AUTO_COMPACT_ENABLED = true;
+  const DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT = 20;
   const AUTO_COMPACT_MIN_PCT = 1;
   const AUTO_COMPACT_MAX_PCT = 80;
   const AUTO_COMPACT_COOLDOWN_MS = 60000;
   const AUTO_COMPACT_RETRY_BACKOFF_MS = 15000;
   const AUTO_COMPACT_STEP_DELTA = 3;
   const AUTO_COMPACT_TOKEN_GROWTH = 5000;
-  let autoCompactConfig = { enabled: false, minRemainingPct: DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT };
+  let autoCompactConfig = { enabled: DEFAULT_AUTO_COMPACT_ENABLED, minRemainingPct: DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT };
   let autoCompactPctDirty = false;
   let autoCompactSettingsDirty = false;
   let autoCompactSettingsDraftEnabled = null;
@@ -10453,6 +10545,9 @@ function formatPeriodCalendarLabel(currentPeriod) {
     if (modelViewEl && modelViewEl.style && modelViewEl.style.display === 'block' && typeof renderModelUsageView === 'function') {
       renderModelUsageView();
     }
+    if (el('panel-speed') && !el('panel-speed').hidden && typeof renderSpeedComparisonTab === 'function') {
+      renderSpeedComparisonTab();
+    }
   }
 
   function applyCustomColors() {
@@ -10524,7 +10619,7 @@ function formatPeriodCalendarLabel(currentPeriod) {
     host.setAttribute('data-theme', activeTheme);
     const hostBg = getHostZeroLevelBg(activeTheme === 'light');
     host.style.setProperty('--ag-host-bg', hostBg);
-    const btns = [el('theme-toggle'), el('theme-toggle-tokens')].filter(Boolean);
+    const btns = [el('theme-toggle'), el('theme-toggle-tokens'), el('theme-toggle-speed'), el('theme-toggle-settings')].filter(Boolean);
     btns.forEach(btn => {
       if (currentThemeMode === 'auto') {
         btn.textContent = activeTheme === 'light' ? '🌗' : '🌓';
@@ -11634,6 +11729,8 @@ function formatPeriodCalendarLabel(currentPeriod) {
       };
 
       placePanel(el('panel'), 472, el(activeContextAnchorId) || el('badge'));
+      placePanel(el('panel-speed'), 472, el(activeSpeedAnchorId) || el('badge-speed'));
+      placePanel(el('panel-settings'), 472, el(activeSettingsAnchorId) || el('badge-settings'));
       placePanel(el('panel-quota'), 460, el(activeQuotaAnchorId) || el('badge-quota'));
       placePanel(el('panel-tokens'), 730, el(activeTokensAnchorId) || el('badge-tokens'));
       placePanel(el('overflow-menu'), 220, el('badge-overflow'));
@@ -11700,7 +11797,7 @@ function formatPeriodCalendarLabel(currentPeriod) {
   };
   const handleDpiOrZoomChange = () => {
     try {
-      for (const id of ['panel', 'panel-quota', 'panel-tokens', 'overflow-menu']) {
+      for (const id of ['panel', 'panel-speed', 'panel-settings', 'panel-quota', 'panel-tokens', 'overflow-menu']) {
         const node = el(id);
         if (node) node._lastPlacedGeomKey = '';
       }
@@ -11779,6 +11876,7 @@ function formatPeriodCalendarLabel(currentPeriod) {
   function withStepError(value, metadata) {
     const error = state.scan?.session?.currentError;
     if (!error || value?.error) return value;
+    if (value?.compacted && Number.isFinite(value?.checkpointStepIndex) && error.index < value.checkpointStepIndex) return value;
     const lastStep = Math.max(-1, ...(metadata?.stepIndices || []), metadata?.chatModel?.chatStartMetadata?.startStepIndex ?? -1);
     if (lastStep > error.index) return value;
     const failure = summarize({ chatModel: { retryInfos: [{ error: error.text }] } }, {
@@ -11805,16 +11903,19 @@ function formatPeriodCalendarLabel(currentPeriod) {
   }
 
   function isAnyPanelOpen() {
-    return !el('panel').hidden || !el('panel-tokens').hidden || !el('panel-quota')?.hidden;
+    return !el('panel').hidden || !el('panel-speed')?.hidden || !el('panel-settings')?.hidden || !el('panel-tokens').hidden || !el('panel-quota')?.hidden;
   }
 
   function showPanel(target) {
     const pContext = el('panel');
+    const pSpeed = el('panel-speed');
+    const pSettings = el('panel-settings');
     const pTokens = el('panel-tokens');
     const pQuota = el('panel-quota');
     const pOverflow = el('overflow-menu');
     const bContext = el('badge');
     const bSpeed = el('badge-speed');
+    const bSettings = el('badge-settings');
     const bTokens = el('badge-tokens');
     const bQuota = el('badge-quota');
     const bOverflow = el('badge-overflow');
@@ -11830,11 +11931,15 @@ function formatPeriodCalendarLabel(currentPeriod) {
       hideContextTooltip();
       closeColorPicker();
       pContext.hidden = true;
+      if (pSpeed) pSpeed.hidden = true;
+      if (pSettings) pSettings.hidden = true;
       if (pQuota) pQuota.hidden = true;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bSettings?.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'true');
+      isContextSettingsView = false;
       syncHostStackingElevation(true);
       positionFloatingPanels();
       pTokens.hidden = false;
@@ -11857,11 +11962,15 @@ function formatPeriodCalendarLabel(currentPeriod) {
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
       pContext.hidden = true;
+      if (pSpeed) pSpeed.hidden = true;
+      if (pSettings) pSettings.hidden = true;
       pTokens.hidden = true;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bSettings?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'true');
+      isContextSettingsView = false;
       syncHostStackingElevation(true);
       positionFloatingPanels();
       if (pQuota) pQuota.hidden = false;
@@ -11869,38 +11978,81 @@ function formatPeriodCalendarLabel(currentPeriod) {
       if (typeof maybeRefreshQuotaOnOpen === 'function') void maybeRefreshQuotaOnOpen();
       if (typeof renderAccountsOverviewSection === 'function') renderAccountsOverviewSection();
       if (typeof refreshAccountsOverview === 'function') void refreshAccountsOverview({ silent: true });
-    } else if (target === 'context') {
+    } else if (target === 'speed') {
       hideContextTooltip();
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
+      pContext.hidden = true;
+      if (pSettings) pSettings.hidden = true;
       pTokens.hidden = true;
       if (pQuota) pQuota.hidden = true;
-      bContext.setAttribute('aria-expanded', String(activeContextAnchorId === 'badge'));
-      bSpeed?.setAttribute('aria-expanded', String(activeContextAnchorId === 'badge-speed'));
+      bContext.setAttribute('aria-expanded', 'false');
+      bSpeed?.setAttribute('aria-expanded', String(activeSpeedAnchorId === 'badge-speed'));
+      bSettings?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'false');
+      isContextSettingsView = false;
       syncHostStackingElevation(true);
       positionFloatingPanels();
-      pContext.hidden = false;
-      applyContextViewVisibility?.();
-      if (activeContextTab === 'models' && !isContextSettingsView) {
-        if (typeof syncModelListQuotaIndicators === 'function') syncModelListQuotaIndicators(null, Date.now(), true);
-        void refreshUnlockStatus();
-      } else if (activeContextTab === 'speed' && !isContextSettingsView) {
-        renderSpeedComparisonTab?.();
-      }
-      if (isContextSettingsView) {
-        void refreshModulesDisplay();
-      }
-    } else {
+      if (pSpeed) pSpeed.hidden = false;
+      renderSpeedComparisonTab?.();
+    } else if (target === 'settings') {
+      hideContextTooltip();
+      closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
       pContext.hidden = true;
+      if (pSpeed) pSpeed.hidden = true;
       pTokens.hidden = true;
       if (pQuota) pQuota.hidden = true;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bSettings?.setAttribute('aria-expanded', String(activeSettingsAnchorId === 'badge-settings'));
       bTokens.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'false');
+      isContextSettingsView = true;
+      syncHostStackingElevation(true);
+      positionFloatingPanels();
+      if (pSettings) pSettings.hidden = false;
+      void refreshModulesDisplay();
+      if (!currentUnlockStatus && !unlockStatusFetchError && typeof refreshUnlockStatus === 'function') {
+        void refreshUnlockStatus();
+      }
+      if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
+    } else if (target === 'context') {
+      hideContextTooltip();
+      closeColorPicker();
+      setPlanDetailExpanded(false, { skipReposition: true });
+      if (pSpeed) pSpeed.hidden = true;
+      if (pSettings) pSettings.hidden = true;
+      pTokens.hidden = true;
+      if (pQuota) pQuota.hidden = true;
+      bContext.setAttribute('aria-expanded', String(activeContextAnchorId === 'badge'));
+      bSpeed?.setAttribute('aria-expanded', 'false');
+      bSettings?.setAttribute('aria-expanded', 'false');
+      bTokens.setAttribute('aria-expanded', 'false');
+      bQuota?.setAttribute('aria-expanded', 'false');
+      isContextSettingsView = false;
+      syncHostStackingElevation(true);
+      positionFloatingPanels();
+      pContext.hidden = false;
+      applyContextViewVisibility?.();
+      if (activeContextTab === 'models') {
+        if (typeof syncModelListQuotaIndicators === 'function') syncModelListQuotaIndicators(null, Date.now(), true);
+        void refreshUnlockStatus();
+      }
+    } else {
+      setPlanDetailExpanded(false, { skipReposition: true });
+      pContext.hidden = true;
+      if (pSpeed) pSpeed.hidden = true;
+      if (pSettings) pSettings.hidden = true;
+      pTokens.hidden = true;
+      if (pQuota) pQuota.hidden = true;
+      bContext.setAttribute('aria-expanded', 'false');
+      bSpeed?.setAttribute('aria-expanded', 'false');
+      bSettings?.setAttribute('aria-expanded', 'false');
+      bTokens.setAttribute('aria-expanded', 'false');
+      bQuota?.setAttribute('aria-expanded', 'false');
+      isContextSettingsView = false;
       closeColorPicker();
       hidePopover();
       syncHostStackingElevation(false);
@@ -11908,14 +12060,18 @@ function formatPeriodCalendarLabel(currentPeriod) {
   }
 
   let activeContextAnchorId = 'badge';
+  let activeSpeedAnchorId = 'badge-speed';
+  let activeSettingsAnchorId = 'badge-settings';
   let activeTokensAnchorId = 'badge-tokens';
   let activeQuotaAnchorId = 'badge-quota';
 
   function toggle(open, tab = 'context') {
     if (!open) {
       showPanel('none');
+    } else if (tab === 'tokens' || tab === 'quota' || tab === 'speed' || tab === 'settings') {
+      showPanel(tab);
     } else {
-      showPanel(tab === 'tokens' ? 'tokens' : (tab === 'quota' ? 'quota' : 'context'));
+      showPanel('context');
     }
   }
 
@@ -11925,6 +12081,24 @@ function formatPeriodCalendarLabel(currentPeriod) {
     } else {
       activeContextAnchorId = anchorId || 'badge';
       showPanel('context');
+    }
+  }
+
+  function toggleSpeed(anchorId = 'badge-speed') {
+    if (el('panel-speed') && !el('panel-speed').hidden && activeSpeedAnchorId === anchorId) {
+      showPanel('none');
+    } else {
+      activeSpeedAnchorId = anchorId || 'badge-speed';
+      showPanel('speed');
+    }
+  }
+
+  function toggleSettings(anchorId = 'badge-settings') {
+    if (el('panel-settings') && !el('panel-settings').hidden && activeSettingsAnchorId === anchorId) {
+      showPanel('none');
+    } else {
+      activeSettingsAnchorId = anchorId || 'badge-settings';
+      showPanel('settings');
     }
   }
 
@@ -15033,7 +15207,8 @@ function closeAllDropdowns(exceptWrap = null) {
 
   el('badge-quota')?.addEventListener('click', () => toggleQuota('badge-quota'));
   el('badge').addEventListener('click', () => toggleContext('badge'));
-  el('badge-speed')?.addEventListener('click', () => toggleContext('badge-speed'));
+  el('badge-speed')?.addEventListener('click', () => toggleSpeed('badge-speed'));
+  el('badge-settings')?.addEventListener('click', () => toggleSettings('badge-settings'));
   el('badge-tokens').addEventListener('click', () => toggleTokens('badge-tokens'));
   el('badge-overflow')?.addEventListener('click', toggleOverflowMenu);
   el('overflow-quota-btn')?.addEventListener('click', () => {
@@ -15041,17 +15216,24 @@ function closeAllDropdowns(exceptWrap = null) {
     showPanel('quota');
   });
   el('overflow-speed-btn')?.addEventListener('click', () => {
-    activeContextAnchorId = 'badge-overflow';
-    showPanel('context');
+    activeSpeedAnchorId = 'badge-overflow';
+    showPanel('speed');
   });
   el('overflow-tokens-btn')?.addEventListener('click', () => {
     activeTokensAnchorId = 'badge-overflow';
     showPanel('tokens');
   });
+  el('overflow-settings-btn')?.addEventListener('click', () => {
+    activeSettingsAnchorId = 'badge-overflow';
+    showPanel('settings');
+  });
   el('close').addEventListener('click', () => showPanel('none'));
+  el('close-speed')?.addEventListener('click', () => showPanel('none'));
+  el('close-settings')?.addEventListener('click', () => showPanel('none'));
   el('close-tokens')?.addEventListener('click', () => showPanel('none'));
   el('close-quota')?.addEventListener('click', () => showPanel('none'));
   el('badge-quota')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('badge-settings')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
   // 上下文圆环悬停与键盘聚焦气泡（面板打开时不通过悬停误切，必须通过显式左键点击切换）
   el('badge').addEventListener('mouseenter', () => {
@@ -15070,6 +15252,8 @@ function closeAllDropdowns(exceptWrap = null) {
   });
 
   el('theme-toggle')?.addEventListener('click', cycleTheme);
+  el('theme-toggle-speed')?.addEventListener('click', cycleTheme);
+  el('theme-toggle-settings')?.addEventListener('click', cycleTheme);
   el('theme-toggle-tokens')?.addEventListener('click', cycleTheme);
   el('badge').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
@@ -15080,8 +15264,6 @@ function closeAllDropdowns(exceptWrap = null) {
   // =========================================================================
   const btnTabSession = el('tab-ctx-session');
   const btnTabModels = el('tab-ctx-models');
-  const btnTabSpeed = el('tab-ctx-speed');
-  const btnTabSettings = el('tab-ctx-settings');
   const paneSession = el('pane-ctx-session');
   const paneModels = el('pane-ctx-models');
   const paneSpeed = el('pane-ctx-speed');
@@ -15109,6 +15291,7 @@ function closeAllDropdowns(exceptWrap = null) {
   const btnRestartConfirmGo = el('btn-restart-confirm-go');
   const ctxRestartFeedback = el('ctx-restart-feedback');
   const globalRestartModal = el('global-restart-modal');
+  if (globalRestartModal) globalRestartModal.hidden = true;
   const modalRestartTitle = el('modal-restart-title');
   const modalRestartText = el('modal-restart-text');
   const modalRestartFeedback = el('modal-restart-feedback');
@@ -15203,7 +15386,7 @@ function closeAllDropdowns(exceptWrap = null) {
   let activeContextTab = 'session';
   try {
     const savedTab = localStorage?.getItem(CTX_ACTIVE_TAB_KEY);
-    if (savedTab === 'session' || savedTab === 'models' || savedTab === 'speed') {
+    if (savedTab === 'session' || savedTab === 'models') {
       activeContextTab = savedTab;
     }
   } catch { }
@@ -16366,30 +16549,32 @@ function closeAllDropdowns(exceptWrap = null) {
 
   function applyContextViewVisibility() {
     if (ctxTabsBar) ctxTabsBar.hidden = false;
-    if (paneSettings) paneSettings.hidden = activeContextTab !== 'settings';
     if (paneSession) paneSession.hidden = activeContextTab !== 'session';
     if (paneModels) paneModels.hidden = activeContextTab !== 'models';
-    if (paneSpeed) paneSpeed.hidden = activeContextTab !== 'speed';
+    if (paneSpeed) paneSpeed.hidden = false;
+    if (paneSettings) paneSettings.hidden = false;
 
     setPillActive(btnTabSession, activeContextTab === 'session');
     setPillActive(btnTabModels, activeContextTab === 'models');
-    setPillActive(btnTabSpeed, activeContextTab === 'speed');
-    setPillActive(btnTabSettings, activeContextTab === 'settings');
     btnTabSession?.setAttribute('aria-selected', String(activeContextTab === 'session'));
     btnTabModels?.setAttribute('aria-selected', String(activeContextTab === 'models'));
-    btnTabSpeed?.setAttribute('aria-selected', String(activeContextTab === 'speed'));
-    btnTabSettings?.setAttribute('aria-selected', String(activeContextTab === 'settings'));
   }
 
   let prevTabBeforeSettings = 'models';
 
   function switchContextTab(tabName) {
-    if (tabName !== 'session' && tabName !== 'models' && tabName !== 'speed' && tabName !== 'settings') return;
-    if (activeContextTab !== 'settings') {
-      prevTabBeforeSettings = activeContextTab;
+    if (tabName === 'speed') {
+      showPanel('speed');
+      return;
     }
+    if (tabName === 'settings') {
+      prevTabBeforeSettings = activeContextTab === 'models' ? 'models' : 'session';
+      showPanel('settings');
+      return;
+    }
+    if (tabName !== 'session' && tabName !== 'models') return;
     activeContextTab = tabName;
-    isContextSettingsView = tabName === 'settings';
+    isContextSettingsView = false;
     try { localStorage?.setItem(CTX_ACTIVE_TAB_KEY, tabName); } catch { }
     applyContextViewVisibility();
     if (tabName === 'models') {
@@ -16397,37 +16582,28 @@ function closeAllDropdowns(exceptWrap = null) {
       if (!currentUnlockStatus && !unlockStatusFetchError) {
         void refreshUnlockStatus();
       }
-    } else if (tabName === 'speed') {
-      // 速度对比页只读取已有本地记录，绝不发起任何请求或 IPC
-      renderSpeedComparisonTab();
-    } else if (tabName === 'settings') {
-      void refreshModulesDisplay();
-      if (!currentUnlockStatus && !unlockStatusFetchError && typeof refreshUnlockStatus === 'function') {
-        void refreshUnlockStatus();
-      }
-      if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
     }
     positionFloatingPanels();
   }
 
   function openContextSettings(opts = {}) {
-    if (el('panel')?.hidden) showPanel('context');
-    switchContextTab('settings');
+    prevTabBeforeSettings = activeContextTab === 'models' ? 'models' : 'session';
+    showPanel('settings');
     if (opts.openColors) {
       toggleColorsDrawer(true);
+      try { el('btn-toggle-colors')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } catch { }
     }
     positionFloatingPanels();
   }
 
   function closeContextSettings() {
+    showPanel('context');
     switchContextTab(prevTabBeforeSettings || 'models');
     positionFloatingPanels();
   }
 
   btnTabSession?.addEventListener('click', () => switchContextTab('session'));
   btnTabModels?.addEventListener('click', () => switchContextTab('models'));
-  btnTabSpeed?.addEventListener('click', () => switchContextTab('speed'));
-  btnTabSettings?.addEventListener('click', () => switchContextTab('settings'));
 
   const FAMILY_MODE_I18N = {
     '': 'family.mode.hold',
@@ -17348,12 +17524,12 @@ function closeAllDropdowns(exceptWrap = null) {
 
   function sanitizeAutoCompactConfigClient(raw) {
     const base = raw && typeof raw === 'object' ? raw : {};
-    const rawPct = Number(base.minRemainingPct ?? base.thresholdPct ?? DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT);
+    const rawPct = Number(base.minRemainingPct ?? base.thresholdRemainingPct ?? base.thresholdPct ?? DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT);
     const minRemainingPct = Number.isFinite(rawPct)
       ? Math.max(AUTO_COMPACT_MIN_PCT, Math.min(AUTO_COMPACT_MAX_PCT, Math.round(rawPct)))
       : DEFAULT_AUTO_COMPACT_MIN_REMAINING_PCT;
     return {
-      enabled: base.enabled === true,
+      enabled: typeof base.enabled === 'boolean' ? base.enabled : DEFAULT_AUTO_COMPACT_ENABLED,
       minRemainingPct
     };
   }
@@ -17365,6 +17541,80 @@ function closeAllDropdowns(exceptWrap = null) {
     } catch {
       return null;
     }
+  }
+
+  let postCompactWatchTimer = null;
+  let postCompactWatchMeta = null;
+
+  function stopPostCompactWatch() {
+    if (postCompactWatchTimer) {
+      clearTimeout(postCompactWatchTimer);
+      postCompactWatchTimer = null;
+    }
+    postCompactWatchMeta = null;
+  }
+  earlyDisposeHooks.push(() => stopPostCompactWatch());
+
+  function isCompactSlashCommandRequest(parsed) {
+    if (!parsed || typeof parsed !== 'object') return false;
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+    for (const entry of items) {
+      if (!entry || typeof entry !== 'object') continue;
+      const slashName = String(
+        entry?.item?.slashCommand?.info?.name ||
+        entry?.item?.slash_command?.info?.name ||
+        entry?.slashCommand?.info?.name ||
+        entry?.slash_command?.info?.name ||
+        ''
+      ).trim().toLowerCase();
+      if (slashName === 'compact') return true;
+      const rawText = String(entry?.text ?? entry?.item?.text ?? '').trim().toLowerCase();
+      if (rawText === '/compact' || rawText.startsWith('/compact ')) return true;
+    }
+    return false;
+  }
+
+  function startPostCompactWatch(id, baseline = {}) {
+    if (!id || state.disposed || state.route !== id || typeof setTimeout !== 'function') return;
+    stopPostCompactWatch();
+    const watchGen = state.generation;
+    const stepCountBefore = Number(baseline.stepCountBefore ?? state.scan?.session?.steps ?? 0) || 0;
+    const generatorCountBefore = Number(baseline.generatorCountBefore ?? state.count ?? 0) || 0;
+    const checkpointIndexBefore = Number.isFinite(Number(baseline.checkpointIndexBefore))
+      ? Number(baseline.checkpointIndexBefore)
+      : (Number.isFinite(Number(state.scan?.session?.latestCheckpoint?.index)) ? Number(state.scan.session.latestCheckpoint.index) : -1);
+    const deadline = Date.now() + 90000;
+    postCompactWatchMeta = { id, watchGen, stepCountBefore, generatorCountBefore, checkpointIndexBefore, deadline };
+
+    const pollOnce = () => {
+      postCompactWatchTimer = null;
+      if (state.disposed || !postCompactWatchMeta || postCompactWatchMeta.id !== id || postCompactWatchMeta.watchGen !== state.generation || state.route !== id) {
+        stopPostCompactWatch();
+        return;
+      }
+      const sess = state.scan?.session || null;
+      const cpIdx = Number.isFinite(Number(sess?.latestCheckpoint?.index)) ? Number(sess.latestCheckpoint.index) : -1;
+      const compacting = Boolean(sess?.compactingInProgress);
+      const checkpointDone = (cpIdx > checkpointIndexBefore || (stepCountBefore > 0 && cpIdx >= stepCountBefore)) && !compacting;
+      const genProgressed = (state.count || 0) > generatorCountBefore;
+      if ((state.latest?.compacted && !compacting) || checkpointDone || genProgressed || Date.now() >= deadline) {
+        stopPostCompactWatch();
+        return;
+      }
+      state.scanNext = 0;
+      if (!state.scanBusy) {
+        void scan(state.generation, id, true);
+      }
+      state.requestNext = 0;
+      if (!state.requestBusy) {
+        void requestPoll(state.generation, id);
+      }
+      if (!state.disposed && postCompactWatchMeta && postCompactWatchMeta.id === id && Date.now() < deadline) {
+        postCompactWatchTimer = setTimeout(pollOnce, 2500);
+      }
+    };
+
+    postCompactWatchTimer = setTimeout(pollOnce, 1500);
   }
 
   function captureSafeSendEnvelopeFromRequest(rawReqOrBody) {
@@ -17379,6 +17629,13 @@ function closeAllDropdowns(exceptWrap = null) {
       }
       if (!parsed || typeof parsed !== 'object') return;
       const cid = String(parsed.cascadeId || parsed.cascade_id || '').trim();
+      if (cid && cid === state.route && isCompactSlashCommandRequest(parsed)) {
+        startPostCompactWatch(cid, {
+          stepCountBefore: state.scan?.session?.steps ?? 0,
+          generatorCountBefore: state.count ?? 0,
+          checkpointIndexBefore: state.scan?.session?.latestCheckpoint?.index ?? -1
+        });
+      }
       const metadata = clonePlainObjectSafe(parsed.metadata);
       const cascadeConfig = clonePlainObjectSafe(parsed.cascadeConfig || parsed.cascade_config);
       if (!metadata && !cascadeConfig) return;
@@ -17761,15 +18018,13 @@ function closeAllDropdowns(exceptWrap = null) {
         } else {
           setCompactStatus('session.compact.okManual', null, 'ok', id);
         }
-        if (typeof setTimeout === 'function' && !state.disposed) {
-          setTimeout(() => {
-            if (state.disposed) return;
-            state.requestNext = 0;
-            if (!state.requestBusy && state.route === id) {
-              void requestPoll(state.generation, id);
-            }
-          }, 1500);
-        }
+        startPostCompactWatch(id, {
+          stepCountBefore: Number(res.stepCountBefore ?? state.scan?.session?.steps ?? 0),
+          generatorCountBefore: Number(res.generatorCountBefore ?? state.count ?? 0),
+          checkpointIndexBefore: Number.isFinite(Number(res.checkpointIndexBefore))
+            ? Number(res.checkpointIndexBefore)
+            : (state.scan?.session?.latestCheckpoint?.index ?? -1)
+        });
       } else if (res?.busy) {
         if (!opts.isAuto) {
           setCompactStatus('session.compact.errBusy', null, 'warn', id);
@@ -17962,7 +18217,7 @@ function closeAllDropdowns(exceptWrap = null) {
         || curProd.members[0];
       if (targetMember) selectedSpeedExactModelId = targetMember.modelId;
     }
-    switchContextTab('speed');
+    showPanel('speed');
   });
 
   btnCtxBackCurrent?.addEventListener('click', () => {
@@ -19815,7 +20070,8 @@ function closeAllDropdowns(exceptWrap = null) {
     if (typeof renderQuotaBoard === 'function') renderQuotaBoard();
     if (!isContextSettingsView && activeContextTab === 'models') {
       renderModelSettingsTab();
-    } else if (!isContextSettingsView && activeContextTab === 'speed') {
+    }
+    if (el('panel-speed') && !el('panel-speed').hidden) {
       renderSpeedComparisonTab();
     }
   }
@@ -23264,6 +23520,10 @@ function closeAllDropdowns(exceptWrap = null) {
   };
   const escape = e => {
     if (e.key === 'Escape') {
+      if (globalRestartModal && !globalRestartModal.hidden) {
+        globalRestartModal.hidden = true;
+        return;
+      }
       if (accountsUiState.removeModal?.open) {
         if (!accountsUiState.removeModal.busy) closeRemoveAccountModal();
         return;
@@ -23349,7 +23609,7 @@ function closeAllDropdowns(exceptWrap = null) {
       if (file.unknownParts?.length) { const unknown = document.createElement('div'); unknown.className = 'file-unknown'; unknown.textContent = t('files.unknownPrefix', { parts: file.unknownParts.join('；') }); item.appendChild(unknown); }
       nodes.push(item);
     }
-    const outerPanel = el('panel');
+    const outerPanel = el('panel-settings') || el('panel');
     const prevPanelScrollTop = (outerPanel && typeof outerPanel.scrollTop === 'number') ? outerPanel.scrollTop : 0;
     parent.replaceChildren();
     for (const n of nodes) parent.appendChild(n);
@@ -23529,9 +23789,10 @@ function closeAllDropdowns(exceptWrap = null) {
     }
     if (Array.isArray(payload.speedRecords)) {
       ANTIGRAVITY_TOKEN_DATA.speedRecords = payload.speedRecords;
-      if (!isContextSettingsView && activeContextTab === 'speed') {
+      if (el('panel-speed') && !el('panel-speed').hidden) {
         renderSpeedComparisonTab();
-      } else if (!isContextSettingsView && activeContextTab === 'models') {
+      }
+      if (!isContextSettingsView && activeContextTab === 'models') {
         renderModelSettingsTab();
       }
     }
@@ -26003,6 +26264,16 @@ var cumLockedKey = null;
         ringFill.setAttribute('data-ring-state', 'exceeded');
         ringFill.setAttribute('stroke-dasharray', `${RING_CIRCUMFERENCE.toFixed(2)} ${RING_CIRCUMFERENCE.toFixed(2)}`);
         ringFill.style.opacity = '1';
+      } else if (d?.compacted && !danger && !stale) {
+        ringFill.setAttribute('data-ring-state', 'estimated');
+        if (pct != null && pct > 0) {
+          const arcLen = Math.max(1.8, (Math.min(100, pct) / 100) * RING_CIRCUMFERENCE);
+          ringFill.setAttribute('stroke-dasharray', `${arcLen.toFixed(2)} ${RING_CIRCUMFERENCE.toFixed(2)}`);
+          ringFill.style.opacity = '0.82';
+        } else {
+          ringFill.setAttribute('stroke-dasharray', '3.2 4.97');
+          ringFill.style.opacity = '0.65';
+        }
       } else if (pct != null) {
         ringFill.setAttribute('data-ring-state', 'determinate');
         if (pct <= 0) {
@@ -26041,6 +26312,21 @@ var cumLockedKey = null;
       tipDetail.textContent = session?.total
         ? t('tip.detail.sessionEst', { low: fmtBubbleToken(session.total.low), high: fmtBubbleToken(session.total.high) })
         : t('tip.detail.waitBg');
+    } else if (d?.compacted) {
+      tipTitle.textContent = t('tip.title.compacted');
+      if (pct != null) {
+        const usedRound = pct > 0 && pct < 1 ? 1 : Math.min(100, Math.max(0, Math.round(pct)));
+        const remRound = Math.max(0, 100 - usedRound);
+        tipPct.textContent = t('tip.pct.compactedVal', { used: usedRound, rem: remRound });
+      } else {
+        tipPct.textContent = t('tip.pct.estOnly');
+      }
+      if (d.estimate != null && d.budget) {
+        tipDetail.textContent = t('tip.detail.compactedWait', { used: fmtBubbleToken(d.estimate), budget: fmtBubbleToken(d.budget) });
+      } else {
+        const budgetPart = d.budget ? t('tip.detail.estBudgetPart', { budget: fmtBubbleToken(d.budget) }) : t('tip.detail.estNoBudgetPart');
+        tipDetail.textContent = t('tip.detail.estUsed', { used: fmtBubbleToken(d.estimate), budget: budgetPart });
+      }
     } else if (d?.actual != null && d?.budget) {
       const rawPct = pct != null ? pct : (d.actual / d.budget) * 100;
       const usedRound = rawPct > 0 && rawPct < 1 ? 1 : Math.min(100, Math.max(0, Math.round(rawPct)));
@@ -26431,71 +26717,6 @@ var cumLockedKey = null;
     }
   }
 
-  let lastCallCardLang = '';
-  let timelineFetchController = null;
-  let timelineFetchSeq = 0;
-
-  function prefersReducedMotionNow() {
-    try {
-      return Boolean(typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    } catch {
-      return false;
-    }
-  }
-
-  function formatCallTimeStr(call) {
-    if (!call) return '—';
-    const rawTs = call.timestamp || (call.created_at ? Date.parse(call.created_at) : NaN);
-    if (!Number.isFinite(rawTs) || rawTs <= 0) return t('session.latestCall.unknownVal');
-    try {
-      return new Date(rawTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    } catch {
-      return new Date(rawTs).toLocaleTimeString();
-    }
-  }
-
-  function formatCallModelTitle(call) {
-    if (!call) return t('session.latestCall.unknownVal');
-    if (call.isPlaceholderOnly && !call.isRoutedModelVerified) {
-      const rawId = call.rawPlaceholderId || call.modelExactId || call.model || '';
-      return rawId ? t('session.latestCall.unknownMappedModel', { id: rawId }) : t('session.latestCall.unknownVal');
-    }
-    const rawLbl = call.modelLabel || (call.model && !/^model_/i.test(String(call.model)) ? String(call.model) : '');
-    if (rawLbl) {
-      if (typeof splitModelDisplayAndEffort === 'function') {
-        const split = splitModelDisplayAndEffort(rawLbl, call.effort);
-        if (split.baseLabel) return split.baseLabel;
-      }
-      return rawLbl;
-    }
-    if (call.stableModelId && !/^model_placeholder_/i.test(String(call.stableModelId))) return String(call.stableModelId);
-    if (call.modelExactId && !/^model_placeholder_/i.test(String(call.modelExactId))) return String(call.modelExactId);
-    if (call.model && !/^model_placeholder_/i.test(String(call.model))) return String(call.model);
-    if (call.rawPlaceholderId || call.modelExactId || call.model) {
-      return t('session.latestCall.unknownMappedModel', { id: call.rawPlaceholderId || call.modelExactId || call.model });
-    }
-    return t('session.latestCall.unknownVal');
-  }
-
-  function buildCallDisplaySignature(call) {
-    if (!call) return '';
-    return [
-      call.callId || '',
-      call.outcomeStatus || call.status || '',
-      call.inputTokens ?? '',
-      call.cacheReadTokens ?? '',
-      call.outputTokens ?? '',
-      call.totalTokens ?? '',
-      call.modelExactId || call.model || '',
-      call.modelLabel || '',
-      call.effort || '',
-      call.durationSec ?? '',
-      call.ttftSec ?? '',
-      call.error || '',
-      call.agentRole || ''
-    ].join('|');
-  }
-
   function resolveLatestSessionCallRecord() {
     if (!state.route) return null;
     const rawPool = [];
@@ -26567,583 +26788,6 @@ var cumLockedKey = null;
     return candidates[candidates.length - 1];
   }
 
-  function isElementActivelyInspected() {
-    try {
-      const det = el('latest-call-details');
-      const tl = el('session-timeline-drawer');
-      if (det && state.latestCallDetailOpen && typeof det.matches === 'function' && det.matches(':hover')) return true;
-      if (tl && state.historyDrawerOpen && typeof tl.matches === 'function' && tl.matches(':hover')) return true;
-      const activeEl = shadow?.activeElement || document?.activeElement;
-      if (activeEl && ((det && det.contains?.(activeEl)) || (tl && tl.contains?.(activeEl)))) return true;
-      const sel = shadow?.getSelection?.() || window?.getSelection?.();
-      if (sel && String(sel.toString() || '').trim().length > 0 && sel.anchorNode) {
-        const card = el('latest-call-card');
-        if (card && card.contains?.(sel.anchorNode)) return true;
-      }
-    } catch { }
-    return false;
-  }
-
-  function isCallCardReadingProtected(incomingCall) {
-    if (!state.displayedCallRecord || !incomingCall) return false;
-    if (state.pinnedCallRecord) return true;
-    const differentCall = incomingCall.callId !== state.displayedCallRecord.callId;
-    if (!differentCall) return false;
-    if (state.latestCallDetailOpen && state.displayedCallRecord.status !== 'streaming') return true;
-    if (isElementActivelyInspected()) return true;
-    return false;
-  }
-
-  function resolveCallStatusDisplay(call) {
-    const out = call?.outcomeStatus || call?.status || 'unknown';
-    if (out === 'streaming') return { text: t('session.latestCall.statusStreaming'), cls: 'key-pill pill-warn' };
-    if (out === 'canceled') return { text: t('session.latestCall.statusCanceled'), cls: 'key-pill pill-muted' };
-    if (out === 'success' || out === 'final') return { text: t('session.latestCall.statusSuccess'), cls: 'key-pill pill-good' };
-    if (out === 'quota_exhausted' || out === 'context_overflow' || out === 'exceeded' || out === 'network' || out === 'network_error' || out === 'rate_limit' || out === 'failed' || call?.error) {
-      return { text: t('session.latestCall.statusFailed'), cls: 'key-pill pill-danger' };
-    }
-    return { text: t('session.latestCall.statusUnknown'), cls: 'key-pill pill-muted' };
-  }
-
-  function formatCallCachePctText(call) {
-    if (!call) return t('session.latestCall.unknownVal');
-    if (call.cacheStatus === 'missing' || !call.hasInputCacheFields) return t('session.latestCall.unknownVal');
-    if (call.cacheStatus === 'zero_input') return t('session.latestCall.naVal');
-    if (call.cacheReadPct !== null && call.cacheReadPct !== undefined) return `${call.cacheReadPct}%`;
-    return t('session.latestCall.unknownVal');
-  }
-
-  function applyLatestCallRecordToDom(call, { playAnim = false } = {}) {
-    const card = el('latest-call-card');
-    if (!card) return;
-    const statusPill = el('latest-call-status-pill');
-    const agentPill = el('latest-call-agent-pill');
-    const timeEl = el('latest-call-time');
-    const modelEl = el('latest-call-model');
-    const effortEl = el('latest-call-effort');
-    const tokInline = el('latest-call-tokens-inline');
-    const cacheInline = el('latest-call-cache-inline');
-    const durInline = el('latest-call-duration-inline');
-    const detailGrid = el('latest-call-detail-grid');
-    const errorBox = el('latest-call-error-box');
-    const bodyEl = el('latest-call-body');
-
-    const st = resolveCallStatusDisplay(call);
-    if (statusPill) {
-      statusPill.textContent = st.text;
-      statusPill.className = st.cls;
-    }
-
-    if (agentPill) {
-      if (call.agentRole === 'subagent') {
-        agentPill.hidden = false;
-        agentPill.className = 'call-agent-badge is-subagent';
-        agentPill.textContent = call.subagentType ? `${t('session.latestCall.agentSub')} · ${call.subagentType}` : t('session.latestCall.agentSub');
-      } else if (call.attributionConfidence === 'unidentified') {
-        agentPill.hidden = false;
-        agentPill.className = 'call-agent-badge is-unknown';
-        agentPill.textContent = t('session.latestCall.agentUnknown');
-      } else {
-        agentPill.hidden = false;
-        agentPill.className = 'call-agent-badge';
-        agentPill.textContent = t('session.latestCall.agentMain');
-      }
-    }
-
-    if (timeEl) timeEl.textContent = formatCallTimeStr(call);
-    const modelTitle = formatCallModelTitle(call);
-    if (modelEl) {
-      modelEl.textContent = modelTitle;
-      modelEl.title = call.modelExactId ? `${modelTitle} (${call.modelExactId})` : modelTitle;
-    }
-    if (effortEl) {
-      if (call.effort) {
-        effortEl.hidden = false;
-        effortEl.textContent = call.effort;
-      } else {
-        effortEl.hidden = true;
-        effortEl.textContent = '';
-      }
-    }
-
-    const unk = t('session.latestCall.unknownVal');
-    const scoreInline = el('latest-call-score-inline');
-    const callEval = (typeof evaluateGenerationExperience === 'function')
-      ? evaluateGenerationExperience({
-          phase: call.status === 'streaming' ? 'streaming' : (call.outcomeStatus === 'canceled' ? 'canceled' : (call.error ? 'failed' : 'final')),
-          outcomeStatus: call.outcomeStatus,
-          ttftSec: call.ttftSec,
-          streamingSec: call.streamingSec,
-          totalDurationSec: call.durationSec,
-          streamSpeed: call.streamingTps ?? call.streamSpeed,
-          overallTps: call.tps,
-          outputTokens: call.outputTokens,
-          totalInputTokens: call.totalInputTokens,
-          chunkCount: call.chunkCount,
-          chunkIntervalsMs: call.chunkIntervalsMs,
-          intervalCv: call.intervalCv,
-          sampleSource: call.sampleSource || null,
-          isSyntheticPoll: call.isSyntheticPoll === true,
-          error: call.error
-        }, currentPanelLanguage)
-      : null;
-
-    if (scoreInline) {
-      if (callEval && callEval.efficiency?.available) {
-        scoreInline.hidden = false;
-        scoreInline.textContent = `${callEval.efficiency.score}${currentPanelLanguage === 'en' ? ' pts' : '分'} · ${callEval.efficiency.grade}`;
-        scoreInline.style.color = callEval.efficiency.tier?.color || '';
-        scoreInline.style.borderColor = callEval.efficiency.tier?.color || '';
-        scoreInline.title = callEval.shortTitle || '';
-      } else if (call.eScore != null && call.eGrade) {
-        scoreInline.hidden = false;
-        scoreInline.textContent = `${call.eScore}${currentPanelLanguage === 'en' ? ' pts' : '分'} · ${call.eGrade}`;
-        scoreInline.style.color = callEval?.badge?.color || '';
-        scoreInline.style.borderColor = callEval?.badge?.color || '';
-      } else {
-        scoreInline.hidden = true;
-        scoreInline.textContent = '—';
-        scoreInline.style.color = '';
-        scoreInline.style.borderColor = '';
-      }
-    }
-
-    const inpStr = call.hasInputCacheFields && call.inputTokens !== null ? short(call.inputTokens) : unk;
-    const outStr = call.outputTokens !== null && call.outputTokens !== undefined ? short(call.outputTokens) : unk;
-    if (tokInline) tokInline.textContent = t('session.latestCall.inlineTokens', { inp: inpStr, out: outStr });
-    if (cacheInline) cacheInline.textContent = t('session.latestCall.inlineCache', { val: formatCallCachePctText(call) });
-    if (durInline) durInline.textContent = call.durationSec !== null && call.durationSec !== undefined
-      ? (typeof formatHumanDuration === 'function' ? formatHumanDuration(call.durationSec, currentPanelLanguage) : `${call.durationSec}s`)
-      : '—';
-
-    if (detailGrid) {
-      detailGrid.replaceChildren();
-      const agentDesc = call.agentRole === 'subagent'
-        ? `${t('session.latestCall.agentSub')}${call.subagentRole ? ` (${call.subagentRole})` : (call.subagentType ? ` (${call.subagentType})` : '')}${call.parentCascadeId ? ` · parent ${String(call.parentCascadeId).slice(0, 8)}` : ''}${call.parentStepIndex != null ? ` · step #${call.parentStepIndex}` : ` · ${t('session.latestCall.missingParentStep')}`}`
-        : (call.attributionConfidence === 'unidentified' ? t('session.latestCall.agentUnknown') : t('session.latestCall.agentMain'));
-      const fmtDurOrUnk = (v) => (v !== null && v !== undefined) ? (typeof formatHumanDuration === 'function' ? formatHumanDuration(v, currentPanelLanguage) : `${v}s`) : unk;
-      const eDetailVal = callEval?.efficiency?.available
-        ? `${callEval.efficiency.score} ${currentPanelLanguage === 'en' ? 'pts' : '分'} · ${callEval.efficiency.tier?.title || callEval.efficiency.grade}`
-        : (call.eScore != null ? `${call.eScore} (${call.eGrade || '--'})` : (callEval?.efficiency?.skippedReason === 'insufficient_sample' ? t('session.speed.scoreSkippedSparse') : t('session.speed.scoreSkippedMissing')));
-      const rawIdBadge = call.rawPlaceholderId ? ` (${t('session.latestCall.rawIdNote', { id: call.rawPlaceholderId })})` : '';
-      const stableIdDisplay = (call.stableModelId && !/^model_placeholder_/i.test(String(call.stableModelId)))
-        ? `${call.stableModelId}${rawIdBadge}`
-        : ((call.modelExactId && !/^model_placeholder_/i.test(String(call.modelExactId)))
-          ? `${call.modelExactId}${rawIdBadge}`
-          : (call.rawPlaceholderId
-            ? `${unk} (${t('session.latestCall.rawIdNote', { id: call.rawPlaceholderId })})`
-            : (call.modelExactId || call.modelKey || unk)));
-      const modelAndEffortDisplay = formatProductDisplayWithEffort(modelTitle, call.effort);
-      const callStreamDisplay = callEval?.isSampleSparse
-        ? `${t('session.speed.shortSampleBadge')}${callEval.shortWindowEstimateSpeed != null ? ` (${t('session.speed.shortWindowEst')}: ${callEval.shortWindowEstimateSpeed} tok/s)` : ''}`
-        : ((call.streamingTps ?? call.streamSpeed) != null ? `${call.streamingTps ?? call.streamSpeed} tok/s${callEval?.speedTier ? ` · ${callEval.speedTier.title}` : ''}` : unk);
-      const cells = [
-        [t('session.latestCall.fieldTime'), formatCallTimeStr(call)],
-        [t('session.latestCall.fieldStatus'), st.text],
-        [t('session.latestCall.fieldModelId'), stableIdDisplay],
-        [t('session.latestCall.fieldModelLabel'), modelAndEffortDisplay],
-        [t('session.latestCall.fieldInput'), call.hasInputCacheFields && call.inputTokens !== null ? fmt(call.inputTokens) : unk],
-        [t('session.latestCall.fieldCacheRead'), call.hasInputCacheFields && call.cacheReadTokens !== null ? fmt(call.cacheReadTokens) : unk],
-        [t('session.latestCall.fieldTotalInput'), call.hasInputCacheFields && call.totalInputTokens !== null ? fmt(call.totalInputTokens) : unk],
-        [t('session.latestCall.fieldOutput'), call.outputTokens !== null && call.outputTokens !== undefined
-          ? `${fmt(call.outputTokens)}${call.thinkingTokens ? ` (${fmt(call.thinkingTokens)})` : ''}`
-          : unk],
-        [t('session.latestCall.fieldCacheRatio'), formatCallCachePctText(call)],
-        [t('session.latestCall.fieldTtft'), `${fmtDurOrUnk(call.ttftSec)}${call.ttftRatioPct != null ? ` (${call.ttftRatioPct}%)` : ''}${callEval?.ttftTier ? ` · ${callEval.ttftTier.title}` : ''}`],
-        [t('session.latestCall.fieldDuration'), `${fmtDurOrUnk(call.durationSec)}${callEval?.durationTier ? ` · ${callEval.durationTier.title}` : ''}`],
-        [t('session.speed.streamRate'), callStreamDisplay],
-        [t('session.speed.breakdown.overall'), call.tps !== null && call.tps !== undefined ? `${call.tps} tok/s` : unk],
-        [t('session.speed.breakdown.eScore'), eDetailVal],
-        [t('session.latestCall.fieldAgent'), agentDesc]
-      ];
-      for (const [k, v] of cells) {
-        const cell = document.createElement('div');
-        cell.className = 'call-detail-cell';
-        const kEl = document.createElement('span');
-        kEl.className = 'call-detail-k';
-        kEl.textContent = k;
-        const vEl = document.createElement('span');
-        vEl.className = 'call-detail-v';
-        vEl.textContent = v;
-        cell.appendChild(kEl);
-        cell.appendChild(vEl);
-        detailGrid.appendChild(cell);
-      }
-    }
-
-    if (errorBox) {
-      if (call.error || st.cls.includes('pill-danger')) {
-        errorBox.hidden = false;
-        const reason = call.errorClassification?.reason || '';
-        errorBox.textContent = [reason, call.error].filter(Boolean).join(' · ') || st.text;
-      } else {
-        errorBox.hidden = true;
-        errorBox.textContent = '';
-      }
-    }
-
-    if (bodyEl && playAnim && !prefersReducedMotionNow()) {
-      if (state.callEnterAnimTimer) {
-        clearTimeout(state.callEnterAnimTimer);
-        state.callEnterAnimTimer = null;
-      }
-      bodyEl.classList?.remove?.('is-entering');
-      void bodyEl.offsetWidth;
-      bodyEl.classList?.add?.('is-entering');
-      state.callEnterAnimTimer = setTimeout(() => {
-        state.callEnterAnimTimer = null;
-        bodyEl.classList?.remove?.('is-entering');
-      }, 250);
-    }
-  }
-
-  function syncLatestCallDetailsVisibility() {
-    const det = el('latest-call-details');
-    const row = el('latest-call-summary-row');
-    if (det) det.style.display = state.latestCallDetailOpen ? 'block' : 'none';
-    if (row) row.setAttribute?.('aria-expanded', state.latestCallDetailOpen ? 'true' : 'false');
-  }
-
-  function renderLatestCallCard({ fromUserAction = false, skipAnim = false } = {}) {
-    const card = el('latest-call-card');
-    if (!card) return;
-    if (!state.route) {
-      card.hidden = true;
-      return;
-    }
-
-    const incoming = resolveLatestSessionCallRecord();
-    const target = state.pinnedCallRecord || incoming;
-    if (!target) {
-      card.hidden = !state.historyDrawerOpen;
-      return;
-    }
-    card.hidden = false;
-
-    const newBanner = el('latest-call-new-banner');
-    if (!fromUserAction && isCallCardReadingProtected(incoming)) {
-      if (incoming && (!state.pendingLatestCallRecord || buildCallDisplaySignature(incoming) !== buildCallDisplaySignature(state.pendingLatestCallRecord))) {
-        state.pendingLatestCallRecord = incoming;
-      }
-      if (newBanner) newBanner.hidden = false;
-      if (state.pinnedCallRecord && lastCallCardLang !== currentPanelLanguage) {
-        applyLatestCallRecordToDom(state.pinnedCallRecord, { playAnim: false });
-        lastCallCardLang = currentPanelLanguage;
-      }
-      syncLatestCallDetailsVisibility();
-      return;
-    }
-
-    if (newBanner) newBanner.hidden = true;
-    state.pendingLatestCallRecord = null;
-
-    const nextSig = buildCallDisplaySignature(target);
-    const langChanged = lastCallCardLang !== currentPanelLanguage;
-    if (nextSig === state.displayedCallSig && !langChanged) {
-      syncLatestCallDetailsVisibility();
-      return;
-    }
-
-    const hadPrev = Boolean(state.displayedCallRecord);
-    const isRealReplacement = hadPrev && nextSig !== state.lastAnimatedCallSig && target.status !== 'streaming';
-    const shouldAnimate = !skipAnim && isRealReplacement && nextSig !== state.displayedCallSig;
-
-    state.displayedCallRecord = target;
-    state.displayedCallSig = nextSig;
-    if (target.status !== 'streaming') {
-      state.lastAnimatedCallSig = nextSig;
-    }
-    lastCallCardLang = currentPanelLanguage;
-    applyLatestCallRecordToDom(target, { playAnim: shouldAnimate });
-    syncLatestCallDetailsVisibility();
-  }
-
-  function renderSessionTimeline() {
-    const drawer = el('session-timeline-drawer');
-    const toggleBtn = el('btn-session-history-toggle');
-    if (toggleBtn) {
-      toggleBtn.textContent = state.historyDrawerOpen ? t('session.timeline.hideHistory') : t('session.timeline.viewHistory');
-      toggleBtn.setAttribute?.('aria-expanded', state.historyDrawerOpen ? 'true' : 'false');
-    }
-    if (!drawer) return;
-    drawer.style.display = state.historyDrawerOpen ? 'flex' : 'none';
-    if (!state.historyDrawerOpen) return;
-
-    const sumEl = el('session-timeline-summary');
-    const listEl = el('session-timeline-list');
-    const unlinkedEl = el('session-timeline-unlinked');
-    const moreWrap = el('session-timeline-more-wrap');
-    const moreBtn = el('btn-timeline-load-more');
-
-    if (state.timelineLoading && !state.sessionTimeline) {
-      if (sumEl) sumEl.textContent = t('session.timeline.loading');
-      if (listEl) listEl.replaceChildren();
-      if (unlinkedEl) unlinkedEl.hidden = true;
-      if (moreWrap) moreWrap.hidden = true;
-      return;
-    }
-
-    const tl = state.sessionTimeline;
-    if (!tl || (!tl.turns?.length && !tl.unlinkedSubagentCalls?.length)) {
-      if (sumEl) sumEl.textContent = state.timelineError ? translateBackendText(state.timelineError) : t('session.timeline.empty');
-      if (listEl) listEl.replaceChildren();
-      if (unlinkedEl) unlinkedEl.hidden = true;
-      if (moreWrap) moreWrap.hidden = true;
-      return;
-    }
-
-    const turns = Array.isArray(tl.turns) ? tl.turns : [];
-    const cacheText = tl.cacheSummary && tl.cacheSummary.cacheStatus !== 'missing'
-      ? (tl.cacheSummary.cacheStatus === 'zero_input' ? t('session.latestCall.naVal') : `${tl.cacheSummary.cacheReadPct}%`)
-      : t('session.latestCall.unknownVal');
-    if (sumEl) {
-      sumEl.replaceChildren();
-      const sLine = document.createElement('div');
-      sLine.textContent = t('session.timeline.summary', {
-        turns: turns.length,
-        calls: tl.totalCalls || 0,
-        main: tl.mainCallsCount || 0,
-        sub: tl.subagentCallsCount || 0,
-        cache: cacheText
-      });
-      const noteLine = document.createElement('div');
-      noteLine.style.marginTop = '2px';
-      noteLine.textContent = t('session.timeline.windowNote');
-      sumEl.appendChild(sLine);
-      sumEl.appendChild(noteLine);
-      if (tl.subagentNote) {
-        const dbNoteLine = document.createElement('div');
-        dbNoteLine.style.marginTop = '2px';
-        dbNoteLine.textContent = t('session.timeline.dbMissingNote', { reason: tl.subagentNote });
-        sumEl.appendChild(dbNoteLine);
-      }
-    }
-
-    if (listEl) {
-      const curRouteKey = state.route || '';
-      const sameTimelineRoute = state.timelineRenderedRoute === curRouteKey;
-      const prevScrollTop = sameTimelineRoute ? Number(listEl.scrollTop || 0) : 0;
-      listEl.replaceChildren();
-      state.timelineRenderedRoute = curRouteKey;
-      const resolveTurnKey = (tObj) => tObj?.turnKey || `turn-${tObj?.turnIndex ?? 'x'}-${tObj?.stepIndex ?? 'na'}`;
-      const descTurns = [...turns].reverse();
-      if (descTurns.length > 0 && state.timelineAutoExpandedRoute !== curRouteKey) {
-        state.timelineAutoExpandedRoute = curRouteKey;
-        if (state.expandedTurnKeys.size === 0) {
-          state.expandedTurnKeys.add(resolveTurnKey(descTurns[0]));
-        }
-      }
-      const limit = Math.max(5, Number(state.timelinePageLimit) || 10);
-      const visibleTurns = descTurns.slice(0, limit);
-
-      const createCallRow = (call) => {
-        const row = document.createElement('div');
-        const isSelected = state.pinnedCallRecord && state.pinnedCallRecord.callId === call.callId;
-        row.className = `timeline-call-row${call.agentRole === 'subagent' ? ' is-subagent' : ''}${isSelected ? ' is-selected' : ''}`;
-        row.setAttribute('role', 'button');
-        row.setAttribute('tabindex', '0');
-
-        const main = document.createElement('div');
-        main.className = 'timeline-call-main';
-        const roleBadge = document.createElement('span');
-        roleBadge.className = `call-agent-badge${call.agentRole === 'subagent' ? ' is-subagent' : (call.attributionConfidence === 'unidentified' ? ' is-unknown' : '')}`;
-        roleBadge.textContent = call.agentRole === 'subagent'
-          ? (call.subagentType ? `${t('session.latestCall.agentSub')}·${call.subagentType}` : t('session.latestCall.agentSub'))
-          : (call.attributionConfidence === 'unidentified' ? t('session.latestCall.agentUnknown') : t('session.latestCall.agentMain'));
-        const mName = document.createElement('span');
-        mName.className = 'timeline-turn-prompt';
-        const baseModelTitle = formatCallModelTitle(call);
-        const effortText = call.effort ? String(call.effort).trim() : '';
-        const hasEffortParen = effortText && baseModelTitle.trim().toLowerCase().endsWith(`(${effortText.toLowerCase()})`);
-        mName.textContent = (effortText && !hasEffortParen) ? `${baseModelTitle} (${effortText})` : baseModelTitle;
-        main.appendChild(roleBadge);
-        main.appendChild(mName);
-
-        const stats = document.createElement('div');
-        stats.className = 'timeline-call-stats';
-        const st = resolveCallStatusDisplay(call);
-        const inpTxt = call.hasInputCacheFields ? short(call.totalInputTokens) : t('session.latestCall.unknownVal');
-        const eTag = (call.eScore != null && call.eGrade)
-          ? (currentPanelLanguage === 'en' ? ` · ${call.eScore}pt(${call.eGrade})` : ` · ${call.eScore}分(${call.eGrade})`)
-          : '';
-        if (currentPanelLanguage === 'en') {
-          stats.textContent = `${formatCallTimeStr(call)} · In ${inpTxt}/Out ${short(call.outputTokens || 0)} · Cache ${formatCallCachePctText(call)}${eTag} · ${st.text}`;
-        } else if (currentPanelLanguage === 'zh-TW') {
-          stats.textContent = `${formatCallTimeStr(call)} · 入${inpTxt}/出${short(call.outputTokens || 0)} · 緩${formatCallCachePctText(call)}${eTag} · ${st.text}`;
-        } else {
-          stats.textContent = `${formatCallTimeStr(call)} · 入${inpTxt}/出${short(call.outputTokens || 0)} · 缓${formatCallCachePctText(call)}${eTag} · ${st.text}`;
-        }
-
-        row.appendChild(main);
-        row.appendChild(stats);
-        const inspectCall = () => {
-          state.pinnedCallRecord = call;
-          state.latestCallDetailOpen = true;
-          renderLatestCallCard({ fromUserAction: true, skipAnim: false });
-          renderSessionTimeline();
-        };
-        row.addEventListener('click', inspectCall);
-        row.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inspectCall(); }
-        });
-        return row;
-      };
-
-      for (const turn of visibleTurns) {
-        const turnKey = resolveTurnKey(turn);
-        const isOpen = state.expandedTurnKeys.has(turnKey);
-        const cardEl = document.createElement('div');
-        cardEl.className = 'timeline-turn-card';
-
-        const hdrBtn = document.createElement('button');
-        hdrBtn.type = 'button';
-        hdrBtn.className = 'timeline-turn-hdr';
-        hdrBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-
-        const left = document.createElement('div');
-        left.className = 'timeline-turn-left';
-        const idxEl = document.createElement('span');
-        idxEl.className = 'timeline-turn-idx';
-        idxEl.textContent = t('session.timeline.turnLabel', { n: turn.turnIndex });
-        const rawTurnPrompt = turn.preview || turn.userPromptPreview || '';
-        const promptText = typeof sanitizeTurnPreviewText === 'function' ? sanitizeTurnPreviewText(rawTurnPrompt, 120) : rawTurnPrompt;
-        const promptEl = document.createElement('span');
-        promptEl.className = 'timeline-turn-prompt';
-        promptEl.textContent = promptText || t('session.timeline.turnNoPrompt');
-        if (promptText) promptEl.title = promptText;
-        left.appendChild(idxEl);
-        left.appendChild(promptEl);
-
-        const metaEl = document.createElement('span');
-        metaEl.className = 'timeline-turn-meta';
-        metaEl.textContent = t('session.timeline.turnSummary', {
-          calls: turn.calls?.length || 0,
-          inp: short(turn.inputTokens || 0),
-          cap: short(turn.cacheReadTokens || 0),
-          out: short(turn.outputTokens || 0)
-        });
-
-        hdrBtn.appendChild(left);
-        hdrBtn.appendChild(metaEl);
-        hdrBtn.addEventListener('click', () => {
-          if (state.expandedTurnKeys.has(turnKey)) state.expandedTurnKeys.delete(turnKey);
-          else state.expandedTurnKeys.add(turnKey);
-          renderSessionTimeline();
-        });
-        cardEl.appendChild(hdrBtn);
-
-        if (isOpen && Array.isArray(turn.calls)) {
-          const bodyEl = document.createElement('div');
-          bodyEl.className = 'timeline-turn-body';
-          for (const call of turn.calls) {
-            bodyEl.appendChild(createCallRow(call));
-          }
-          cardEl.appendChild(bodyEl);
-        }
-        listEl.appendChild(cardEl);
-      }
-
-      if (moreWrap && moreBtn) {
-        const remaining = descTurns.length - visibleTurns.length;
-        if (remaining > 0) {
-          moreWrap.hidden = false;
-          moreBtn.textContent = t('session.timeline.loadMore', { n: remaining });
-        } else {
-          moreWrap.hidden = true;
-        }
-      }
-
-      if (unlinkedEl) {
-        const unlinked = Array.isArray(tl.unlinkedSubagentCalls) ? tl.unlinkedSubagentCalls : [];
-        if (unlinked.length > 0) {
-          unlinkedEl.hidden = false;
-          unlinkedEl.replaceChildren();
-          const uTitle = document.createElement('div');
-          uTitle.className = 'session-timeline-unlinked-title';
-          uTitle.textContent = t('session.timeline.unlinkedTitle', { n: unlinked.length });
-          unlinkedEl.appendChild(uTitle);
-          for (const uCall of unlinked) {
-            unlinkedEl.appendChild(createCallRow(uCall));
-          }
-        } else {
-          unlinkedEl.hidden = true;
-          unlinkedEl.replaceChildren();
-        }
-      }
-      if (prevScrollTop > 0) {
-        const maxScroll = Math.max(0, (listEl.scrollHeight || 0) - (listEl.clientHeight || 0));
-        listEl.scrollTop = maxScroll > 0 ? Math.min(prevScrollTop, maxScroll) : prevScrollTop;
-      }
-    }
-  }
-
-  async function fetchSessionTimeline(id, { force = false } = {}) {
-    if (!id || state.disposed || id !== state.route) return null;
-    if (!force && state.timelineLoading) return null;
-    const seq = ++timelineFetchSeq;
-    const gen = state.generation;
-    state.timelineLoading = true;
-    state.timelineError = '';
-    if (state.historyDrawerOpen) renderSessionTimeline();
-
-    try {
-      if (timelineFetchController) {
-        try { timelineFetchController.abort(); } catch { }
-      }
-      timelineFetchController = typeof AbortController === 'function' ? new AbortController() : null;
-      const liveCalls = Array.isArray(state.sessionCalls) ? state.sessionCalls : [];
-      const configs = state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [];
-      const hasIpc = typeof window !== 'undefined' && typeof window.contextMeterAPI?.getSessionTimeline === 'function';
-      let timelineData = null;
-
-      if (hasIpc || hasLiveHttpBridge()) {
-        const out = await callBackendWithPriority({
-          ipcCall: hasIpc ? () => window.contextMeterAPI.getSessionTimeline(id, { force, liveCalls, cascadeModelConfigs: configs }) : null,
-          liveRoute: '/session-timeline',
-          liveBody: { id, force, liveCalls, cascadeModelConfigs: configs },
-          liveFetchOpts: timelineFetchController ? { signal: timelineFetchController.signal } : {}
-        });
-        const res = out?.result;
-        if (res?.ok && res.data) {
-          timelineData = res.data;
-        } else if (res && !res.ok) {
-          state.timelineError = res.error || '';
-        }
-      } else if (typeof groupSessionCallsByTurns === 'function') {
-        timelineData = groupSessionCallsByTurns([], liveCalls, { cascadeId: id, cascadeModelConfigs: configs });
-      }
-
-      if (gen !== state.generation || seq !== timelineFetchSeq || state.disposed) return null;
-      if (timelineData) {
-        state.sessionTimeline = timelineData;
-        state.lastTimelineFetchAt = Date.now();
-      }
-    } catch (e) {
-      if (e?.name !== 'AbortError' && gen === state.generation && !state.disposed) {
-        state.timelineError = e?.message || String(e || '');
-      }
-    } finally {
-      if (seq === timelineFetchSeq && !state.disposed) {
-        state.timelineLoading = false;
-        if (state.historyDrawerOpen) renderSessionTimeline();
-      }
-    }
-    return state.sessionTimeline;
-  }
-
-  function scheduleLatestCallRefresh({ allowTimelineRefresh = false } = {}) {
-    if (state.disposed) return;
-    if (allowTimelineRefresh && state.historyDrawerOpen && state.route) {
-      const latest = resolveLatestSessionCallRecord();
-      const sig = buildCallDisplaySignature(latest);
-      if (sig && sig !== state.lastTimelineCallSig && Date.now() - state.lastTimelineFetchAt > 1200) {
-        state.lastTimelineCallSig = sig;
-        void fetchSessionTimeline(state.route);
-      }
-    }
-    renderLatestCallCard();
-  }
-
   // 渲染上下文与全局状态（无论在主页 / 还是会话页 /c/<id>，始终保持插件栏挂载与可用）
   function render() {
     host.hidden = false;
@@ -27161,8 +26805,6 @@ var cumLockedKey = null;
       syncSpeedBadgeText();
       el('badge-tokens').title = t('badge.tokensTitle');
       syncContextModelSelectionFromState();
-      renderLatestCallCard({ skipAnim: true });
-      renderSessionTimeline();
       return;
     }
     renderSessionCost();
@@ -27172,6 +26814,7 @@ var cumLockedKey = null;
     const stale = state.requestError || state.requestAt && Date.now() - state.requestAt > 20000;
     const incomplete = session?.unknownFiles > 0;
     const danger = disp.isError || d?.exceeded;
+    const isCompacted = Boolean(d?.compacted === true && !danger && !stale);
 
     let pct = null;
     if (d?.exceeded) {
@@ -27180,6 +26823,10 @@ var cumLockedKey = null;
       pct = Math.min(100, Math.max(0, d.percent));
     } else if (d?.actual != null && d?.budget && !danger && !stale) {
       pct = Math.min(100, Math.max(0, (d.actual / d.budget) * 100));
+    } else if (isCompacted && Number.isFinite(d?.estimatedPercent)) {
+      pct = Math.min(100, Math.max(0, Number(d.estimatedPercent)));
+    } else if (isCompacted && Number.isFinite(d?.estimate) && d?.budget) {
+      pct = Math.min(100, Math.max(0, (Number(d.estimate) / Number(d.budget)) * 100));
     }
 
     const barColor = danger ? '#ff4d4f' : pct != null && pct >= 90 ? '#ff4d4f' : pct != null && pct >= 75 || stale || incomplete ? '#faad14' : '#69c0ff';
@@ -27207,8 +26854,9 @@ var cumLockedKey = null;
       : stale ? t('badge.status.stale')
         : state.scanError ? t('badge.status.scanErr', { err: translateBackendText(state.scanError) })
           : incomplete ? t('badge.status.incomplete', { count: session.unknownFiles })
-            : d?.estimated ? t('badge.status.estimated')
-              : t('badge.status.normal');
+            : isCompacted ? t('badge.status.compacted')
+              : d?.estimated ? t('badge.status.estimated')
+                : t('badge.status.normal');
     el('status').textContent = status;
 
     const corpus = session?.total
@@ -27228,6 +26876,20 @@ var cumLockedKey = null;
       const pctStr = pct != null ? ` (${pct.toFixed(0)}%)` : '';
       el('amount').textContent = `${short(d.actual)}${pctStr}`;
       if (badgePctVal) badgePctVal.textContent = pct != null ? `${pct.toFixed(0)}%` : '--%';
+      const budgetStr = d?.budget ? ` / ${short(d.budget)}` : '';
+      setHoverExtra(`${budgetStr} · ${corpus}`);
+    } else if (isCompacted) {
+      const roundedPct = pct != null ? Math.round(pct) : null;
+      if (d?.estimate != null && roundedPct != null) {
+        el('amount').textContent = `~${short(d.estimate)} (~${roundedPct}%)`;
+        if (badgePctVal) badgePctVal.textContent = `~${roundedPct}%`;
+      } else if (roundedPct != null) {
+        el('amount').textContent = `${t('badge.compacted')} (~${roundedPct}%)`;
+        if (badgePctVal) badgePctVal.textContent = `~${roundedPct}%`;
+      } else {
+        el('amount').textContent = t('badge.compacted');
+        if (badgePctVal) badgePctVal.textContent = t('badge.compacted');
+      }
       const budgetStr = d?.budget ? ` / ${short(d.budget)}` : '';
       setHoverExtra(`${budgetStr} · ${corpus}`);
     } else {
@@ -27327,6 +26989,44 @@ var cumLockedKey = null;
             keyTakeaway.textContent = t('key.takeaway.ok', { pct: pct.toFixed(1), rem: short(remainVal) });
           }
         }
+      } else if (isCompacted) {
+        const limitVal = d?.budget || null;
+        const estVal = Number.isFinite(d?.estimate) ? Number(d.estimate) : null;
+        const remainVal = (limitVal != null && estVal != null) ? Math.max(0, limitVal - estVal) : null;
+        const remainPct = pct != null ? Math.max(0, 100 - pct) : null;
+        if (keyBadge) {
+          keyBadge.textContent = t('key.pill.compacted');
+          keyBadge.className = (pct != null && pct >= 75) ? 'key-pill pill-warn' : 'key-pill pill-good';
+        }
+        if (keyUsed) {
+          keyUsed.textContent = estVal != null
+            ? `~${short(estVal)}${pct != null ? ` (${pct.toFixed(1)}%)` : ''}`
+            : t('badge.compacted');
+        }
+        if (keyLimit) keyLimit.textContent = limitVal ? short(limitVal) : '—';
+        if (keyRemaining) {
+          keyRemaining.textContent = (remainVal != null && remainPct != null)
+            ? `~${short(remainVal)} (${remainPct.toFixed(1)}%)`
+            : t('key.pending');
+        }
+        if (keyTakeaway) {
+          if (Number.isFinite(d?.preCompactActual) && d.preCompactActual > 0 && estVal != null && remainVal != null) {
+            keyTakeaway.textContent = t('key.takeaway.compactedFrom', {
+              before: short(d.preCompactActual),
+              est: short(estVal),
+              pct: (pct ?? 0).toFixed(1),
+              rem: short(remainVal)
+            });
+          } else if (estVal != null && remainVal != null) {
+            keyTakeaway.textContent = t('key.takeaway.compacted', {
+              est: short(estVal),
+              pct: (pct ?? 0).toFixed(1),
+              rem: short(remainVal)
+            });
+          } else {
+            keyTakeaway.textContent = t('badge.status.compacted');
+          }
+        }
       } else {
         if (keyBadge) { keyBadge.textContent = d?.estimated ? t('key.pill.est') : t('key.pill.reading'); keyBadge.className = 'key-pill pill-muted'; }
         if (keyUsed) keyUsed.textContent = d?.estimate ? t('key.estPrefix', { val: short(d.estimate) }) : (session?.total ? short(session.total.low) : '—');
@@ -27383,7 +27083,7 @@ var cumLockedKey = null;
     }
 
     el('model').textContent = d?.model?.startsWith('MODEL_PLACEHOLDER') ? t('tech.modelPlaceholder', { id: d.model }) : d?.model || t('tech.modelMissing');
-    el('request-status').textContent = d?.exceeded ? t('tech.req.exceeded') : d?.network ? t('tech.req.network') : d?.error ? t('tech.req.failed') : d?.status === 'reported' ? t('tech.req.reported') : d?.status === 'estimated' ? t('tech.req.estimated') : t('tech.req.waiting');
+    el('request-status').textContent = d?.exceeded ? t('tech.req.exceeded') : d?.network ? t('tech.req.network') : d?.error ? t('tech.req.failed') : d?.status === 'reported' ? t('tech.req.reported') : (d?.status === 'compacted' || d?.compacted) ? t('tech.req.compacted') : d?.status === 'estimated' ? t('tech.req.estimated') : t('tech.req.waiting');
     el('actual').textContent = d?.actual != null ? token(d.actual) : d?.exceeded ? t('tech.actual.exceeded', { val: fmt(d.serviceLimit || 0) }) : t('tech.actual.unknown');
     if (d?.exceeded && !d.serviceLimit) el('actual').textContent = t('tech.actual.exceededNoLim');
     el('estimate').textContent = d?.estimate ? t('tech.est.val', { val: fmt(d.estimate), note: d.exceeded ? t('tech.est.under') : t('tech.est.ref') }) : t('tech.est.none');
@@ -27412,8 +27112,6 @@ var cumLockedKey = null;
       scan: state.scan ? new Date(state.scan.scannedAt).toLocaleTimeString() : t('tech.unfinished')
     });
     el('refresh').disabled = state.scanBusy;
-    scheduleLatestCallRefresh({ allowTimelineRefresh: false });
-    if (state.historyDrawerOpen) renderSessionTimeline();
   }
 
   const MAX_FLUSH_BATCH_CALLS = 500;
@@ -27963,11 +27661,21 @@ var cumLockedKey = null;
       if (state.pendingFinalCalls.size > 0) {
         void flushPendingFinalCalls(wasHydrated);
       }
+      const scanSession = state.scan?.session || null;
       for (let i = rows.length - 1; i >= 0; i--) {
-        const value = summarize(rows[i], { cascadeModelConfigs: state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [] });
+        const callInfo = parseGeneratorCall ? parseGeneratorCall(rows[i], id, 'desktop', { cascadeModelConfigs: modelConfigsList }) : null;
+        const value = summarize(rows[i], {
+          cascadeModelConfigs: modelConfigsList,
+          latestCheckpoint: scanSession?.latestCheckpoint || null,
+          lastAssistantAt: scanSession?.lastAssistantAt,
+          system: scanSession?.groups?.system || null,
+          definitions: scanSession?.groups?.definitions || null,
+          postCheckpointTotal: scanSession?.postCheckpointTotal || null,
+          currentCallId: callInfo?.callId || null,
+          preCompactCallId: state.scan?.latestCallId || null
+        });
         if (value) {
           state.latest = withStepError(value, rows[i]);
-          const callInfo = parseGeneratorCall ? parseGeneratorCall(rows[i], id, 'desktop', { cascadeModelConfigs: modelConfigsList }) : null;
           recordObservationFromSummary(state.latest, id, {
             callId: callInfo?.callId || null,
             stepCount: state.count,
@@ -27977,7 +27685,6 @@ var cumLockedKey = null;
         }
       }
       state.requestAt = Date.now(); state.requestError = '';
-      if (state.historyDrawerOpen) scheduleLatestCallRefresh({ allowTimelineRefresh: true });
     } catch (e) { if (generation === state.generation && !state.disposed) state.requestError = e.name === 'AbortError' ? '读取超时' : e.message; }
     finally {
       clearTimeout(timeout);
@@ -28032,9 +27739,15 @@ var cumLockedKey = null;
       if (Array.isArray(result.data.cascadeModelConfigs) && result.data.cascadeModelConfigs.length) {
         state.cascadeModelConfigs = result.data.cascadeModelConfigs;
       }
-      if (result.data.scannedAt >= state.requestAt && result.data.latest) {
+      const scanGenCount = Number(result.data.generatorCount);
+      const canAdoptCompactedScan = Boolean(
+        result.data.latest?.compacted &&
+        !state.latest?.compacted &&
+        (!Number.isFinite(scanGenCount) || (state.count || 0) <= scanGenCount)
+      );
+      if (result.data.latest && (result.data.scannedAt >= state.requestAt || canAdoptCompactedScan)) {
         state.latest = result.data.latest;
-        state.requestAt = result.data.scannedAt;
+        state.requestAt = Math.max(Number(state.requestAt) || 0, Number(result.data.scannedAt || Date.now()));
         const genSteps = Number(result.data.generatorCount);
         const msgSteps = Number(result.data.session?.userMessages || 0) + Number(result.data.session?.assistantMessages || 0);
         const resolvedStepCount = Number.isFinite(genSteps) && genSteps >= 0 ? genSteps : (msgSteps > 0 ? msgSteps : state.count);
@@ -28045,8 +27758,15 @@ var cumLockedKey = null;
         });
       }
       state.latest = withStepError(state.latest);
+      if (postCompactWatchMeta && postCompactWatchMeta.id === id) {
+        const sess = result.data.session || null;
+        const cpIdx = Number.isFinite(Number(sess?.latestCheckpoint?.index)) ? Number(sess.latestCheckpoint.index) : -1;
+        const compacting = Boolean(sess?.compactingInProgress);
+        if ((state.latest?.compacted && !compacting) || (cpIdx > postCompactWatchMeta.checkpointIndexBefore && !compacting)) {
+          stopPostCompactWatch();
+        }
+      }
       renderFiles(result.data.session);
-      if (state.historyDrawerOpen) scheduleLatestCallRefresh({ allowTimelineRefresh: true });
     } catch (e) { if (generation === state.generation && !state.disposed) state.scanError = e.message; }
     finally { if (generation === state.generation && !state.disposed) { state.scanBusy = false; state.scanNext = Date.now() + (document.hidden ? 60000 : 20000); render(); } }
   }
@@ -29773,50 +29493,6 @@ var cumLockedKey = null;
     positionFloatingPanels();
   });
 
-  el('latest-call-summary-row')?.addEventListener('click', () => {
-    state.latestCallDetailOpen = !state.latestCallDetailOpen;
-    if (!state.latestCallDetailOpen && state.pinnedCallRecord) {
-      state.pinnedCallRecord = null;
-      renderSessionTimeline();
-    }
-    if (!state.latestCallDetailOpen && state.pendingLatestCallRecord) {
-      renderLatestCallCard({ fromUserAction: true });
-    } else {
-      syncLatestCallDetailsVisibility();
-    }
-    positionFloatingPanels();
-  });
-  el('latest-call-summary-row')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      el('latest-call-summary-row')?.click();
-    }
-  });
-  el('latest-call-new-banner')?.addEventListener('click', () => {
-    state.pinnedCallRecord = null;
-    state.pendingLatestCallRecord = null;
-    renderLatestCallCard({ fromUserAction: true });
-    if (state.historyDrawerOpen) renderSessionTimeline();
-    positionFloatingPanels();
-  });
-  el('btn-session-history-toggle')?.addEventListener('click', () => {
-    state.historyDrawerOpen = !state.historyDrawerOpen;
-    if (!state.historyDrawerOpen && state.pinnedCallRecord) {
-      state.pinnedCallRecord = null;
-      renderLatestCallCard({ fromUserAction: true, skipAnim: true });
-    }
-    renderSessionTimeline();
-    if (state.historyDrawerOpen && state.route) {
-      void fetchSessionTimeline(state.route, { force: !state.sessionTimeline });
-    }
-    positionFloatingPanels();
-  });
-  el('btn-timeline-load-more')?.addEventListener('click', () => {
-    state.timelinePageLimit = (Number(state.timelinePageLimit) || 10) + 10;
-    renderSessionTimeline();
-    positionFloatingPanels();
-  });
-
   el('btn-quota-refresh')?.addEventListener('click', () => {
     void syncQuotaFromHost(true, { manual: true });
   });
@@ -30634,24 +30310,13 @@ var cumLockedKey = null;
     const id = route();
     if (id !== state.route) {
       for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.generation++;
-      if (timelineFetchController) {
-        try { timelineFetchController.abort(); } catch { }
-        timelineFetchController = null;
-      }
-      if (state.callRenderTimer) { clearTimeout(state.callRenderTimer); state.callRenderTimer = null; }
-      if (state.callEnterAnimTimer) { clearTimeout(state.callEnterAnimTimer); state.callEnterAnimTimer = null; }
+      stopPostCompactWatch();
       clearLivePendingRequestWait();
       if (state.sessionCallsMap) state.sessionCallsMap.clear();
-      if (state.expandedTurnKeys) state.expandedTurnKeys.clear();
       Object.assign(state, {
         route: id, count: 0, latest: null, sessionCalls: [], sessionCostTotal: 0,
         callsHydrated: false, requestAt: 0, requestError: '', requestBusy: false, requestNext: 0,
         scanBusy: false, scanNext: 0, scanError: '', scan: null,
-        displayedCallRecord: null, displayedCallSig: '', pendingLatestCallRecord: null,
-        pinnedCallRecord: null, latestCallDetailOpen: false, lastAnimatedCallSig: '',
-        historyDrawerOpen: false, sessionTimeline: null, timelineLoading: false,
-        timelineError: '', timelinePageLimit: 10, timelineAutoExpandedRoute: null, timelineRenderedRoute: null,
-        lastTimelineFetchAt: 0, lastTimelineCallSig: '',
         speedBreakdownOpen: false, streamSampleTracker: null, lastSpeedEval: null, speedOverrideForTest: null
       });
       // 避免切换会话后立刻撞上 15s 周期历史刷新，若已做过同步则确保至少留出 7s 窗口给当前会话优先加载
@@ -30765,13 +30430,17 @@ var cumLockedKey = null;
   function captureHotReloadState() {
     if (inheritedHotReloadState) return inheritedHotReloadState;
     const pCtx = el('panel');
+    const pSpeed = el('panel-speed');
+    const pSettings = el('panel-settings');
     const pTokens = el('panel-tokens');
     const pQuota = el('panel-quota');
     const openPanel = (pQuota && !pQuota.hidden) ? 'quota'
       : ((pTokens && !pTokens.hidden) ? 'tokens'
-        : ((pCtx && !pCtx.hidden) ? 'context' : 'none'));
+        : ((pSettings && !pSettings.hidden) ? 'settings'
+          : ((pSpeed && !pSpeed.hidden) ? 'speed'
+            : ((pCtx && !pCtx.hidden) ? 'context' : 'none'))));
     const scrollTops = {};
-    for (const sId of ['panel', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
+    for (const sId of ['panel', 'panel-speed', 'panel-settings', 'panel-tokens', 'panel-quota', 'ctx-model-list', 'quota-view-body']) {
       const n = el(sId);
       if (n && Number(n.scrollTop) > 0) scrollTops[sId] = Number(n.scrollTop);
     }
@@ -30861,13 +30530,17 @@ var cumLockedKey = null;
       quotaState.browsePoolKey = saved.browsePoolKey;
     }
     if (saved.openPanel && saved.openPanel !== 'none') {
-      showPanel(saved.openPanel);
-      if (saved.openPanel === 'tokens' && saved.activeTokenView) {
-        switchTokenView(saved.activeTokenView);
-      } else if (saved.openPanel === 'context' && saved.activeContextTab) {
-        switchContextTab(saved.activeContextTab);
-      } else if (saved.openPanel === 'context' && saved.isContextSettingsView) {
-        switchContextTab('settings');
+      if (saved.openPanel === 'context' && (saved.isContextSettingsView || saved.activeContextTab === 'settings')) {
+        showPanel('settings');
+      } else if (saved.openPanel === 'context' && saved.activeContextTab === 'speed') {
+        showPanel('speed');
+      } else {
+        showPanel(saved.openPanel);
+        if (saved.openPanel === 'tokens' && saved.activeTokenView) {
+          switchTokenView(saved.activeTokenView);
+        } else if (saved.openPanel === 'context' && saved.activeContextTab) {
+          switchContextTab(saved.activeContextTab);
+        }
       }
     }
     if (Array.isArray(saved.openDrawers)) {
@@ -31002,7 +30675,7 @@ var cumLockedKey = null;
     setSpeedRecordsForTest: (records, calls = []) => {
       ANTIGRAVITY_TOKEN_DATA.speedRecords = Array.isArray(records) ? records : [];
       if (Array.isArray(calls)) state.sessionCalls = calls;
-      if (!isContextSettingsView && activeContextTab === 'speed') renderSpeedComparisonTab();
+      if (el('panel-speed') && !el('panel-speed').hidden) renderSpeedComparisonTab();
       if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
     },
     setRestartVerificationForTest: (ver, preSnapshot = null) => {
@@ -31140,6 +30813,19 @@ var cumLockedKey = null;
       showPanel(open ? 'quota' : 'none');
       return !el('panel-quota')?.hidden;
     },
+    showSpeedPanelForTest: (open = true) => {
+      showPanel(open ? 'speed' : 'none');
+      return !el('panel-speed')?.hidden;
+    },
+    showSettingsPanelForTest: (open = true) => {
+      showPanel(open ? 'settings' : 'none');
+      return !el('panel-settings')?.hidden;
+    },
+    getPostCompactWatchStateForTest: () => ({
+      active: Boolean(postCompactWatchTimer || postCompactWatchMeta),
+      meta: postCompactWatchMeta ? { ...postCompactWatchMeta } : null
+    }),
+    startPostCompactWatchForTest: (id, baseline) => startPostCompactWatch(id, baseline),
     snapshot: () => ({ route: state.route, count: state.count, latest: state.latest, scan: state.scan, requestError: state.requestError, scanError: state.scanError, scanBusy: state.scanBusy, layoutMode: state.layoutMode, sessionCalls: state.sessionCalls, sessionCostTotal: state.sessionCostTotal }),
     captureHotReloadState,
     verifyHotReloadAndRefreshQuota,
@@ -31161,25 +30847,9 @@ var cumLockedKey = null;
       backendVersionMismatch: backendStatus.backendVersionMismatch,
       lastQuotaDurationMs: backendStatus.lastQuotaDurationMs
     }),
-    getLatestCallCardStateForTest: () => ({
-      route: state.route,
-      displayedCall: state.displayedCallRecord,
-      pendingLatestCall: state.pendingLatestCallRecord,
-      pinnedCall: state.pinnedCallRecord,
-      detailOpen: state.latestCallDetailOpen,
-      historyOpen: state.historyDrawerOpen,
-      bannerVisible: Boolean(el('latest-call-new-banner') && !el('latest-call-new-banner').hidden),
-      isEntering: Boolean(el('latest-call-body')?.classList?.contains?.('is-entering'))
-    }),
     setSessionCallsForTest: (calls, opts = {}) => {
       if (opts.route && state.route !== opts.route) {
         state.route = opts.route;
-        state.displayedCallRecord = null;
-        state.displayedCallSig = '';
-        state.pendingLatestCallRecord = null;
-        state.pinnedCallRecord = null;
-        state.latestCallDetailOpen = false;
-        state.lastAnimatedCallSig = '';
       }
       if (!state.sessionCallsMap) state.sessionCallsMap = new Map();
       if (opts.replace) state.sessionCallsMap.clear();
@@ -31189,19 +30859,9 @@ var cumLockedKey = null;
       state.sessionCalls = Array.from(state.sessionCallsMap.values());
       render();
       return {
-        displayedCall: state.displayedCallRecord,
-        pendingLatestCall: state.pendingLatestCallRecord,
-        bannerVisible: Boolean(el('latest-call-new-banner') && !el('latest-call-new-banner').hidden)
+        route: state.route,
+        count: state.sessionCalls.length
       };
-    },
-    setSessionTimelineForTest: (tl) => {
-      state.sessionTimeline = tl;
-      if (state.historyDrawerOpen) renderSessionTimeline();
-    },
-    toggleSessionHistoryForTest: (open) => {
-      state.historyDrawerOpen = open !== undefined ? Boolean(open) : !state.historyDrawerOpen;
-      renderSessionTimeline();
-      return state.historyDrawerOpen;
     },
     setSpeedEvaluationForTest: (mockInput, opts = {}) => {
       state.speedOverrideForTest = mockInput || null;
@@ -31279,13 +30939,8 @@ var cumLockedKey = null;
       earlyForceDispose();
       clearQuotaTimers();
       clearInterval(timer);
+      stopPostCompactWatch();
       clearLivePendingRequestWait();
-      if (timelineFetchController) {
-        try { timelineFetchController.abort(); } catch { }
-        timelineFetchController = null;
-      }
-      if (state.callRenderTimer) { clearTimeout(state.callRenderTimer); state.callRenderTimer = null; }
-      if (state.callEnterAnimTimer) { clearTimeout(state.callEnterAnimTimer); state.callEnterAnimTimer = null; }
       try { globalThis.removeEventListener?.('popstate', scheduleImmediateRouteTick); } catch { }
       try {
         if (wrappedPushState && globalThis.history?.pushState === wrappedPushState && origPushState) {

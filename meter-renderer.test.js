@@ -341,7 +341,7 @@ test('progressive width collapse transitions smoothly across 4 stages with hyste
   assert.equal(api.setAvailableWidthForTest(75), 'ring-only'); // hysteresis (<82)
   assert.equal(api.setAvailableWidthForTest(90), 'minimal');
 
-  // In ring-only mode, clicking the ring opens context panel, and overflow menu reaches token stats
+  // In ring-only mode, clicking the ring opens context panel, and overflow menu reaches token stats, speed & settings panels
   api.setAvailableWidthForTest(50);
   h.elements.get('badge').click();
   assert.equal(h.elements.get('panel').hidden, false);
@@ -349,7 +349,12 @@ test('progressive width collapse transitions smoothly across 4 stages with hyste
   assert.equal(h.elements.get('panel').hidden, true);
   assert.equal(h.elements.get('panel-tokens').hidden, false);
   h.elements.get('overflow-speed-btn')?.click();
-  assert.equal(h.elements.get('panel').hidden, false);
+  assert.equal(h.elements.get('panel-speed').hidden, false);
+  assert.equal(h.elements.get('panel').hidden, true);
+  assert.equal(h.elements.get('panel-tokens').hidden, true);
+  h.elements.get('overflow-settings-btn')?.click();
+  assert.equal(h.elements.get('panel-settings').hidden, false);
+  assert.equal(h.elements.get('panel-speed').hidden, true);
 
   api.dispose();
 });
@@ -1566,7 +1571,7 @@ test('按稳定模型 ID 持久化上下文偏好、损坏隔离与模型切换�
   }
 });
 
-test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择器契约', async () => {
+test('双分页上下文面板 + 独立速度/设置浮窗、7.1 禁用词与查看模型选择器契约', async () => {
   const savedPayloads = [];
   const h = harness();
   h.sandbox.window.contextMeterAPI = {
@@ -1588,7 +1593,7 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
     toggleModule: async () => ({ ok: true })
   };
 
-  // 打开面板，验证 3 分页与当前会话核心字段保留
+  // 打开上下文面板，验证 2 分页与当前会话核心字段保留
   h.elements.get('badge').click();
   await h.flush();
   const api = h.sandbox.__AGContextMeter;
@@ -1609,7 +1614,8 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   assert.equal(h.elements.get('ctx-model-selector-role').textContent, '查看模型');
   assert.equal(h.elements.get('pane-ctx-session').hidden, false);
   assert.equal(h.elements.get('pane-ctx-models').hidden, true);
-  assert.equal(h.elements.get('pane-ctx-speed').hidden, true);
+  assert.equal(h.elements.get('panel-speed').hidden, true);
+  assert.equal(h.elements.get('panel-settings').hidden, true);
   assert.equal(h.elements.get('speed-val').textContent, '88.5 tok/s');
 
   // 切换到“模型设置”分页并验证选择器切换不写配置、且出现“回到当前模型”
@@ -1628,11 +1634,12 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   assert.equal(api.getContextPreferencesState().selectedProductKey, 'product:google:gemini-4-argon');
   assert.equal(h.elements.get('btn-ctx-back-current').hidden, true);
 
-  // 打开 ⚙ 设置视图，验证汉化、代理、外观 DOM ID 与事件仍在且 ‹ 返回有效
-  h.elements.get('btn-ctx-settings').click();
+  // 打开独立 ⚙ 设置浮窗，验证汉化、代理、外观、底层技术参数 DOM ID 与事件完整可用
+  h.elements.get('badge-settings').click();
   await h.flush();
+  assert.equal(h.elements.get('panel-settings').hidden, false);
+  assert.equal(h.elements.get('panel').hidden, true);
   assert.equal(h.elements.get('pane-ctx-settings').hidden, false);
-  assert.equal(h.elements.get('ctx-tabs-bar').hidden, false);
   assert.ok(h.elements.get('btn-toggle-chinese'));
   assert.ok(h.elements.get('btn-toggle-chinese-module'));
   assert.ok(h.elements.get('btn-toggle-proxy'));
@@ -1642,6 +1649,7 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   assert.ok(h.elements.get('btn-toggle-colors'));
   assert.ok(h.elements.get('color-panelBg'));
   assert.ok(h.elements.get('btn-panel-palette'));
+  assert.ok(h.elements.get('btn-toggle-details'));
 
   // 验证汉化切换按钮事件仍然有效
   let toggleCalled = false;
@@ -1653,8 +1661,11 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   await h.flush();
   assert.equal(toggleCalled, true);
 
-  h.elements.get('btn-ctx-settings-back').click();
-  assert.equal(h.elements.get('pane-ctx-settings').hidden, true);
+  // 关闭设置浮窗后可重新打开上下文面板并保留 models 分页状态
+  h.elements.get('close-settings').click();
+  assert.equal(h.elements.get('panel-settings').hidden, true);
+  h.elements.get('badge').click();
+  assert.equal(h.elements.get('panel').hidden, false);
   assert.equal(h.elements.get('pane-ctx-models').hidden, false);
 
   // 7.1 禁用词检查：模板中 #panel 区域及普通视图动态 DOM 文本均不可出现技术黑话
@@ -1888,15 +1899,16 @@ test('安全应用、重启确认、手动重启说明与三条件已加载核�
   api.dispose();
 });
 
-test('速度对比分页：零网络请求与零 IPC 发送，正确绘制柱状图/折线图并标注样本少', async () => {
+test('独立速度对比浮窗：零网络请求与零 IPC 发送，正确绘制柱状图/折线图并标注样本少', async () => {
   const h = harness();
   h.finishScan();
   await h.flush();
   const api = h.sandbox.__AGContextMeter;
 
-  h.elements.get('badge').click();
-  h.elements.get('tab-ctx-speed').click();
+  h.elements.get('badge-speed').click();
   await h.flush();
+  assert.equal(h.elements.get('panel-speed').hidden, false);
+  assert.equal(h.elements.get('panel').hidden, true);
   // harness 默认 replaceChildren 不保留子节点，此处启用以检查 SVG 绘制元素
   h.elements.get('speed-bar-svg').replaceChildren = function(...nodes) { this.children = nodes; };
   h.elements.get('speed-line-svg').replaceChildren = function(...nodes) { this.children = nodes; };
@@ -1912,9 +1924,9 @@ test('速度对比分页：零网络请求与零 IPC 发送，正确绘制柱状
     { callId: 'c4', modelExactId: 'claude-sonnet-4-6', modelLabel: 'Claude Sonnet 4.6', status: 'final', outputTokens: 180, durationSec: 2, tps: 90, ttftSec: 1.0, timestamp: now - 2000 },
     { callId: 'c5', modelExactId: 'claude-sonnet-4-6', modelLabel: 'Claude Sonnet 4.6', status: 'final', outputTokens: 200, durationSec: 2, tps: 100, ttftSec: 1.1, timestamp: now - 1000 }
   ]);
-  // 再切换到其他分页切回“速度对比”，确认打开页面不触发网络请求与 IPC
-  h.elements.get('tab-ctx-session').click();
-  h.elements.get('tab-ctx-speed').click();
+  // 再切换到其他浮窗切回独立速度面板，确认打开页面不触发网络请求与 IPC
+  h.elements.get('badge').click();
+  h.elements.get('badge-speed').click();
   await h.flush();
 
   assert.equal(h.pending.length, fetchBefore, '打开速度对比页不得发起任何 fetch 请求');
@@ -4563,7 +4575,8 @@ test('PR #13 & PR #21: 弹窗动态锚点定位、首帧显示前预设坐标、
     h.elements.get('badge-speed').getBoundingClientRect = () => ({ left: 912, top: 6, width: 64, height: 28, right: 976, bottom: 34 });
     h.elements.get('badge-tokens').getBoundingClientRect = () => ({ left: 980, top: 6, width: 68, height: 28, right: 1048, bottom: 34 });
     h.elements.get('badge-quota').getBoundingClientRect = () => ({ left: 1052, top: 6, width: 52, height: 28, right: 1104, bottom: 34 });
-    h.elements.get('badge-overflow').getBoundingClientRect = () => ({ left: 1108, top: 6, width: 28, height: 28, right: 1136, bottom: 34 });
+    h.elements.get('badge-settings').getBoundingClientRect = () => ({ left: 1108, top: 6, width: 28, height: 28, right: 1136, bottom: 34 });
+    h.elements.get('badge-overflow').getBoundingClientRect = () => ({ left: 1140, top: 6, width: 28, height: 28, right: 1168, bottom: 34 });
 
     // 验证 showPanel 在 hidden=false 前已将 style.left 写入
     let leftWhenUnhidden = null;
@@ -4584,8 +4597,16 @@ test('PR #13 & PR #21: 弹窗动态锚点定位、首帧显示前预设坐标、
     assert.equal(h.elements.get('badge-speed').getAttribute('aria-expanded'), 'false');
 
     h.elements.get('badge-speed').click();
-    assert.equal(panel.style.left, `${976 - 472}px`);
+    assert.equal(panel.hidden, true);
+    assert.equal(h.elements.get('panel-speed').hidden, false);
+    assert.equal(h.elements.get('panel-speed').style.left, `${976 - 472}px`);
     assert.equal(h.elements.get('badge-speed').getAttribute('aria-expanded'), 'true');
+
+    h.elements.get('badge-settings').click();
+    assert.equal(h.elements.get('panel-speed').hidden, true);
+    assert.equal(h.elements.get('panel-settings').hidden, false);
+    assert.equal(h.elements.get('panel-settings').style.left, `${1136 - 472}px`);
+    assert.equal(h.elements.get('badge-settings').getAttribute('aria-expanded'), 'true');
 
     h.elements.get('badge-tokens').click();
     assert.equal(h.elements.get('panel-tokens').style.left, `${1048 - 730}px`);
@@ -4593,14 +4614,18 @@ test('PR #13 & PR #21: 弹窗动态锚点定位、首帧显示前预设坐标、
     h.elements.get('badge-quota').click();
     assert.equal(h.elements.get('panel-quota').style.left, `${1104 - 460}px`);
 
-    // 溢出入口打开 tokens / quota 时必须对齐 badge-overflow 而非隐藏按钮
+    // 溢出入口打开 tokens / quota / speed / settings 时必须对齐 badge-overflow 而非隐藏按钮
     h.elements.get('badge-overflow').click();
     assert.equal(h.elements.get('overflow-menu').hidden, false);
-    assert.equal(h.elements.get('overflow-menu').style.left, `${1136 - 220}px`);
+    assert.equal(h.elements.get('overflow-menu').style.left, `${1168 - 220}px`);
     h.elements.get('overflow-tokens-btn').click();
-    assert.equal(h.elements.get('panel-tokens').style.left, `${1136 - 730}px`);
+    assert.equal(h.elements.get('panel-tokens').style.left, `${1168 - 730}px`);
     h.elements.get('overflow-quota-btn').click();
-    assert.equal(h.elements.get('panel-quota').style.left, `${1136 - 460}px`);
+    assert.equal(h.elements.get('panel-quota').style.left, `${1168 - 460}px`);
+    h.elements.get('overflow-speed-btn').click();
+    assert.equal(h.elements.get('panel-speed').style.left, `${1168 - 472}px`);
+    h.elements.get('overflow-settings-btn').click();
+    assert.equal(h.elements.get('panel-settings').style.left, `${1168 - 472}px`);
 
     // 窄屏越界钳位
     h.sandbox.window.innerWidth = 600;
@@ -6711,5 +6736,324 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
     assert.match(legendTextB, /JacksonMo 2\.5%/);
   } finally {
     try { api.dispose(); } catch {}
+  }
+});
+
+test('模型额度浮窗 (#panel-quota) 深墨绿主题（暗色与浅色模式）并保留低余量琥珀与耗尽红色语义', () => {
+  const pathMod = require('node:path');
+  const cssSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
+
+  // 1. 暗色墨绿底色、边框、标题与状态条
+  assert.match(cssSrc, /#panel-quota\{[^}]*#081914/i, '暗色模式下 #panel-quota 必须采用深墨绿渐变底色');
+  assert.match(cssSrc, /#panel-quota\s+\.panel-title-text\{[^}]*#d1fae5/i, '暗色模式下 #panel-quota 标题为协调浅翡翠白');
+  assert.match(cssSrc, /\.quota-bar-fill\{[^}]*#0f4c3a[^}]*#10b981/i, '正常额度进度条采用墨绿到翡翠绿渐变');
+  assert.match(cssSrc, /\.quota-pool-card\[data-active-current="true"\]\{[^}]*rgba\(16,185,129/i, '活跃模型池卡片高亮保持墨绿语义');
+
+  // 2. 浅色柔和薄荷墨绿主题覆盖
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-quota[\s\S]*?\{[^}]*#f2faf6/i, '浅色模式下 #panel-quota 必须具备协调墨绿/薄荷底色');
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+#panel-quota\s+\.panel-title-text[\s\S]*?\{[^}]*#0f4c3a/i, '浅色模式下 #panel-quota 标题保持高对比深墨绿');
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-pool-card\[data-active-current="true"\][\s\S]*?\{[^}]*#e4f6ed/i, '浅色模式下活跃卡片采用薄荷翡翠高亮');
+
+  // 3. 严禁覆盖告警色：低余量保留琥珀色、耗尽保留红色、无权限保留紫色
+  assert.match(cssSrc, /\.quota-bar-fill\[data-status="low"\]\{[^}]*#f59e0b/i, '低余量告警必须保留琥珀色');
+  assert.match(cssSrc, /\.quota-bar-fill\[data-status="exhausted"\]\{[^}]*#ef4444/i, '耗尽告警必须保留红色');
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="low"\][\s\S]*?\{[^}]*217,119,6/i, '浅色低余量扫光保留深琥珀色');
+  assert.match(cssSrc, /:host\(\[data-theme="light"\]\)\s+\.quota-bar-charge-stage\[data-status="exhausted"\][\s\S]*?\{[^}]*220,38,38/i, '浅色耗尽扫光保留深红色');
+  assert.match(cssSrc, /\.quota-bar-fill\[data-status="no_permission"\]\{[^}]*#a855f7/i, '无权限状态保持紫色语义');
+  assert.match(source, /#panel-quota\{[^}]*#081914/i, '构建产物 meter-renderer.js 必须同步包含墨绿主题样式');
+});
+
+test('五独立浮窗重构：双 Tab 上下文、独立速度/设置面板、底层参数迁移、顶层重启模态框与热重载兼容', async () => {
+  const pathMod = require('node:path');
+  const tplSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'template.html'), 'utf8');
+
+  // 1. 静态 DOM 结构契约校验
+  const panelStart = tplSrc.indexOf('<section id="panel"');
+  const panelSpeedStart = tplSrc.indexOf('<section id="panel-speed"');
+  const panelSettingsStart = tplSrc.indexOf('<section id="panel-settings"');
+  const globalModalStart = tplSrc.indexOf('<div id="global-restart-modal"');
+  const panelTokensStart = tplSrc.indexOf('<section id="panel-tokens"');
+  assert.ok(panelStart > 0 && panelSpeedStart > panelStart && panelSettingsStart > panelSpeedStart && globalModalStart > panelSettingsStart && panelTokensStart > globalModalStart);
+
+  const ctxPanelHtml = tplSrc.slice(panelStart, panelSpeedStart);
+  const speedPanelHtml = tplSrc.slice(panelSpeedStart, panelSettingsStart);
+  const settingsPanelHtml = tplSrc.slice(panelSettingsStart, globalModalStart);
+
+  assert.equal(ctxPanelHtml.includes('id="tab-ctx-session"'), true);
+  assert.equal(ctxPanelHtml.includes('id="tab-ctx-models"'), true);
+  assert.equal(ctxPanelHtml.includes('id="tab-ctx-speed"'), false);
+  assert.equal(ctxPanelHtml.includes('id="tab-ctx-settings"'), false);
+  assert.equal(ctxPanelHtml.includes('id="latest-call-card"'), false);
+  assert.equal(ctxPanelHtml.includes('id="session-timeline-drawer"'), false);
+  assert.equal(ctxPanelHtml.includes('id="tech-audit-drawer"'), false);
+  assert.equal(ctxPanelHtml.includes('id="global-restart-modal"'), false);
+
+  assert.equal(speedPanelHtml.includes('id="speed-summary"'), true);
+  assert.equal(speedPanelHtml.includes('id="pane-ctx-speed"'), true);
+  assert.equal(settingsPanelHtml.includes('id="pane-ctx-settings"'), true);
+  assert.equal(settingsPanelHtml.includes('id="tech-audit-drawer"'), true);
+  assert.equal(settingsPanelHtml.includes('id="panel-lang-top-segmented"'), true);
+  assert.equal(settingsPanelHtml.includes('id="btn-github-repo-ctx"'), true);
+  assert.equal(settingsPanelHtml.includes('id="btn-check-update-ctx"'), true);
+
+  // 2. 五浮窗严格互斥与热重载捕获
+  const h = harness();
+  const api = h.sandbox.__AGContextMeter;
+  try {
+    h.elements.get('badge').click();
+    assert.equal(h.elements.get('panel').hidden, false);
+    assert.equal(h.elements.get('panel-speed').hidden, true);
+    assert.equal(h.elements.get('panel-settings').hidden, true);
+    assert.equal(h.elements.get('panel-tokens').hidden, true);
+    assert.equal(h.elements.get('panel-quota').hidden, true);
+
+    h.elements.get('badge-speed').click();
+    assert.equal(h.elements.get('panel').hidden, true);
+    assert.equal(h.elements.get('panel-speed').hidden, false);
+    assert.equal(api.captureHotReloadState().openPanel, 'speed');
+
+    // 再点同一入口收起
+    h.elements.get('badge-speed').click();
+    assert.equal(h.elements.get('panel-speed').hidden, true);
+
+    h.elements.get('badge-settings').click();
+    assert.equal(h.elements.get('panel-settings').hidden, false);
+    assert.equal(h.elements.get('panel-speed').hidden, true);
+    assert.equal(api.captureHotReloadState().openPanel, 'settings');
+    assert.equal(api.captureHotReloadState().isContextSettingsView, true);
+
+    // 兼容旧调用：switchContextTabForTest('speed' | 'settings') 转发打开独立浮窗
+    api.switchContextTabForTest('speed');
+    assert.equal(h.elements.get('panel-speed').hidden, false);
+    assert.equal(h.elements.get('panel-settings').hidden, true);
+    api.switchContextTabForTest('settings');
+    assert.equal(h.elements.get('panel-settings').hidden, false);
+    assert.equal(h.elements.get('panel-speed').hidden, true);
+
+    // 顶层全局重启模态框默认隐藏，打开后可由取消或 Escape 关闭
+    assert.equal(h.elements.get('global-restart-modal').hidden, true);
+    h.elements.get('global-restart-modal').hidden = false;
+    api.getCumulativeViewStateForTest().pressEscape();
+    assert.equal(h.elements.get('global-restart-modal').hidden, true, 'Escape 应关闭顶层全局重启模态框');
+  } finally {
+    api.dispose();
+  }
+});
+
+test('自动压缩默认开启 (20%) 且保留用户显式关闭配置', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+
+  // 场景 A: 宿主未保存 autoCompact 字段时默认开启且阈值为 20%
+  const hDefault = harness(session(), {
+    window: {
+      __APP_CONFIG__: { csrfToken: 'csrf_def' },
+      contextMeterAPI: {
+        scan: async () => ({ ok: true, data: { session: session(), scannedAt: Date.now(), latest: null } }),
+        getSettings: async () => ({ ok: true })
+      }
+    }
+  });
+  try {
+    await flush();
+    await flush();
+    const api = hDefault.sandbox.__AGContextMeter;
+    assert.deepEqual({ ...api.getAutoCompactStateForTest().config }, { enabled: true, minRemainingPct: 20 });
+    assert.equal(hDefault.elements.get('chk-auto-compact-quick').checked, true);
+    assert.equal(hDefault.elements.get('inp-auto-compact-pct').value, '20');
+    assert.equal(hDefault.elements.get('chk-auto-compact-settings').checked, true);
+    assert.equal(hDefault.elements.get('inp-auto-compact-settings-pct').value, '20');
+    assert.match(hDefault.elements.get('ctx-auto-compact-badge').textContent, /已开启 · ≤20%/);
+  } finally {
+    hDefault.sandbox.__AGContextMeter.dispose();
+  }
+
+  // 场景 B: 宿主已显式保存 enabled: false 与自定义百分比 12% 时必须严格尊重用户选择
+  const hDisabled = harness(session(), {
+    window: {
+      __APP_CONFIG__: { csrfToken: 'csrf_off' },
+      contextMeterAPI: {
+        scan: async () => ({ ok: true, data: { session: session(), scannedAt: Date.now(), latest: null } }),
+        getSettings: async () => ({ ok: true, autoCompact: { enabled: false, minRemainingPct: 12 } })
+      }
+    }
+  });
+  try {
+    await flush();
+    await flush();
+    const api = hDisabled.sandbox.__AGContextMeter;
+    assert.deepEqual({ ...api.getAutoCompactStateForTest().config }, { enabled: false, minRemainingPct: 12 });
+    assert.equal(hDisabled.elements.get('chk-auto-compact-quick').checked, false);
+    assert.equal(hDisabled.elements.get('inp-auto-compact-pct').value, '12');
+    assert.equal(hDisabled.elements.get('chk-auto-compact-settings').checked, false);
+    assert.equal(hDisabled.elements.get('inp-auto-compact-settings-pct').value, '12');
+  } finally {
+    hDisabled.sandbox.__AGContextMeter.dispose();
+  }
+});
+
+test('执行 /compact 后渲染层即时展示已压缩估算态、requestPoll 不回弹旧值且自动轮询收敛', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const cid = '11111111-1111-1111-1111-111111111111';
+  const scheduledTimers = [];
+  let scanCallCount = 0;
+  let compactCalls = 0;
+  let scanReturnsCompacted = false;
+
+  const preCompactMetadata = {
+    stepIndices: [18],
+    chatModel: {
+      model: 'MODEL_PLACEHOLDER_M38',
+      usage: { inputTokens: 230000, outputTokens: 2000 },
+      chatStartMetadata: { contextWindowMetadata: { maxContextTokens: 256000 }, startStepIndex: 18 }
+    }
+  };
+  const postCompactCheckpoint = {
+    index: 25,
+    status: 'CORTEX_STEP_STATUS_DONE',
+    summaryOutputTokens: 12000,
+    summaryChars: 36000
+  };
+  const compactedScanSession = {
+    ...session(),
+    steps: 26,
+    lastAssistantAt: 18,
+    compactingInProgress: false,
+    latestCheckpoint: postCompactCheckpoint,
+    postCheckpointTotal: { chars: 0, low: 0, high: 0 }
+  };
+
+  const h = harness(session(), {
+    setTimeout(fn, delay) {
+      const id = scheduledTimers.length + 1;
+      scheduledTimers.push({ id, fn, delay, cleared: false });
+      return id;
+    },
+    clearTimeout(id) {
+      const t = scheduledTimers.find(x => x.id === id);
+      if (t) t.cleared = true;
+    },
+    window: {
+      __APP_CONFIG__: { csrfToken: 'csrf_compact_watch' },
+      contextMeterAPI: {
+        getSettings: async () => ({ ok: true, autoCompact: { enabled: true, minRemainingPct: 20 } }),
+        compactContext: async (id) => {
+          compactCalls++;
+          return { ok: true, cascadeId: id, stepCountBefore: 20, generatorCountBefore: 1, checkpointIndexBefore: -1 };
+        },
+        scan: async (id, force) => {
+          scanCallCount++;
+          if (scanReturnsCompacted) {
+            const latestCompacted = core.summarize(preCompactMetadata, {
+              latestCheckpoint: postCompactCheckpoint,
+              lastAssistantAt: 18,
+              system: compactedScanSession.groups.system,
+              definitions: compactedScanSession.groups.definitions,
+              postCheckpointTotal: compactedScanSession.postCheckpointTotal
+            });
+            return {
+              ok: true,
+              data: {
+                session: compactedScanSession,
+                scannedAt: Date.now() - 5000, // 故意早于 requestAt，验证 canAdoptCompactedScan 仍立即接纳
+                generatorCount: 1,
+                latestCallId: 'call_pre_18',
+                latest: latestCompacted
+              }
+            };
+          }
+          return {
+            ok: true,
+            data: {
+              session: { ...session(), steps: 20, lastAssistantAt: 18, compactingInProgress: true, latestCheckpoint: null },
+              scannedAt: Date.now(),
+              generatorCount: 1,
+              latestCallId: 'call_pre_18',
+              latest: null
+            }
+          };
+        }
+      }
+    }
+  });
+
+  try {
+    const api = h.sandbox.__AGContextMeter;
+    // 1. 首次轮询返回压缩前 ~91% 高占用（230000 input + 2000 output = 232000 / 256000）
+    while (h.pending.length) {
+      const p = h.pending.shift();
+      p.resolve({ ok: true, json: async () => ({ generatorMetadata: [preCompactMetadata] }) });
+    }
+    await flush();
+    await flush();
+    assert.equal(api.snapshot().latest.actual, 232000);
+
+    // 2. 通过拦截用户直接发送 /compact 斜杠命令启动 postCompactWatch
+    h.sandbox.__AG_METER_ON_SEND_MESSAGE__({
+      cascadeId: cid,
+      items: [{ item: { slashCommand: { info: { name: 'compact' } } } }],
+      metadata: { ideName: 'antigravity' }
+    }, 'client_object');
+    assert.equal(api.getPostCompactWatchStateForTest().active, true, '拦截原生 /compact 后必须启动压缩后快速观察轮询');
+
+    // 3. 触发一次 watch 定时器，后端此时已完成 CHECKPOINT 写入 -> scan 接纳 compacted 摘要并自动停止 watch
+    scanReturnsCompacted = true;
+    const scansBeforeWatch = scanCallCount;
+    const activeWatchTimer = [...scheduledTimers].reverse().find(t => !t.cleared && t.delay === 1500);
+    assert.ok(activeWatchTimer, '应已调度 1500ms 首次压缩观察定时器');
+    activeWatchTimer.fn();
+    await flush();
+    await flush();
+    assert.ok(scanCallCount > scansBeforeWatch, '观察定时器应主动发起 force scan');
+    assert.equal(api.getPostCompactWatchStateForTest().active, false, 'CHECKPOINT 完成后必须自动停止快速轮询');
+
+    // 4. 再推进一轮 requestPoll（服务端仍只返回压缩前的旧 generatorMetadata）-> 不得回弹到 90%
+    while (h.pending.length) {
+      const p = h.pending.shift();
+      p.resolve({ ok: true, json: async () => ({ generatorMetadata: [preCompactMetadata] }) });
+    }
+    await flush();
+    await flush();
+    const snapAfterPoll = api.snapshot();
+    assert.equal(snapAfterPoll.latest.compacted, true, 'requestPoll 透传 checkpoint 上下文后不得回弹为旧未压缩值');
+    assert.equal(snapAfterPoll.latest.actual, null, '已压缩待下轮核实状态下 actual 保持 null 以防自动压缩死循环');
+    assert.equal(h.host.getAttribute('data-occupancy'), 'normal', '压缩后上下文占用下降，高占用红色告警必须解除');
+    assert.equal(h.elements.get('ring-fill').getAttribute('data-ring-state'), 'estimated', '已压缩待核实态圆环应处于 estimated 状态');
+    assert.match(h.elements.get('badge-pct-val').textContent, /^~\d+%$/);
+    assert.match(h.elements.get('amount').textContent, /^~.*\(~\d+%\)$/);
+    assert.match(h.elements.get('status').textContent, /已完成上下文压缩/);
+    assert.match(h.elements.get('request-status').textContent, /已压缩/);
+    assert.match(h.elements.get('ctx-tip-title').textContent, /已压缩/);
+    assert.match(h.elements.get('ctx-tip-pct').textContent, /约\s*\d+%/);
+
+    // 5. 三语严格隔离检查（zh-TW 无简体，en 无汉字）
+    await api.setPanelLanguage('zh-TW', { persist: false });
+    assert.match(h.elements.get('status').textContent, /已完成上下文壓縮/);
+    assert.match(h.elements.get('request-status').textContent, /已壓縮/);
+    assert.doesNotMatch(h.elements.get('status').textContent, /压缩|核实/);
+    assert.doesNotMatch(h.elements.get('ctx-tip-title').textContent, /压缩|窗口/);
+    assert.doesNotMatch(h.elements.get('ctx-tip-detail').textContent, /压缩|核实|实测/);
+    await api.setPanelLanguage('en', { persist: false });
+    assert.match(h.elements.get('status').textContent, /Compacted/i);
+    assert.match(h.elements.get('ctx-tip-title').textContent, /Compacted/i);
+    assert.doesNotMatch(h.elements.get('amount').textContent, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(h.elements.get('status').textContent, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(h.elements.get('request-status').textContent, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(h.elements.get('ctx-tip-title').textContent, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(h.elements.get('ctx-tip-pct').textContent, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(h.elements.get('ctx-tip-detail').textContent, /[\u4e00-\u9fff]/);
+
+    // 6. 已压缩态下再次触发自动压缩检查绝不死循环触发 compactContext
+    const compactBefore = compactCalls;
+    await api.maybeTriggerAutoCompactForTest();
+    assert.equal(compactCalls, compactBefore, 'compacted 估算态下 actual=null，绝不可重复触发自动压缩');
+
+    // 7. 切会话路由时立即取消活跃的 postCompactWatch
+    api.startPostCompactWatchForTest(cid, { stepCountBefore: 26, generatorCountBefore: 1, checkpointIndexBefore: 25 });
+    assert.equal(api.getPostCompactWatchStateForTest().active, true);
+    h.sandbox.location.pathname = '/c/22222222-2222-2222-2222-222222222222';
+    h.tick();
+    assert.equal(api.getPostCompactWatchStateForTest().active, false, '切换会话路由必须立即取消 postCompactWatch');
+  } finally {
+    h.sandbox.__AGContextMeter.dispose();
   }
 });

@@ -4941,7 +4941,7 @@ test('collectTokenHistoryAsync upgrades multi-turn same-step provisional calls a
   }
 });
 
-test('autoCompact 配置默认值、边界归一化与 custom_plan_settings 持久化不破坏其余字段', () => {
+test('autoCompact 配置默认值（默认开启 20%）、边界归一化与 custom_plan_settings 持久化不破坏其余字段', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const os = require('node:os');
@@ -4952,18 +4952,23 @@ test('autoCompact 配置默认值、边界归一化与 custom_plan_settings 持�
     savePluginSettings
   } = require('./meter-collector');
 
-  assert.deepEqual(DEFAULT_AUTO_COMPACT_CONFIG, { enabled: false, minRemainingPct: 15 });
-  assert.deepEqual(sanitizeAutoCompactConfig(null), { enabled: false, minRemainingPct: 15 });
-  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: 1, minRemainingPct: 0 }), { enabled: false, minRemainingPct: 1 });
+  assert.deepEqual(DEFAULT_AUTO_COMPACT_CONFIG, { enabled: true, minRemainingPct: 20 });
+  assert.deepEqual(sanitizeAutoCompactConfig(null), { enabled: true, minRemainingPct: 20 });
+  assert.deepEqual(sanitizeAutoCompactConfig(undefined), { enabled: true, minRemainingPct: 20 });
+  assert.deepEqual(sanitizeAutoCompactConfig({}), { enabled: true, minRemainingPct: 20 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: false }), { enabled: false, minRemainingPct: 20 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: false, minRemainingPct: 15 }), { enabled: false, minRemainingPct: 15 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: 1, minRemainingPct: 0 }), { enabled: true, minRemainingPct: 1 });
   assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 0 }), { enabled: true, minRemainingPct: 1 });
   assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 120 }), { enabled: true, minRemainingPct: 80 });
   assert.deepEqual(sanitizeAutoCompactConfig({ enabled: false, thresholdPct: 24.6 }), { enabled: false, minRemainingPct: 25 });
-  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 'bad' }), { enabled: true, minRemainingPct: 15 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: false, thresholdRemainingPct: 33 }), { enabled: false, minRemainingPct: 33 });
+  assert.deepEqual(sanitizeAutoCompactConfig({ enabled: true, minRemainingPct: 'bad' }), { enabled: true, minRemainingPct: 20 });
 
   const agDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-autocompact-cfg-'));
   try {
     const initial = getPluginSettings({ agDir });
-    assert.deepEqual(initial.autoCompact, { enabled: false, minRemainingPct: 15 });
+    assert.deepEqual(initial.autoCompact, { enabled: true, minRemainingPct: 20 });
 
     const pre = savePluginSettings({
       customPlan: { tier: 'pro', monthlyUSD: 20 },
@@ -4971,20 +4976,35 @@ test('autoCompact 配置默认值、边界归一化与 custom_plan_settings 持�
     }, { agDir });
     assert.equal(pre.ok, true);
 
-    const saved = savePluginSettings({
-      autoCompact: { enabled: true, minRemainingPct: 22 }
+    // 显式关闭 autoCompact 并保存自定义百分比后必须保留 enabled: false
+    const disabled = savePluginSettings({
+      autoCompact: { enabled: false, minRemainingPct: 15 }
     }, { agDir });
-    assert.equal(saved.ok, true);
-    assert.equal(saved.autoCompact.enabled, true);
-    assert.equal(saved.autoCompact.minRemainingPct, 22);
+    assert.equal(disabled.ok, true);
+    assert.equal(disabled.autoCompact.enabled, false);
+    assert.equal(disabled.autoCompact.minRemainingPct, 15);
 
-    // 后续保存其他字段不应抹除 autoCompact
+    // 仅更新阈值不改变已保存的 enabled: false
+    const pctOnly = savePluginSettings({
+      autoCompact: { minRemainingPct: 28 }
+    }, { agDir });
+    assert.equal(pctOnly.ok, true);
+    assert.equal(pctOnly.autoCompact.enabled, false);
+    assert.equal(pctOnly.autoCompact.minRemainingPct, 28);
+
+    // 后续保存其他字段不应抹除或覆盖用户显式保存的 autoCompact
     savePluginSettings({ savedHeatView: 'yearly' }, { agDir });
     const reloaded = getPluginSettings({ agDir });
-    assert.equal(reloaded.autoCompact.enabled, true);
-    assert.equal(reloaded.autoCompact.minRemainingPct, 22);
+    assert.equal(reloaded.autoCompact.enabled, false);
+    assert.equal(reloaded.autoCompact.minRemainingPct, 28);
     assert.equal(reloaded.savedHeatView, 'yearly');
     assert.equal(reloaded.customPlan?.monthlyUSD, 20);
+
+    // 传入 autoCompact: null 恢复默认 (enabled: true, minRemainingPct: 20)
+    const reset = savePluginSettings({ autoCompact: null }, { agDir });
+    assert.equal(reset.ok, true);
+    assert.equal(reset.autoCompact.enabled, true);
+    assert.equal(reset.autoCompact.minRemainingPct, 20);
   } finally {
     fs.rmSync(agDir, { recursive: true, force: true });
   }
@@ -5074,6 +5094,8 @@ test('compactConversation 在空闲态发送标准 /compact SlashCommandScopeIte
   assert.equal(okRes.ok, true);
   assert.equal(okRes.cascadeId, cid);
   assert.equal(okRes.stepCountBefore, 12);
+  assert.equal(okRes.generatorCountBefore, 5);
+  assert.equal(okRes.checkpointIndexBefore, -1);
   assert.equal(okRes.statusBefore, 'CASCADE_RUN_STATUS_IDLE');
   const sendCalls = okCalls.filter(c => c.method === 'SendUserCascadeMessage');
   assert.equal(sendCalls.length, 2);
@@ -5093,4 +5115,340 @@ test('compactConversation 在空闲态发送标准 /compact SlashCommandScopeIte
   ]);
   assert.deepEqual(sendCalls[1].body.metadata, { ideName: 'antigravity', ideVersion: '1.2.3', apiKey: 'ya29.test' });
   assert.deepEqual(sendCalls[1].body.cascadeConfig, { plannerConfig: { conversational: { agenticMode: true } } });
+});
+
+test('analyzeSteps 与 applyPostCompactCheckpoint 在 /compact 完成后立刻识别新 checkpoint 并清除过期压缩前上下文', () => {
+  const {
+    getGeneratorMaxStepIndex,
+    estimatePostCompactTokens,
+    applyPostCompactCheckpoint
+  } = require('./meter-core');
+
+  // 1. 进行中/失败 checkpoint 不会误判为已完成压缩
+  const runningSession = analyzeSteps([
+    { userInput: { userResponse: 'hello' } },
+    { plannerResponse: { response: 'world' } },
+    { type: 'CORTEX_STEP_TYPE_CHECKPOINT', status: 'CORTEX_STEP_STATUS_RUNNING' }
+  ]);
+  assert.equal(runningSession.latestCheckpoint, null);
+  assert.equal(runningSession.compactingInProgress, true);
+
+  const failedSession = analyzeSteps([
+    { userInput: { userResponse: 'hello' } },
+    { plannerResponse: { response: 'world' } },
+    { type: 'CORTEX_STEP_TYPE_CHECKPOINT', status: 'CORTEX_STEP_STATUS_ERROR', checkpoint: { sessionSummary: '' } }
+  ]);
+  assert.equal(failedSession.latestCheckpoint, null);
+  assert.equal(failedSession.compactingInProgress, false);
+
+  // 2. 已完成 checkpoint 正确提取 summaryOutputTokens、清除压缩前报错、并记录步序
+  const completedSteps = [
+    { userInput: { userResponse: 'initial prompt' } },
+    { plannerResponse: { response: 'long reply' } },
+    { errorMessage: { error: { shortError: exceeded } } },
+    { userInput: { userResponse: '/compact' } },
+    {
+      type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: '2026-11-20T14:00:00Z',
+        modelUsage: {
+          inputTokens: '471225',
+          outputTokens: '4419',
+          thinkingOutputTokens: '51',
+          responseOutputTokens: '4368'
+        }
+      },
+      checkpoint: {
+        checkpointIndex: 4,
+        sessionSummary: 'Compacted summary of conversation state and decisions.'
+      }
+    }
+  ];
+  const session = analyzeSteps(completedSteps);
+  assert.equal(session.compactingInProgress, false);
+  assert.equal(session.currentError, null);
+  assert.equal(session.lastAssistantAt, 1);
+  assert.ok(session.latestCheckpoint);
+  assert.equal(session.latestCheckpoint.index, 4);
+  assert.equal(session.latestCheckpoint.summaryOutputTokens, 4368);
+  assert.equal(session.latestCheckpoint.estimatedSummaryTokens, 4368);
+
+  // 3. 过期 pre-compact generatorMetadata（stepIndices=[1]）在存在 step 4 checkpoint 时立刻切换为 compacted 状态
+  const staleGenMeta = {
+    stepIndices: [1],
+    chatModel: {
+      modelDisplayName: 'Gemini 4 Argon (High)',
+      timeToFirstToken: '2.0s',
+      streamingDuration: '4.0s',
+      usage: {
+        inputTokens: '2089',
+        cacheReadTokens: '415076',
+        outputTokens: '4161'
+      },
+      chatStartMetadata: {
+        startStepIndex: 1,
+        contextWindowMetadata: { maxContextTokens: 512000 }
+      }
+    }
+  };
+  assert.equal(getGeneratorMaxStepIndex(staleGenMeta), 1);
+
+  const systemStats = measure('A'.repeat(40000)); // ~13.5K mid estimate
+  const est = estimatePostCompactTokens({ latestCheckpoint: session.latestCheckpoint, system: systemStats });
+  assert.equal(est.summaryTokens, 4368);
+  assert.equal(est.summaryTokensSource, 'checkpoint_usage');
+  assert.ok(est.basePromptTokens > 0);
+  assert.equal(est.estimate, est.summaryTokens + est.basePromptTokens);
+
+  const postCompact = summarize(staleGenMeta, {
+    latestCheckpoint: session.latestCheckpoint,
+    lastAssistantAt: session.lastAssistantAt,
+    system: systemStats,
+    postCheckpointTotal: session.postCheckpointTotal
+  });
+  assert.equal(postCompact.status, 'compacted');
+  assert.equal(postCompact.compacted, true);
+  assert.equal(postCompact.actual, null); // 绝不伪造服务端实测 actual
+  assert.equal(postCompact.percent, null); // 绝不伪造服务端实测 percent
+  assert.equal(postCompact.estimated, true);
+  assert.equal(postCompact.estimate, est.estimate);
+  assert.equal(postCompact.used, est.estimate);
+  assert.equal(postCompact.budget, 512000);
+  assert.ok(postCompact.estimatedPercent > 0 && postCompact.estimatedPercent < 10);
+  assert.equal(postCompact.preCompactActual, 421326);
+  assert.ok(Math.abs(postCompact.preCompactPercent - (421326 / 512000 * 100)) < 0.01);
+  assert.equal(postCompact.checkpointStepIndex, 4);
+  assert.equal(postCompact.latestGeneratorStepIndex, 1);
+  assert.equal(postCompact.model, 'Gemini 4 Argon (High)');
+  assert.ok(postCompact.speed && postCompact.speed.outputTokens === 4161); // 保留末轮速度信息
+
+  // 4. 压缩前曾处于 context_overflow 超限态，压缩完成后超限告警立刻解除
+  const overflowGenMeta = {
+    stepIndices: [1],
+    chatModel: {
+      retryInfos: [{ error: exceeded }],
+      chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 520000, maxContextTokens: 512000 } }
+    }
+  };
+  const clearedOverflow = summarize(overflowGenMeta, {
+    latestCheckpoint: session.latestCheckpoint,
+    lastAssistantAt: session.lastAssistantAt
+  });
+  assert.equal(clearedOverflow.status, 'compacted');
+  assert.equal(clearedOverflow.compacted, true);
+  assert.equal(clearedOverflow.exceeded, false);
+  assert.equal(clearedOverflow.error, '');
+  assert.equal(clearedOverflow.errorClassification.kind, 'none');
+
+  // 5. 当用户发送下一条消息并产生新 generatorMetadata（stepIndices=[6] > checkpoint 4）时，立刻恢复真实实测值
+  const nextTurnGenMeta = {
+    stepIndices: [6],
+    chatModel: {
+      modelDisplayName: 'Gemini 4 Argon (High)',
+      usage: { inputTokens: '22696', outputTokens: '1096' },
+      chatStartMetadata: { startStepIndex: 6, contextWindowMetadata: { maxContextTokens: 512000 } }
+    }
+  };
+  const nextTurn = summarize(nextTurnGenMeta, {
+    latestCheckpoint: session.latestCheckpoint,
+    lastAssistantAt: session.lastAssistantAt,
+    system: systemStats
+  });
+  assert.equal(nextTurn.status, 'reported');
+  assert.equal(nextTurn.compacted, undefined);
+  assert.equal(nextTurn.actual, 23792);
+  assert.equal(nextTurn.estimated, false);
+  assert.ok(Math.abs(nextTurn.percent - (23792 / 512000 * 100)) < 0.01);
+
+  // 6. 无 stepIndices 但 callId 已变化的新调用不会被旧 checkpoint 误覆盖
+  const noStepLatest = applyPostCompactCheckpoint(
+    { actual: 18000, percent: 3.5, budget: 512000, status: 'reported', estimated: false },
+    {
+      latestCheckpoint: { index: 4, summaryOutputTokens: 4000 },
+      lastAssistantAt: 1,
+      currentCallId: 'resp_new_turn',
+      preCompactCallId: 'resp_old_turn'
+    }
+  );
+  assert.equal(noStepLatest.status, 'reported');
+  assert.equal(noStepLatest.actual, 18000);
+});
+
+test('collect 与 compactConversation(waitForCheckpoint) 端到端链路：压缩完成即刷新 post-compact 上下文，下一轮恢复实测值', async () => {
+  const { collect, compactConversation } = require('./meter-collector');
+  const origin = 'https://127.0.0.1:59877';
+  const cid = '22222222-3333-4444-5555-666666666666';
+
+  let phase = 'pre_compact';
+  const preGen = {
+    stepIndices: [1],
+    chatModel: {
+      modelDisplayName: 'Gemini 4 Argon (High)',
+      systemPrompt: 'System instructions '.repeat(400),
+      tools: [{ name: 'read_file', description: 'Read a workspace file' }],
+      usage: {
+        inputTokens: '2089',
+        cacheReadTokens: '415076',
+        outputTokens: '4161',
+        responseId: 'resp_pre_compact'
+      },
+      chatStartMetadata: {
+        startStepIndex: 1,
+        contextWindowMetadata: { maxContextTokens: 512000 }
+      }
+    }
+  };
+  const postTurnGen = {
+    stepIndices: [5],
+    chatModel: {
+      modelDisplayName: 'Gemini 4 Argon (High)',
+      usage: {
+        inputTokens: '22696',
+        outputTokens: '1096',
+        responseId: 'resp_post_turn'
+      },
+      chatStartMetadata: {
+        startStepIndex: 5,
+        contextWindowMetadata: { maxContextTokens: 512000 }
+      }
+    }
+  };
+
+  let pollTicks = 0;
+  const mockRequestFn = async (_orig, method) => {
+    if (method === null) return '<script>window.__APP_CONFIG__ = {"csrfToken":"tok_e2e"};</script>';
+    if (method === 'SendUserCascadeMessage') {
+      phase = 'compacting';
+      pollTicks = 0;
+      return { queued: true };
+    }
+    if (method === 'GetCascadeTrajectory') {
+      if (phase === 'compacting') {
+        pollTicks += 1;
+        if (pollTicks >= 2) phase = 'post_compact';
+      }
+      if (phase === 'pre_compact') {
+        return {
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          numTotalSteps: 2,
+          numTotalGeneratorMetadata: 1,
+          trajectory: {
+            steps: [
+              { userInput: { userResponse: 'work' } },
+              { plannerResponse: { response: 'done' } }
+            ]
+          }
+        };
+      }
+      if (phase === 'compacting') {
+        return {
+          status: 'CASCADE_RUN_STATUS_RUNNING',
+          numTotalSteps: 4,
+          numTotalGeneratorMetadata: 1,
+          trajectory: {
+            steps: [
+              { userInput: { userResponse: 'work' } },
+              { plannerResponse: { response: 'done' } },
+              { userInput: { userResponse: '/compact' } },
+              { type: 'CORTEX_STEP_TYPE_CHECKPOINT', status: 'CORTEX_STEP_STATUS_RUNNING' }
+            ]
+          }
+        };
+      }
+      if (phase === 'post_compact') {
+        return {
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          numTotalSteps: 4,
+          numTotalGeneratorMetadata: 1, // 真实行为：/compact 不追加新的 generatorMetadata
+          trajectory: {
+            steps: [
+              { userInput: { userResponse: 'work' } },
+              { plannerResponse: { response: 'done' } },
+              { userInput: { userResponse: '/compact' } },
+              {
+                type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+                status: 'CORTEX_STEP_STATUS_DONE',
+                metadata: {
+                  completedAt: '2026-11-20T14:05:00Z',
+                  modelUsage: { inputTokens: '471225', outputTokens: '4419', responseOutputTokens: '4368' }
+                },
+                checkpoint: {
+                  checkpointIndex: 3,
+                  sessionSummary: 'Concise compacted state summary.'
+                }
+              }
+            ]
+          }
+        };
+      }
+      return {
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        numTotalSteps: 6,
+        numTotalGeneratorMetadata: 2,
+        trajectory: {
+          steps: [
+            { userInput: { userResponse: 'work' } },
+            { plannerResponse: { response: 'done' } },
+            { userInput: { userResponse: '/compact' } },
+            {
+              type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+              status: 'CORTEX_STEP_STATUS_DONE',
+              metadata: { modelUsage: { responseOutputTokens: '4368' } },
+              checkpoint: { checkpointIndex: 3, sessionSummary: 'Concise compacted state summary.' }
+            },
+            { userInput: { userResponse: 'next question' } },
+            { plannerResponse: { response: 'fresh answer' } }
+          ]
+        }
+      };
+    }
+    if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+      return {
+        generatorMetadata: phase === 'post_next_turn' ? [preGen, postTurnGen] : [preGen]
+      };
+    }
+    throw new Error(`unexpected rpc ${method}`);
+  };
+
+  // Phase 1: 压缩前显示 421,326 (82.3%)
+  const preSnap = await collect(origin, cid, { bypassCache: true, requestFn: mockRequestFn });
+  assert.equal(preSnap.latest.status, 'reported');
+  assert.equal(preSnap.latest.actual, 421326);
+  assert.ok(preSnap.latest.percent > 80);
+
+  // Phase 2: 触发 /compact 并等待 checkpoint 完成，即使 generatorMetadata 仍是旧的 preGen，也应立即切换为 compacted
+  const compactRes = await compactConversation(origin, cid, {
+    waitForCheckpoint: true,
+    pollIntervalMs: 100,
+    waitTimeoutMs: 5000,
+    sleepFn: async () => {},
+    requestFn: mockRequestFn
+  });
+  assert.equal(compactRes.ok, true);
+  assert.equal(compactRes.waited, true);
+  assert.equal(compactRes.completed, true);
+  assert.equal(compactRes.stepCountBefore, 2);
+  assert.equal(compactRes.generatorCountBefore, 1);
+  assert.equal(compactRes.checkpointIndexBefore, -1);
+  assert.ok(compactRes.snapshot);
+  assert.equal(compactRes.snapshot.trajectoryStatus, 'CASCADE_RUN_STATUS_IDLE');
+  assert.equal(compactRes.snapshot.session.compactingInProgress, false);
+  assert.equal(compactRes.snapshot.session.latestCheckpoint.index, 3);
+  assert.equal(compactRes.snapshot.latest.status, 'compacted');
+  assert.equal(compactRes.snapshot.latest.compacted, true);
+  assert.equal(compactRes.snapshot.latest.actual, null);
+  assert.equal(compactRes.snapshot.latest.percent, null);
+  assert.equal(compactRes.snapshot.latest.preCompactActual, 421326);
+  assert.equal(compactRes.snapshot.latest.summaryTokens, 4368);
+  assert.ok(compactRes.snapshot.latest.estimate > 4368);
+  assert.ok(compactRes.snapshot.latest.estimatedPercent > 0 && compactRes.snapshot.latest.estimatedPercent < 5);
+
+  // Phase 3: 用户发出下一条消息后，新 generatorMetadata 生效，立刻恢复真实实测 23,792
+  phase = 'post_next_turn';
+  const nextSnap = await collect(origin, cid, { bypassCache: true, requestFn: mockRequestFn });
+  assert.equal(nextSnap.latest.status, 'reported');
+  assert.equal(nextSnap.latest.compacted, undefined);
+  assert.equal(nextSnap.latest.actual, 23792);
+  assert.ok(nextSnap.latest.percent > 4 && nextSnap.latest.percent < 5);
 });

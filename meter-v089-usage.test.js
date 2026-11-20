@@ -416,10 +416,12 @@ test('v0.8.9 4: 缓存读取占比口径（加权求和、缺失与零分母区�
   }
 });
 
-test('v0.8.9 5: 最新调用卡片替换动画、同快照去重、阅读保护与 reduced-motion 与切会话重置', () => {
-  // 5a. 正常动画、同快照去重、点击展开阅读保护与滚动位置保持
+test('v0.8.9 5: 上下文面板已移除最新调用卡片，会话调用数据仍正常更新且切会话清空隔离', () => {
   const h = createV089DomSandbox({ reducedMotion: false });
   try {
+    assert.equal(h.elements.get('latest-call-card'), undefined, '最新调用卡片已从当前会话面板精简移除');
+    assert.equal(h.elements.get('session-timeline-drawer'), undefined, '会话请求时间线抽屉已从当前会话面板精简移除');
+
     const call1 = {
       callId: 'c1',
       model: 'gemini-4-hydrogen',
@@ -434,60 +436,20 @@ test('v0.8.9 5: 最新调用卡片替换动画、同快照去重、阅读保护�
       status: 'final',
       timestamp: 1700000001000
     };
-    h.api.setSessionCallsForTest([call1], { replace: true });
-    let st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.displayedCall.callId, 'c1');
-    assert.equal(st.isEntering, false, '首次展示无需替换动画');
+    const r1 = h.api.setSessionCallsForTest([call1], { replace: true });
+    assert.equal(r1.count, 1);
+    assert.equal(h.api.snapshot().sessionCalls.length, 1);
 
-    // 新调用到来完成 -> 播一次进入动画
     const call2 = { ...call1, callId: 'c2', outputTokens: 900, timestamp: 1700000005000 };
-    h.api.setSessionCallsForTest([call1, call2]);
-    st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.displayedCall.callId, 'c2');
-    assert.equal(st.isEntering, true, '新调用替换完成应播一次进入动画');
-
-    // 手动模拟动画结束清 class，再推相同快照 -> 不得重播
-    h.elements.get('latest-call-body').classList.remove('is-entering');
-    h.api.setSessionCallsForTest([call1, { ...call2 }]);
-    st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.isEntering, false, '相同快照刷新严禁重播动画');
-
-    // 展开详情并验证阅读保护（到来 call3 时不自动覆盖，不更改 scrollTop，弹出新调用横幅）
-    h.elements.get('latest-call-summary-row').click();
-    assert.equal(h.api.getLatestCallCardStateForTest().detailOpen, true);
-    h.elements.get('panel').scrollTop = 260;
-
-    const call3 = { ...call1, callId: 'c3', outputTokens: 1500, timestamp: 1700000010000 };
-    h.api.setSessionCallsForTest([call1, call2, call3]);
-    st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.displayedCall.callId, 'c2', '详情阅读期间不得自动替换当前详情');
-    assert.equal(st.pendingLatestCall.callId, 'c3');
-    assert.equal(st.bannerVisible, true);
-    assert.equal(h.elements.get('panel').scrollTop, 260, '不得改写滚动位置');
-
-    // 点击横幅跳到最新
-    h.elements.get('latest-call-new-banner').click();
-    st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.displayedCall.callId, 'c3');
-    assert.equal(st.bannerVisible, false);
+    const r2 = h.api.setSessionCallsForTest([call1, call2]);
+    assert.equal(r2.count, 2);
 
     // 切会话路由后状态必须清空隔离
     h.sandbox.location.pathname = '/c/22222222-2222-2222-2222-222222222222';
     h.tick();
-    st = h.api.getLatestCallCardStateForTest();
-    assert.equal(st.displayedCall, null);
+    assert.equal(h.api.snapshot().sessionCalls.length, 0);
   } finally {
     h.api.dispose();
-  }
-
-  // 5b. prefers-reduced-motion 时不施加动画 class
-  const hReduced = createV089DomSandbox({ reducedMotion: true });
-  try {
-    hReduced.api.setSessionCallsForTest([{ callId: 'r1', status: 'final', inputTokens: 100, outputTokens: 20, timestamp: 1700000001000 }], { replace: true });
-    hReduced.api.setSessionCallsForTest([{ callId: 'r2', status: 'final', inputTokens: 200, outputTokens: 40, timestamp: 1700000002000 }]);
-    assert.equal(hReduced.api.getLatestCallCardStateForTest().isEntering, false);
-  } finally {
-    hReduced.api.dispose();
   }
 });
 
@@ -560,23 +522,11 @@ test('v0.8.9 6: 会话请求时间线、一轮多次调用、真实子代理归�
     assert.equal(tl.turns[1].subagentCallCount, 1);
     assert.equal(tl.unlinkedSubagentCalls.length, 1, '无父步骤线索的跨层级子代理必须放入未归属列表，绝不按时间猜测');
 
-    // UI 渲染验证：默认收起，展开后最近第 2 轮默认展开、第 1 轮默认折叠
+    // UI 精简验证：上下文会话页不再挂载时间线抽屉，后端采集与白名单路由仍完整保留
     const h = createV089DomSandbox({ pathname: `/c/${parentCid}` });
     try {
-      h.api.toggleSessionHistoryForTest(true);
-      h.api.setSessionTimelineForTest(tl);
-      const listEl = h.elements.get('session-timeline-list');
-      assert.equal(listEl.children.length, 2);
-      // 倒序：children[0] 是第 2 轮 (带 hdr + body)，children[1] 是第 1 轮 (仅 hdr 折叠)
-      assert.equal(listEl.children[0].children.length, 2, '最近轮次默认展开');
-      assert.equal(listEl.children[1].children.length, 1, '更早轮次默认折叠');
-      assert.equal(h.elements.get('session-timeline-unlinked').hidden, false);
-
-      // 三语言切换同步
-      await h.api.setPanelLanguage('zh-TW', { persist: false });
-      assert.match(h.elements.get('btn-session-history-toggle').textContent, /收合歷史/);
-      await h.api.setPanelLanguage('en', { persist: false });
-      assert.match(h.elements.get('btn-session-history-toggle').textContent, /Hide History/);
+      assert.equal(h.elements.get('session-timeline-drawer'), undefined);
+      assert.equal(h.elements.get('btn-session-history-toggle'), undefined);
     } finally {
       h.api.dispose();
     }
@@ -684,88 +634,11 @@ test('v0.8.8 请求时间线回归: 11 轮 105 调用防压扁滚动契约、<US
     assert.equal(tl.turns[0].preview, '请帮我检查渲染层布局为什么被压扁了？');
     assert.match(tl.turns[1].preview, /^继续构建并核对测试结果，第一行 第二行详细补充说明/);
 
-    // UI 渲染与多轮连续展开、滚动恢复、折叠验证
-    const h = createV089DomSandbox({ pathname: `/c/${cid}` });
-    try {
-      h.api.toggleSessionHistoryForTest(true);
-      h.api.setSessionTimelineForTest(tl);
-      const listEl = h.elements.get('session-timeline-list');
-      // 模拟加载全部 11 轮
-      h.elements.get('btn-timeline-load-more').click();
-      assert.equal(listEl.children.length, 11, '应展开呈现全部 11 轮');
-
-      // 连续展开多个轮次并验证 scrollTop 保持、各轮标题完整且均可收回
-      listEl.scrollTop = 280;
-      for (let i = 0; i < 4; i++) {
-        const hdr = listEl.children[i].children[0];
-        const card = listEl.children[i];
-        const wasOpen = card.children.length === 2;
-        if (!wasOpen) hdr.click();
-      }
-      assert.equal(listEl.scrollTop, 280, '同会话连续点击展开/折叠轮次不得把列表滚动条强行重置回顶部');
-      for (let i = 0; i < 4; i++) {
-        assert.equal(listEl.children[i].children.length, 2, `第 ${i} 张轮次卡应处于展开态且含明细区`);
-      }
-      for (let i = 0; i < 11; i++) {
-        const idxEl = listEl.children[i].children[0].children[0].children[0];
-        const promptEl = listEl.children[i].children[0].children[0].children[1];
-        assert.ok(idxEl.textContent && promptEl.textContent, '每轮标题都必须保持完整可读');
-        assert.doesNotMatch(promptEl.textContent, /<USER_REQUEST>/);
-      }
-      // 逐轮折叠收回（包括最后一张展开卡）后全部保持收回状态，不得反弹重展开
-      for (let i = 0; i < 4; i++) {
-        listEl.children[i].children[0].click();
-        assert.equal(listEl.children[i].children.length, 1, '每轮应随时可折叠收回');
-      }
-      for (let i = 0; i < 11; i++) {
-        assert.equal(listEl.children[i].children.length, 1, `全部收回后第 ${i} 轮不得自动反弹重展开`);
-      }
-
-      // 缺失可靠父步骤或子代理库字段时明确标注，且转义形式 &lt;USER_REQUEST&gt; 同步清洗
-      assert.equal(core.sanitizeTurnPreviewText('&lt;USER_REQUEST&gt;\n请验证清洗\n&lt;/USER_REQUEST&gt;&lt;ADDITIONAL_METADATA&gt;noise&lt;/ADDITIONAL_METADATA&gt;', 120), '请验证清洗');
-      h.api.setSessionTimelineForTest({
-        ...tl,
-        subagentNote: 'db_sqlite_unavailable',
-        unlinkedSubagentCalls: [
-          {
-            callId: 'sub_unlinked_1',
-            agentRole: 'subagent',
-            parentCascadeId: cid,
-            parentStepIndex: null,
-            subagentType: 'research',
-            attributionConfidence: 'verified_db_meta',
-            model: 'gemini-4-hydrogen',
-            inputTokens: 100,
-            cacheReadTokens: 200,
-            outputTokens: 50,
-            hasInputCacheFields: true,
-            status: 'final',
-            outcomeStatus: 'success',
-            timestamp: Date.now()
-          }
-        ]
-      });
-      const collectTexts = (node) => {
-        if (!node) return '';
-        const kids = Array.isArray(node.children) ? node.children.map(collectTexts).join(' ') : '';
-        return [node.textContent || '', kids].filter(Boolean).join(' ');
-      };
-      const sumText = collectTexts(h.elements.get('session-timeline-summary'));
-      assert.match(sumText, /db_sqlite_unavailable/, '缺失可靠子代理库字段时须在摘要区写明');
-      const unlinkedBox = h.elements.get('session-timeline-unlinked');
-      assert.equal(unlinkedBox.hidden, false);
-      unlinkedBox.children[1].click();
-      const detailJson = collectTexts(h.elements.get('latest-call-detail-grid'));
-      assert.match(detailJson, /缺可靠父步骤字段/, '缺失可靠父步骤字段时应在详情明确写明');
-    } finally {
-      h.api.dispose();
-    }
-
-    // 静态 CSS 契约断言：防止 .timeline-turn-card / .session-timeline-list 丢失 flex:0 0 auto 被压成一条缝
-    const cssSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
-    assert.match(cssSrc, /\.session-timeline-list\{[^}]*flex:0 0 auto;[^}]*max-height:min\(360px,46vh\)[^}]*overflow-y:auto/);
-    assert.match(cssSrc, /\.timeline-turn-card\{\s*flex:0 0 auto;/);
-    assert.match(RENDERER_SOURCE, /\.timeline-turn-card\{[^}]*flex:0 0 auto;/);
+    // 缺失可靠父步骤或子代理库字段时转义形式 &lt;USER_REQUEST&gt; 仍同步清洗，且精简后的模板与样式无时间线冗余
+    assert.equal(core.sanitizeTurnPreviewText('&lt;USER_REQUEST&gt;\n请验证清洗\n&lt;/USER_REQUEST&gt;&lt;ADDITIONAL_METADATA&gt;noise&lt;/ADDITIONAL_METADATA&gt;', 120), '请验证清洗');
+    const tplSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'template.html'), 'utf8');
+    assert.equal(tplSrc.includes('id="session-timeline-drawer"'), false, '会话请求时间线抽屉已从模板精简移除');
+    assert.equal(tplSrc.includes('id="latest-call-card"'), false, '最新调用卡片已从模板精简移除');
   } finally {
     fs.rmSync(agDir, { recursive: true, force: true });
   }
