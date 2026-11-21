@@ -19,9 +19,9 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const { URL } = require('url');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync, spawn, spawnSync } = require('child_process');
 
-const { getStateDir, getAppDataDir } = require('./asar-engine');
+const { getStateDir, getAppDataDir, isIsolatedTestPath } = require('./asar-engine');
 const { buildModelQuotaSnapshot, selectPrimaryQuotaBucket, getModelPoolKey, getSharedQuotaGroupKey } = require('./meter-core');
 const {
   applyProxyEnvironment,
@@ -959,19 +959,231 @@ public class AgCredMan {
 "@
 `;
 
+const LINUX_KEYRING_SERVICE = 'gemini';
+const LINUX_KEYRING_USERNAME = 'antigravity';
+const LINUX_KEYRING_LABEL = "Password for 'antigravity' on 'gemini'";
+const LINUX_KEYRING_SCHEMA = 'org.freedesktop.Secret.Generic';
+
+const LINUX_KEYRING_PY_READ = `
+import sys
+dbus_err = ""
+try:
+    import dbus
+    bus = dbus.SessionBus()
+    svc_obj = bus.get_object("org.freedesktop.secrets", "/org/freedesktop/secrets")
+    svc = dbus.Interface(svc_obj, "org.freedesktop.Secret.Service")
+    _, session_path = svc.OpenSession("plain", dbus.String("", variant_level=1))
+    try:
+        unlocked, locked = svc.SearchItems({"service": "gemini", "username": "antigravity"})
+        if unlocked:
+            it_obj = bus.get_object("org.freedesktop.secrets", unlocked[0])
+            it = dbus.Interface(it_obj, "org.freedesktop.Secret.Item")
+            _, _, secret_bytes, _ = it.GetSecret(session_path)
+            sys.stdout.write(bytes(secret_bytes).decode("utf-8", errors="replace"))
+            sys.exit(0)
+        sys.exit(3)
+    finally:
+        try:
+            sess_obj = bus.get_object("org.freedesktop.secrets", session_path)
+            dbus.Interface(sess_obj, "org.freedesktop.Secret.Session").Close()
+        except Exception:
+            pass
+except ImportError:
+    pass
+except Exception as e:
+    emsg = str(e)
+    if any(tok in emsg for tok in ("ServiceUnknown", "NoReply", "Unable to autolaunch", "DBUS_SESSION_BUS_ADDRESS")):
+        sys.stderr.write("NO_SECRET_SERVICE:" + emsg)
+        sys.exit(10)
+    dbus_err = emsg
+try:
+    import gi
+    gi.require_version("Secret", "1")
+    from gi.repository import Secret
+    schema = Secret.Schema.new(
+        "org.freedesktop.Secret.Generic",
+        Secret.SchemaFlags.NONE,
+        {"service": Secret.SchemaAttributeType.STRING, "username": Secret.SchemaAttributeType.STRING}
+    )
+    val = Secret.password_lookup_sync(schema, {"service": "gemini", "username": "antigravity"}, None)
+    if val is None:
+        sys.exit(3)
+    sys.stdout.write(val)
+    sys.exit(0)
+except Exception as e2:
+    sys.stderr.write((dbus_err + " | " if dbus_err else "") + "LIBSECRET:" + str(e2))
+    sys.exit(11)
+`;
+
+const LINUX_KEYRING_PY_WRITE = `
+import sys
+payload = sys.stdin.read()
+if not payload:
+    sys.stderr.write("EMPTY_PAYLOAD")
+    sys.exit(2)
+dbus_err = ""
+try:
+    import dbus
+    bus = dbus.SessionBus()
+    svc_obj = bus.get_object("org.freedesktop.secrets", "/org/freedesktop/secrets")
+    svc = dbus.Interface(svc_obj, "org.freedesktop.Secret.Service")
+    _, session_path = svc.OpenSession("plain", dbus.String("", variant_level=1))
+    try:
+        col_path = None
+        for cand in ("/org/freedesktop/secrets/aliases/default", "/org/freedesktop/secrets/collection/login"):
+            try:
+                obj = bus.get_object("org.freedesktop.secrets", cand)
+                cprops = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
+                if not bool(cprops.Get("org.freedesktop.Secret.Collection", "Locked")):
+                    col_path = cand
+                    break
+            except Exception:
+                continue
+        if not col_path:
+            sys.stderr.write("NO_UNLOCKED_COLLECTION")
+            sys.exit(10)
+        col_obj = bus.get_object("org.freedesktop.secrets", col_path)
+        col = dbus.Interface(col_obj, "org.freedesktop.Secret.Collection")
+        attrs = dbus.Dictionary({
+            "service": "gemini",
+            "username": "antigravity",
+            "xdg:schema": "org.freedesktop.Secret.Generic"
+        }, signature="ss")
+        props = dbus.Dictionary({
+            "org.freedesktop.Secret.Item.Label": dbus.String("Password for 'antigravity' on 'gemini'"),
+            "org.freedesktop.Secret.Item.Attributes": attrs
+        }, signature="sv")
+        secret = dbus.Struct((
+            dbus.ObjectPath(session_path),
+            dbus.ByteArray(b""),
+            dbus.ByteArray(payload.encode("utf-8")),
+            dbus.String("text/plain")
+        ), signature="oayays")
+        item_path, prompt_path = col.CreateItem(props, secret, True)
+        if str(item_path) == "/" and str(prompt_path) != "/":
+            sys.stderr.write("KEYRING_PROMPT_REQUIRED")
+            sys.exit(4)
+        sys.stdout.write("ok:dbus")
+        sys.exit(0)
+    finally:
+        try:
+            sess_obj = bus.get_object("org.freedesktop.secrets", session_path)
+            dbus.Interface(sess_obj, "org.freedesktop.Secret.Session").Close()
+        except Exception:
+            pass
+except ImportError:
+    pass
+except Exception as e:
+    emsg = str(e)
+    if any(tok in emsg for tok in ("ServiceUnknown", "NoReply", "Unable to autolaunch", "DBUS_SESSION_BUS_ADDRESS")):
+        sys.stderr.write("NO_SECRET_SERVICE:" + emsg)
+        sys.exit(10)
+    dbus_err = emsg
+try:
+    import gi
+    gi.require_version("Secret", "1")
+    from gi.repository import Secret
+    schema = Secret.Schema.new(
+        "org.freedesktop.Secret.Generic",
+        Secret.SchemaFlags.NONE,
+        {"service": Secret.SchemaAttributeType.STRING, "username": Secret.SchemaAttributeType.STRING}
+    )
+    ok = Secret.password_store_sync(
+        schema,
+        {"service": "gemini", "username": "antigravity"},
+        Secret.COLLECTION_DEFAULT,
+        "Password for 'antigravity' on 'gemini'",
+        payload,
+        None
+    )
+    if ok:
+        sys.stdout.write("ok:libsecret")
+        sys.exit(0)
+    sys.stderr.write("LIBSECRET_STORE_FALSE")
+    sys.exit(5)
+except Exception as e2:
+    emsg2 = str(e2)
+    combined = (dbus_err + " | " if dbus_err else "") + "LIBSECRET:" + emsg2
+    sys.stderr.write(combined)
+    if any(tok in combined for tok in ("ServiceUnknown", "NoReply", "Unable to autolaunch", "DBUS_SESSION_BUS_ADDRESS", "No module named")):
+        sys.exit(10)
+    sys.exit(11)
+`;
+
+function openExternalBrowserFallback(authUrl, opts = {}) {
+  if (typeof authUrl !== 'string' || !authUrl.trim()) return { ok: false, reason: 'invalid_url' };
+  const cleanUrl = authUrl.trim();
+  let parsed;
+  try {
+    parsed = new URL(cleanUrl);
+  } catch {
+    return { ok: false, reason: 'invalid_url' };
+  }
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, reason: 'non_https_rejected' };
+  }
+  const platform = opts.platform || process.platform;
+  const spawnFn = typeof opts.spawnFn === 'function' ? opts.spawnFn : spawn;
+  try {
+    let child = null;
+    if (platform === 'linux') {
+      child = spawnFn('xdg-open', [cleanUrl], { detached: true, stdio: 'ignore' });
+    } else if (platform === 'darwin') {
+      child = spawnFn('open', [cleanUrl], { detached: true, stdio: 'ignore' });
+    } else if (platform === 'win32') {
+      // 严禁使用 cmd.exe /c start（会被 OAuth URL 中的 & 截断并触发命令分隔），改用 rundll32 url.dll,FileProtocolHandler 免 shell 解析
+      child = spawnFn('rundll32.exe', ['url.dll,FileProtocolHandler', cleanUrl], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true
+      });
+    } else {
+      return { ok: false, reason: 'unsupported_platform' };
+    }
+    child?.on?.('error', () => { });
+    child?.unref?.();
+    return { ok: true, platform };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function parseStoredKeyringPayload(rawOut) {
+  if (typeof rawOut !== 'string' || !rawOut.length) return null;
+  const trimmed = rawOut.trim();
+  if (!trimmed) return null;
+  const decoded = trimmed.startsWith('go-keyring-base64:')
+    ? Buffer.from(trimmed.slice('go-keyring-base64:'.length), 'base64').toString('utf8')
+    : rawOut;
+  try {
+    return JSON.parse(decoded);
+  } catch {
+    return decoded;
+  }
+}
+
 function createDefaultSystemCredentialStore(dirs = {}) {
+  const platform = dirs.platform || process.platform;
   const homeDir = dirs.homeDir || os.homedir();
-  const appDataDir = dirs.appDataDir || process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
-  const desktopDbPath = dirs.desktopDbPath || (process.platform === 'darwin'
+  const appDataDir = dirs.appDataDir || getAppDataDir({ homeDir, platform });
+  const desktopDbPath = dirs.desktopDbPath || (platform === 'darwin'
     ? path.join(homeDir, 'Library', 'Application Support', 'Antigravity', 'User', 'globalStorage', 'state.vscdb')
     : path.join(appDataDir, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'));
-  const ideDbPath = dirs.ideDbPath || (process.platform === 'darwin'
+  const ideDbPath = dirs.ideDbPath || (platform === 'darwin'
     ? path.join(homeDir, 'Library', 'Application Support', 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb')
     : path.join(appDataDir, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb'));
   const googleAccountsPath = path.join(homeDir, '.gemini', 'google_accounts.json');
   const oauthCredsPath = path.join(homeDir, '.gemini', 'oauth_creds.json');
   const jetskiTokenPath = path.join(homeDir, '.gemini', 'jetski-standalone-oauth-token');
   const cliTokenPath = path.join(homeDir, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
+  const linuxKeyringBackend = dirs.linuxKeyringBackend || null;
+  const spawnSyncFn = typeof dirs.spawnSync === 'function' ? dirs.spawnSync : spawnSync;
+  const isIsolatedStore = Boolean(
+    !dirs.allowRealOsKeyring &&
+    !linuxKeyringBackend &&
+    !dirs.spawnSync &&
+    (isIsolatedTestPath(homeDir) || isIsolatedTestPath(appDataDir) || process.env.AG_METER_TEST_MODE === '1')
+  );
 
   return {
     getPaths() {
@@ -979,9 +1191,9 @@ function createDefaultSystemCredentialStore(dirs = {}) {
     },
 
     readWindowsSystemCredential() {
-      if (process.platform !== 'win32') return null;
+      if (platform !== 'win32' || isIsolatedStore) return null;
       const script = `${WIN_CREDMGR_PS_PREFIX}\n$v = [AgCredMan]::ReadUtf8('gemini:antigravity')\nif ($null -ne $v) { [Console]::Out.Write($v) }\n`;
-      const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+      const res = spawnSyncFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
         input: script,
         encoding: 'utf8',
         timeout: 6000,
@@ -992,11 +1204,12 @@ function createDefaultSystemCredentialStore(dirs = {}) {
     },
 
     writeWindowsSystemCredential(payloadObj) {
-      if (process.platform !== 'win32') return { ok: false, skipped: true };
+      if (platform !== 'win32') return { ok: false, skipped: true };
+      if (isIsolatedStore) return { ok: false, skipped: true, reason: 'isolated_test_mode' };
       const jsonStr = typeof payloadObj === 'string' ? payloadObj : JSON.stringify(payloadObj);
       const b64 = Buffer.from(jsonStr, 'utf8').toString('base64');
       const script = `${WIN_CREDMGR_PS_PREFIX}\n$raw = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}'))\n$ok = [AgCredMan]::WriteUtf8('gemini:antigravity', 'antigravity', $raw)\nif (-not $ok) { exit 2 }\n`;
-      const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+      const res = spawnSyncFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
         input: script,
         encoding: 'utf8',
         timeout: 6000,
@@ -1008,18 +1221,18 @@ function createDefaultSystemCredentialStore(dirs = {}) {
     },
 
     readMacKeychainCredential() {
-      if (process.platform !== 'darwin') return null;
+      if (platform !== 'darwin' || isIsolatedStore) return null;
       try {
         const out = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'gemini', '-a', 'antigravity', '-w'], { encoding: 'utf8', timeout: 4000 }).trim();
-        const raw = out.startsWith('go-keyring-base64:') ? Buffer.from(out.slice('go-keyring-base64:'.length), 'base64').toString('utf8') : out;
-        try { return JSON.parse(raw); } catch { return raw; }
+        return parseStoredKeyringPayload(out);
       } catch {
         return null;
       }
     },
 
     writeMacKeychainCredential(payloadObj) {
-      if (process.platform !== 'darwin') return { ok: false, skipped: true };
+      if (platform !== 'darwin') return { ok: false, skipped: true };
+      if (isIsolatedStore) return { ok: false, skipped: true, reason: 'isolated_test_mode' };
       try {
         const jsonStr = typeof payloadObj === 'string' ? payloadObj : JSON.stringify(payloadObj);
         const encoded = `go-keyring-base64:${Buffer.from(jsonStr, 'utf8').toString('base64')}`;
@@ -1030,12 +1243,133 @@ function createDefaultSystemCredentialStore(dirs = {}) {
       }
     },
 
+    readLinuxKeyringCredential() {
+      if (platform !== 'linux') return null;
+      if (linuxKeyringBackend && typeof linuxKeyringBackend.read === 'function') {
+        try {
+          const raw = linuxKeyringBackend.read({
+            service: LINUX_KEYRING_SERVICE,
+            username: LINUX_KEYRING_USERNAME,
+            schema: LINUX_KEYRING_SCHEMA
+          });
+          if (raw === null || raw === undefined) return null;
+          return typeof raw === 'string' ? parseStoredKeyringPayload(raw) : raw;
+        } catch {
+          return null;
+        }
+      }
+      if (isIsolatedStore) return null;
+
+      // 1. 优先尝试 secret-tool（若已安装）
+      try {
+        const stRes = spawnSyncFn('secret-tool', ['lookup', 'service', LINUX_KEYRING_SERVICE, 'username', LINUX_KEYRING_USERNAME], {
+          encoding: 'utf8',
+          timeout: 4000
+        });
+        if (!stRes.error && stRes.status === 0 && stRes.stdout) {
+          return parseStoredKeyringPayload(stRes.stdout);
+        }
+      } catch { }
+
+      // 2. 回退 python3 (dbus -> gi.repository.Secret)，直接查询 org.freedesktop.secrets
+      try {
+        const pyRes = spawnSyncFn('python3', ['-c', LINUX_KEYRING_PY_READ], {
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        if (!pyRes.error && pyRes.status === 0 && pyRes.stdout) {
+          return parseStoredKeyringPayload(pyRes.stdout);
+        }
+      } catch { }
+
+      return null;
+    },
+
+    writeLinuxKeyringCredential(payloadObj) {
+      if (platform !== 'linux') return { ok: false, skipped: true };
+      const jsonStr = typeof payloadObj === 'string' ? payloadObj : JSON.stringify(payloadObj);
+      if (linuxKeyringBackend && typeof linuxKeyringBackend.write === 'function') {
+        try {
+          const r = linuxKeyringBackend.write({
+            service: LINUX_KEYRING_SERVICE,
+            username: LINUX_KEYRING_USERNAME,
+            label: LINUX_KEYRING_LABEL,
+            schema: LINUX_KEYRING_SCHEMA,
+            contentType: 'text/plain',
+            payload: jsonStr
+          });
+          return r && typeof r === 'object' ? r : { ok: Boolean(r) };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      }
+      if (isIsolatedStore) return { ok: false, skipped: true, reason: 'isolated_test_mode' };
+
+      // 1. 优先尝试 secret-tool（敏感载荷严格通过 stdin 传递，绝不进命令行参数）
+      let secretToolErr = '';
+      let secretToolAvailable = false;
+      try {
+        const stRes = spawnSyncFn(
+          'secret-tool',
+          ['store', `--label=${LINUX_KEYRING_LABEL}`, 'service', LINUX_KEYRING_SERVICE, 'username', LINUX_KEYRING_USERNAME],
+          {
+            input: jsonStr,
+            encoding: 'utf8',
+            timeout: 5000
+          }
+        );
+        if (!stRes.error) {
+          secretToolAvailable = true;
+          if (stRes.status === 0) return { ok: true, backend: 'secret-tool' };
+          secretToolErr = (stRes.stderr || `secret-tool exit ${stRes.status}`).trim();
+        } else if (stRes.error.code !== 'ENOENT') {
+          secretToolErr = stRes.error.message;
+        }
+      } catch (e) {
+        secretToolErr = e.message;
+      }
+
+      // 2. 回退 python3 (dbus -> gi.repository.Secret)，载荷经 stdin 传递
+      try {
+        const pyRes = spawnSyncFn('python3', ['-c', LINUX_KEYRING_PY_WRITE], {
+          input: jsonStr,
+          encoding: 'utf8',
+          timeout: 6000
+        });
+        if (!pyRes.error && pyRes.status === 0) {
+          const outTag = String(pyRes.stdout || '').trim();
+          return { ok: true, backend: outTag.startsWith('ok:') ? outTag.slice(3) : 'python3-secret-service' };
+        }
+        const pyErr = pyRes.error
+          ? pyRes.error.message
+          : (pyRes.stderr || `python3 keyring exit ${pyRes.status}`).trim();
+        const noSecretService = Boolean(
+          pyRes.status === 10 ||
+          pyRes.error?.code === 'ENOENT' ||
+          /NO_SECRET_SERVICE|NO_UNLOCKED_COLLECTION|ServiceUnknown|Unable to autolaunch|DBUS_SESSION_BUS_ADDRESS/i.test(pyErr) ||
+          (!secretToolAvailable && /No module named/i.test(pyErr))
+        );
+        return {
+          ok: false,
+          noSecretService,
+          error: [secretToolErr, pyErr].filter(Boolean).join('; ') || '写入 Linux Secret Service 失败'
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          noSecretService: e?.code === 'ENOENT',
+          error: [secretToolErr, e.message].filter(Boolean).join('; ')
+        };
+      }
+    },
+
     captureSnapshot() {
       const snap = {
         capturedAtMs: Date.now(),
-        platform: process.platform,
+        platform,
         winCred: this.readWindowsSystemCredential(),
         macCred: this.readMacKeychainCredential(),
+        linuxCred: this.readLinuxKeyringCredential(),
         desktopDbRows: readStateDbItems(desktopDbPath, [
           'antigravityUnifiedStateSync.oauthToken',
           'antigravityUnifiedStateSync.userStatus',
@@ -1058,34 +1392,59 @@ function createDefaultSystemCredentialStore(dirs = {}) {
       const expiryMs = expiresAt ? Date.parse(expiresAt) : Date.now() + 3600000;
       const expirySeconds = Math.floor((Number.isFinite(expiryMs) ? expiryMs : Date.now() + 3600000) / 1000);
       const isoExpiry = new Date(expirySeconds * 1000).toISOString();
+      const expiresInSec = Math.max(0, expirySeconds - Math.floor(Date.now() / 1000));
+      const writerId = crypto.randomBytes(32).toString('base64url');
 
-      // 1. OS 共享系统凭据（Antigravity 2.x + CLI 共用格式；Windows Credential Blob 上限 2560B，超限时自动省略冗余 id_token）
+      // 1. OS 共享系统凭据（Antigravity 2.x + CLI 共用 StoredToken 格式；Windows Credential Blob 上限 2560B，超限时自动省略冗余 id_token）
       let systemPayload = {
         token: {
           access_token: accessToken,
           token_type: 'Bearer',
           refresh_token: refreshToken,
-          expiry: isoExpiry
+          expiry: isoExpiry,
+          expires_in: expiresInSec
         },
         auth_method: 'consumer',
         ...(email ? { id_token_email: email } : {}),
-        ...(idToken ? { id_token: idToken } : {})
+        ...(idToken ? { id_token: idToken } : {}),
+        writer_id: writerId
       };
-      if (process.platform === 'win32' && idToken && Buffer.byteLength(JSON.stringify(systemPayload), 'utf8') > 2500) {
+      if (platform === 'win32' && idToken && Buffer.byteLength(JSON.stringify(systemPayload), 'utf8') > 2500) {
         systemPayload = {
           token: systemPayload.token,
           auth_method: 'consumer',
-          ...(email ? { id_token_email: email } : {})
+          ...(email ? { id_token_email: email } : {}),
+          writer_id: writerId
         };
       }
 
       const stepResults = {};
-      if (process.platform === 'win32') {
+      if (platform === 'win32') {
         stepResults.osCred = this.writeWindowsSystemCredential(systemPayload);
         if (!stepResults.osCred.ok) return { ok: false, stage: 'windows_credmgr', ...stepResults };
-      } else if (process.platform === 'darwin') {
+      } else if (platform === 'darwin') {
         stepResults.osCred = this.writeMacKeychainCredential(systemPayload);
         if (!stepResults.osCred.ok) return { ok: false, stage: 'macos_keychain', ...stepResults };
+      } else if (platform === 'linux') {
+        stepResults.osCred = this.writeLinuxKeyringCredential(systemPayload);
+        if (!stepResults.osCred.ok) {
+          const canFallbackToFile = Boolean(stepResults.osCred.noSecretService || stepResults.osCred.skipped);
+          if (!canFallbackToFile) {
+            return { ok: false, stage: 'linux_keyring', error: stepResults.osCred.error || '写入 Linux Keyring 失败', ...stepResults };
+          }
+          try {
+            ensureDir(path.dirname(jetskiTokenPath));
+            fs.writeFileSync(jetskiTokenPath, JSON.stringify(systemPayload, null, 2), { encoding: 'utf8', mode: 0o600 });
+            stepResults.jetskiFallbackFile = { ok: true };
+          } catch (fe) {
+            return {
+              ok: false,
+              stage: 'linux_keyring',
+              error: `${stepResults.osCred.error || 'Linux Keyring 不可用'}；降级写入失败: ${fe.message}`,
+              ...stepResults
+            };
+          }
+        }
       }
 
       // 2. Desktop / IDE state.vscdb Protobuf 同步写入
@@ -1140,10 +1499,12 @@ function createDefaultSystemCredentialStore(dirs = {}) {
     restoreSnapshot(snap) {
       if (!snap || typeof snap !== 'object') return { ok: false, error: '无有效回滚快照' };
       try {
-        if (process.platform === 'win32' && snap.winCred) {
+        if (platform === 'win32' && snap.winCred) {
           this.writeWindowsSystemCredential(snap.winCred);
-        } else if (process.platform === 'darwin' && snap.macCred) {
+        } else if (platform === 'darwin' && snap.macCred) {
           this.writeMacKeychainCredential(snap.macCred);
+        } else if (platform === 'linux' && snap.linuxCred) {
+          this.writeLinuxKeyringCredential(snap.linuxCred);
         }
         if (fs.existsSync(desktopDbPath) && snap.desktopDbRows) {
           writeStateDbItems(desktopDbPath, snap.desktopDbRows);
@@ -1542,10 +1903,14 @@ function createAccountsManager(options = {}) {
   const stateDir = options.stateDir || getStateDir();
   const homeDir = options.homeDir || os.homedir();
   const credStore = options.credentialStore || createDefaultSystemCredentialStore({
+    platform: options.platform,
     homeDir,
     appDataDir: options.appDataDir,
     desktopDbPath: options.desktopDbPath,
-    ideDbPath: options.ideDbPath
+    ideDbPath: options.ideDbPath,
+    linuxKeyringBackend: options.linuxKeyringBackend,
+    spawnSync: options.spawnSync,
+    allowRealOsKeyring: options.allowRealOsKeyring
   });
   const customFetch = options.fetch || null;
   const restartLanguageServersFn = options.restartLanguageServers || (() => require('./meter-enhance').restartLanguageServersAsync({ includeCli: false }));
@@ -1563,6 +1928,7 @@ function createAccountsManager(options = {}) {
   const keepaliveLockPath = path.join(stateDir, 'cache_keepalive.lock');
 
   const debounceState = new Map(); // accountKey -> { firstSeenMs }
+  const lastAutoHydrateAttemptByEmail = new Map(); // email -> timestampMs
   let inFlightSwitch = null;
 
   function isSwitchLockActive() {
@@ -1816,6 +2182,11 @@ function createAccountsManager(options = {}) {
         });
         dirty = true;
       }
+      if (store.accounts[resolved] && !store.accounts[resolved].credential?.refreshToken) {
+        if (tryAutoHydrateAccountCredential(store, resolved, Date.now(), false)) {
+          dirty = true;
+        }
+      }
       if (dirty) saveStore(store);
     }
     return {
@@ -1825,35 +2196,72 @@ function createAccountsManager(options = {}) {
     };
   }
 
-  /**
-   * 从当前已登录的 Antigravity 客户端抽取账号并保存到 ACM 多账号列表
-   */
-  async function importFromCurrentClient() {
+  function tryAutoHydrateAccountCredential(store, email, nowMs = Date.now(), force = false) {
+    const clean = normalizeEmail(email);
+    const rec = clean ? store?.accounts?.[clean] : null;
+    if (!rec || rec.credential?.refreshToken) return false;
+    const lastAttempt = lastAutoHydrateAttemptByEmail.get(clean) || 0;
+    if (!force && (nowMs - lastAttempt) < 5 * 60 * 1000) return false;
+    lastAutoHydrateAttemptByEmail.set(clean, nowMs);
+    try {
+      const cand = readCurrentClientCredentialCandidate();
+      if (cand.refreshToken && cand.email && cand.email === clean) {
+        rec.credential = {
+          accessToken: cand.accessToken || rec.credential?.accessToken || '',
+          refreshToken: cand.refreshToken,
+          expiresAt: cand.expiresAt || rec.credential?.expiresAt || null,
+          idToken: cand.idToken || rec.credential?.idToken || ''
+        };
+        if (!rec.oauthClientKey) rec.oauthClientKey = 'antigravity_default';
+        rec.authInvalid = false;
+        rec.authError = null;
+        return true;
+      }
+    } catch { }
+    return false;
+  }
+
+  function readCurrentClientCredentialCandidate() {
     const paths = credStore.getPaths();
-    const winCred = credStore.readWindowsSystemCredential();
-    const macCred = credStore.readMacKeychainCredential();
-    const osCred = winCred || macCred || null;
-    const dbItems = fs.existsSync(paths.desktopDbPath)
+    const winCred = typeof credStore.readWindowsSystemCredential === 'function' ? credStore.readWindowsSystemCredential() : null;
+    const macCred = typeof credStore.readMacKeychainCredential === 'function' ? credStore.readMacKeychainCredential() : null;
+    const linuxCred = typeof credStore.readLinuxKeyringCredential === 'function' ? credStore.readLinuxKeyringCredential() : null;
+    const jetskiCred = paths.jetskiTokenPath ? readJsonSafe(paths.jetskiTokenPath, null) : null;
+    const osCred = winCred || macCred || linuxCred || jetskiCred || null;
+    const dbItems = paths.desktopDbPath && fs.existsSync(paths.desktopDbPath)
       ? readStateDbItems(paths.desktopDbPath, ['antigravityUnifiedStateSync.oauthToken', 'antigravityUnifiedStateSync.userStatus'])
       : {};
     const dbTok = parseUnifiedOAuthTokenTopicBase64(dbItems['antigravityUnifiedStateSync.oauthToken']);
     const dbUser = parseUnifiedUserStatusTopicBase64(dbItems['antigravityUnifiedStateSync.userStatus']);
-    const cliCreds = readJsonSafe(paths.oauthCredsPath, null);
-    const ga = readJsonSafe(paths.googleAccountsPath, null);
+    const cliCreds = paths.oauthCredsPath ? readJsonSafe(paths.oauthCredsPath, null) : null;
+    const ga = paths.googleAccountsPath ? readJsonSafe(paths.googleAccountsPath, null) : null;
 
-    let accessToken = osCred?.token?.access_token || dbTok?.accessToken || cliCreds?.access_token || '';
+    const accessToken = osCred?.token?.access_token || dbTok?.accessToken || cliCreds?.access_token || '';
     const refreshToken = osCred?.token?.refresh_token || dbTok?.refreshToken || cliCreds?.refresh_token || '';
     const idToken = osCred?.id_token || dbTok?.idToken || cliCreds?.id_token || '';
     const expiresAt = osCred?.token?.expiry
       || (dbTok?.expirySeconds ? new Date(dbTok.expirySeconds * 1000).toISOString() : null)
       || (cliCreds?.expiry_date ? new Date(cliCreds.expiry_date).toISOString() : null);
+    const email = normalizeEmail(osCred?.id_token_email || '')
+      || dbUser?.email
+      || decodeJwtEmail(idToken)
+      || normalizeEmail(ga?.active || '');
+    const name = dbUser?.name || '';
+    return { osCred, dbUser, accessToken, refreshToken, idToken, expiresAt, email, name };
+  }
+
+  /**
+   * 从当前已登录的 Antigravity 客户端抽取账号并保存到 ACM 多账号列表
+   */
+  async function importFromCurrentClient() {
+    const cand = readCurrentClientCredentialCandidate();
+    const { accessToken, refreshToken, idToken, expiresAt } = cand;
+    let { email, name } = cand;
 
     if (!refreshToken && !accessToken) {
       return { ok: false, error: '当前本机未检测到可用 Antigravity 登录凭据' };
     }
 
-    let email = dbUser?.email || decodeJwtEmail(idToken) || normalizeEmail(ga?.active || '');
-    let name = dbUser?.name || '';
     if (!email && typeof getHostUserStatusFn === 'function') {
       try {
         const hs = await getHostUserStatusFn();
@@ -2106,10 +2514,17 @@ function createAccountsManager(options = {}) {
             if (typeof openExternal === 'function') {
               Promise.resolve(openExternal(authUrl)).catch(() => { });
             } else {
+              let opened = false;
               try {
                 const { shell } = require('electron');
-                shell?.openExternal?.(authUrl);
+                if (typeof shell?.openExternal === 'function') {
+                  Promise.resolve(shell.openExternal(authUrl)).catch(() => { });
+                  opened = true;
+                }
               } catch { }
+              if (!opened && !process.env.NODE_TEST_CONTEXT && process.env.AG_METER_TEST_MODE !== '1') {
+                openExternalBrowserFallback(authUrl);
+              }
             }
           });
         };
@@ -2624,6 +3039,8 @@ function createAccountsManager(options = {}) {
         credential: {}
       });
     }
+    // 活跃账号尚无 refresh_token 时，若 OS 共享凭据中的 id_token_email 与当前活跃邮箱严格一致，自动安全补齐刷新凭证
+    tryAutoHydrateAccountCredential(store, clean, nowMs, Boolean(opts.forceHydrateCredential));
     const prevSnap = rec.quotaSnapshot || null;
     const prevAtMs = rec.lastQuotaUpdatedAtMs || null;
     recordQuotaComparisonSample(store, clean, prevSnap, prevAtMs, hostQuotaResult.snapshot, nowMs, {
@@ -3504,7 +3921,9 @@ const sharedMgrRuntime = {
   daemonDir: undefined,
   homeDir: undefined,
   isPidAlive: undefined,
-  directRequestFn: null
+  directRequestFn: null,
+  authBootstrapModule: undefined,
+  languageServerModule: undefined
 };
 
 function getSharedAccountsManager(opts = {}) {
@@ -3530,6 +3949,12 @@ function getSharedAccountsManager(opts = {}) {
     if (typeof srcOpts.directRequestFn === 'function') {
       targetRuntime.directRequestFn = srcOpts.directRequestFn;
     }
+    if (srcOpts.authBootstrapModule !== undefined) {
+      targetRuntime.authBootstrapModule = srcOpts.authBootstrapModule;
+    }
+    if (srcOpts.languageServerModule !== undefined) {
+      targetRuntime.languageServerModule = srcOpts.languageServerModule;
+    }
   };
 
   if (!sharedAccountsMgr || opts.forceNew) {
@@ -3542,7 +3967,9 @@ function getSharedAccountsManager(opts = {}) {
           daemonDir: undefined,
           homeDir: undefined,
           isPidAlive: undefined,
-          directRequestFn: null
+          directRequestFn: null,
+          authBootstrapModule: undefined,
+          languageServerModule: undefined
         }
       : sharedMgrRuntime;
     applyRuntimeOpts(localRuntime, opts);
@@ -3553,21 +3980,33 @@ function getSharedAccountsManager(opts = {}) {
       getHostUserStatus: opts.getHostUserStatus || (async (callOpts = {}) => {
         const localApi = localRuntime.localApi || require('./local-api');
         const directFn = localRuntime.directRequestFn || requestGetUserStatusDirect;
-        // 严格按非 CDP 优先级收集候选：
-        // 1) Electron 主进程活跃窗口 webContents URL（最新实况）
-        // 2) 最近已确认的 currentOrigin
-        // 3) daemon/hub_*.json 后备（校验 pid 存活 + mtimeMs 最新）
+        // 严格按非 CDP 优先级收集候选（兼容 Antigravity v2.34.0 authBootstrap + daemon/hub_*.json 免 CDP 鉴权）：
+        // 1) Electron 主进程内存 authBootstrap（最新端口 + 有效 CSRF Token）
+        // 2) Electron 主进程活跃窗口 webContents URL（若命中同原点 CSRF 则直接携带）
+        // 3) daemon/hub_*.json 存活 PID（mtimeMs 最新优先，自带有效 CSRF Token）
+        // 4) 最近已确认的 currentOrigin
         const candidates = [];
         const seen = new Set();
         const pushCandidate = (origin, csrfToken = '', fromSource = '') => {
           if (!origin || typeof origin !== 'string') return;
           const cleanOrigin = origin.trim();
           if (!cleanOrigin) return;
-          const key = `${cleanOrigin}|${csrfToken ? 'tok' : 'notok'}`;
+          const cleanTok = typeof csrfToken === 'string' ? csrfToken.trim() : '';
+          const key = `${cleanOrigin}|${cleanTok ? 'tok' : 'notok'}`;
           if (seen.has(key)) return;
           seen.add(key);
-          candidates.push({ origin: cleanOrigin, csrfToken, fromSource });
+          candidates.push({ origin: cleanOrigin, csrfToken: cleanTok, fromSource });
         };
+
+        let mainAuth = null;
+        if (typeof localApi?.readMainProcessLsAuth === 'function') {
+          try {
+            mainAuth = localApi.readMainProcessLsAuth({
+              ...(localRuntime.authBootstrapModule !== undefined ? { authBootstrapModule: localRuntime.authBootstrapModule } : {}),
+              ...(localRuntime.languageServerModule !== undefined ? { languageServerModule: localRuntime.languageServerModule } : {})
+            });
+          } catch { }
+        }
 
         let liveOrigins = [];
         if (typeof localRuntime.getLiveOrigins === 'function') {
@@ -3576,19 +4015,51 @@ function getSharedAccountsManager(opts = {}) {
             if (Array.isArray(rawLive)) liveOrigins = rawLive;
           } catch { }
         }
-        const hubBackups = discoverDaemonHubOrigins({
-          daemonDir: localRuntime.daemonDir,
-          homeDir: localRuntime.homeDir,
-          isPidAlive: localRuntime.isPidAlive
-        });
+
+        let hubBackups = [];
+        if (typeof localApi?.discoverDaemonHubInstances === 'function') {
+          try {
+            hubBackups = localApi.discoverDaemonHubInstances({
+              daemonDir: localRuntime.daemonDir,
+              homeDir: localRuntime.homeDir,
+              isPidAlive: localRuntime.isPidAlive,
+              requireCsrf: true
+            });
+          } catch { }
+        }
+        if (!Array.isArray(hubBackups) || !hubBackups.length) {
+          hubBackups = discoverDaemonHubOrigins({
+            daemonDir: localRuntime.daemonDir,
+            homeDir: localRuntime.homeDir,
+            isPidAlive: localRuntime.isPidAlive
+          });
+        }
+
+        const csrfByOrigin = new Map();
+        if (mainAuth?.origin && mainAuth?.csrfToken) {
+          csrfByOrigin.set(mainAuth.origin.trim(), String(mainAuth.csrfToken).trim());
+        }
+        for (const hub of hubBackups) {
+          if (hub?.origin && hub?.csrfToken && !csrfByOrigin.has(hub.origin.trim())) {
+            csrfByOrigin.set(hub.origin.trim(), String(hub.csrfToken).trim());
+          }
+        }
+
+        if (mainAuth?.origin && mainAuth?.csrfToken) {
+          pushCandidate(mainAuth.origin, mainAuth.csrfToken, 'main_process_auth_bootstrap');
+        }
 
         if (callOpts?.force) {
-          for (const lo of liveOrigins) pushCandidate(lo, '', 'electron_window');
-          if (localRuntime.currentOrigin) pushCandidate(localRuntime.currentOrigin, '', 'current_origin');
+          for (const lo of liveOrigins) pushCandidate(lo, csrfByOrigin.get(String(lo).trim()) || '', 'electron_window');
           for (const hub of hubBackups) pushCandidate(hub.origin, hub.csrfToken, 'daemon_hub');
+          if (localRuntime.currentOrigin) {
+            pushCandidate(localRuntime.currentOrigin, csrfByOrigin.get(localRuntime.currentOrigin.trim()) || '', 'current_origin');
+          }
         } else {
-          if (localRuntime.currentOrigin) pushCandidate(localRuntime.currentOrigin, '', 'current_origin');
-          for (const lo of liveOrigins) pushCandidate(lo, '', 'electron_window');
+          if (localRuntime.currentOrigin) {
+            pushCandidate(localRuntime.currentOrigin, csrfByOrigin.get(localRuntime.currentOrigin.trim()) || '', 'current_origin');
+          }
+          for (const lo of liveOrigins) pushCandidate(lo, csrfByOrigin.get(String(lo).trim()) || '', 'electron_window');
           for (const hub of hubBackups) pushCandidate(hub.origin, hub.csrfToken, 'daemon_hub');
         }
 
@@ -3602,7 +4073,14 @@ function getSharedAccountsManager(opts = {}) {
               } catch { }
             }
             if (typeof localApi?.connect === 'function') {
-              const api = await localApi.connect({ origin: cand.origin });
+              const api = await localApi.connect({
+                origin: cand.origin,
+                ...(localRuntime.daemonDir !== undefined ? { daemonDir: localRuntime.daemonDir } : {}),
+                ...(localRuntime.homeDir !== undefined ? { homeDir: localRuntime.homeDir } : {}),
+                ...(typeof localRuntime.isPidAlive === 'function' ? { isPidAlive: localRuntime.isPidAlive } : {}),
+                ...(localRuntime.authBootstrapModule !== undefined ? { authBootstrapModule: localRuntime.authBootstrapModule } : {}),
+                ...(localRuntime.languageServerModule !== undefined ? { languageServerModule: localRuntime.languageServerModule } : {})
+              });
               if (api?.origin) localRuntime.currentOrigin = api.origin;
               const u = await api.call('GetUserStatus', {});
               return {
@@ -3732,6 +4210,7 @@ module.exports = {
   parseUnifiedOAuthTokenTopicBase64,
   buildUnifiedUserStatusTopicBase64,
   parseUnifiedUserStatusTopicBase64,
+  openExternalBrowserFallback,
   createDefaultSystemCredentialStore,
   createAccountsManager,
   getSharedAccountsManager,

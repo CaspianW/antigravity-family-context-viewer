@@ -24,6 +24,7 @@ const {
   generateChinesePreloadCode,
   cleanUtilsSource,
   cleanPreloadSource,
+  injectMeterWindowLoadHook,
   verifyCleanStructure
 } = require('./modular-installer');
 
@@ -304,7 +305,7 @@ async function tryHotInject(options = {}) {
 async function install(options = {}) {
   if (options && typeof options === 'object') {
     if (options.path === undefined) {
-      const misnamedKey = ['asarPath', 'targetPath', 'target', 'file', 'asar'].find(k => options[k] !== undefined);
+      const misnamedKey = ['asarPath', 'targetPath', 'target', 'file', 'asar', 'customPath'].find(k => options[k] !== undefined);
       if (misnamedKey) {
         throw new Error(`无效的安装选项字段 "${misnamedKey}"：请使用 { path: "<app.asar>" } 指定安装目标，已拒绝回落至默认宿主路径。`);
       }
@@ -555,8 +556,13 @@ async function install(options = {}) {
         finalUtils = finalUtils
           .replace('"use strict";', `"use strict";\n${meterUtils.headerProxyHook}`)
           .replace('function setupNodeWrapper(env) {', `function setupNodeWrapper(env) {${meterUtils.nodeWrapperHook}`)
-          .replace("titleBarStyle: 'hidden',", `titleBarStyle: 'hidden',${meterUtils.menuBarOption}`)
-          .replace('    void win.loadURL(url);', `${meterUtils.windowLoadHook}    void win.loadURL(url);`);
+          .replace("titleBarStyle: 'hidden',", `titleBarStyle: 'hidden',${meterUtils.menuBarOption}`);
+
+        const loadInject = injectMeterWindowLoadHook(finalUtils, meterUtils.windowLoadHook);
+        if (!loadInject.ok) {
+          throw new Error(`未能在 dist/utils.js 中定位唯一的窗口加载锚点 (matchCount=${loadInject.matchCount})，中止写入以保护宿主环境。`);
+        }
+        finalUtils = loadInject.code;
 
         const createWinSig = 'function createWindow(url, storageManager, options) {';
         if (finalUtils.includes(createWinSig) && !finalUtils.includes('__agDefaultStorageManager')) {

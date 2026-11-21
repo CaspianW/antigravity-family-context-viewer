@@ -21,7 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile, execFileSync } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
-const { getStateDir } = require('./asar-engine');
+const { getStateDir, findAsarPath, findLinuxAsarCandidates, isIsolatedTestPath } = require('./asar-engine');
 const {
   isMachO64Buffer,
   parseMachO64,
@@ -219,42 +219,150 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function isPidAliveDefault(pid) {
+  const num = Number(pid);
+  if (!Number.isInteger(num) || num <= 0) return false;
+  try {
+    process.kill(num, 0);
+    return true;
+  } catch (e) {
+    return e?.code === 'EPERM';
+  }
+}
+
 /**
  * 探测本机 Antigravity 桌面端 language_server 二进制路径
  */
-function detectTargetBinary(customPath) {
-  if (customPath) {
+function detectTargetBinary(customPath, options = {}) {
+  if (customPath && typeof customPath === 'string') {
     const resolved = path.resolve(customPath);
     if (fs.existsSync(resolved)) return resolved;
     throw new Error(`指定的目标文件不存在: ${customPath}`);
   }
+  const opts = (customPath && typeof customPath === 'object') ? customPath : (options || {});
+  const platform = opts.platform || process.platform;
+  const home = opts.homeDir || os.homedir();
+  const env = opts.env || process.env;
+  const hasMockEnv = Boolean(opts.platform || opts.homeDir || opts.env);
+  const binName = platform === 'win32' ? 'language_server.exe' : 'language_server';
 
-  const home = os.homedir();
   const candidates = [];
+  const seen = new Set();
+  const pushCand = (p) => {
+    if (!p || typeof p !== 'string') return;
+    const trimmed = p.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    candidates.push(trimmed);
+  };
 
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    candidates.push(
-      path.join(localAppData, 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe'),
-      path.join(programFiles, 'antigravity', 'resources', 'bin', 'language_server.exe'),
-      path.join(programFiles, 'Google Antigravity', 'resources', 'bin', 'language_server.exe')
-    );
-  } else if (process.platform === 'darwin') {
-    candidates.push(
-      '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
-      path.join(home, 'Applications', 'Antigravity.app', 'Contents', 'Resources', 'bin', 'language_server'),
-      '/Applications/Antigravity IDE.app/Contents/Resources/bin/language_server',
-      path.join(home, 'Applications', 'Antigravity IDE.app', 'Contents', 'Resources', 'bin', 'language_server'),
-      '/Applications/Google Antigravity.app/Contents/Resources/bin/language_server',
-      path.join(home, 'Applications', 'Google Antigravity.app', 'Contents', 'Resources', 'bin', 'language_server')
-    );
+  // 1. 显式环境变量覆盖
+  if (env.CODEIUM_LANGUAGE_SERVER_BIN) pushCand(env.CODEIUM_LANGUAGE_SERVER_BIN);
+  if (env.AG_LANGUAGE_SERVER_BIN) pushCand(env.AG_LANGUAGE_SERVER_BIN);
+
+  // 2. Electron 宿主运行时 process.resourcesPath（与宿主 dist/languageServer.js 一致）
+  const resourcesPath = opts.resourcesPath !== undefined
+    ? opts.resourcesPath
+    : (!hasMockEnv && process.versions?.electron ? process.resourcesPath : '');
+  if (resourcesPath) {
+    pushCand(path.join(resourcesPath, 'bin', binName));
+  }
+
+  // 3. 复用 asar-engine.js 的 app.asar 探测路径推导同目录 resources/bin/<binName>
+  if (typeof opts.findAsarPathFn === 'function') {
+    try {
+      const asarPath = opts.findAsarPathFn();
+      if (asarPath) pushCand(path.join(path.dirname(asarPath), 'bin', binName));
+    } catch {}
+  } else if (!hasMockEnv) {
+    try {
+      const asarPath = findAsarPath();
+      if (asarPath) pushCand(path.join(path.dirname(asarPath), 'bin', binName));
+    } catch {}
+  }
+
+  // 4. 平台常规与 Linux 桌面入口 / ~/Antigravity/* 候选
+  if (platform === 'win32') {
+    const localAppData = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const programFiles = env.ProgramFiles || 'C:\\Program Files';
+    pushCand(path.join(localAppData, 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe'));
+    pushCand(path.join(programFiles, 'antigravity', 'resources', 'bin', 'language_server.exe'));
+    pushCand(path.join(programFiles, 'Google Antigravity', 'resources', 'bin', 'language_server.exe'));
+  } else if (platform === 'darwin') {
+    pushCand('/Applications/Antigravity.app/Contents/Resources/bin/language_server');
+    pushCand(path.join(home, 'Applications', 'Antigravity.app', 'Contents', 'Resources', 'bin', 'language_server'));
+    pushCand('/Applications/Antigravity IDE.app/Contents/Resources/bin/language_server');
+    pushCand(path.join(home, 'Applications', 'Antigravity IDE.app', 'Contents', 'Resources', 'bin', 'language_server'));
+    pushCand('/Applications/Google Antigravity.app/Contents/Resources/bin/language_server');
+    pushCand(path.join(home, 'Applications', 'Google Antigravity.app', 'Contents', 'Resources', 'bin', 'language_server'));
   } else {
-    candidates.push(
-      '/opt/antigravity/resources/bin/language_server',
-      '/usr/lib/antigravity/resources/bin/language_server',
-      path.join(home, '.local', 'share', 'antigravity', 'resources', 'bin', 'language_server')
-    );
+    pushCand('/opt/antigravity/resources/bin/language_server');
+    pushCand('/opt/Antigravity/resources/bin/language_server');
+    pushCand('/usr/lib/antigravity/resources/bin/language_server');
+    pushCand('/usr/share/antigravity/resources/bin/language_server');
+    pushCand(path.join(home, '.local', 'share', 'antigravity', 'resources', 'bin', 'language_server'));
+    try {
+      const linuxAsars = findLinuxAsarCandidates(home, fs, opts.xdgDataHome ?? env.XDG_DATA_HOME);
+      for (const asarCand of linuxAsars) {
+        pushCand(path.join(path.dirname(asarCand), 'bin', binName));
+      }
+    } catch {}
+  }
+
+  // 5. installation.json 记录的最近宿主安装路径
+  const inIsolatedTest = Boolean(
+    hasMockEnv ||
+    opts.daemonDir ||
+    opts.procDir ||
+    env.AG_METER_TEST_MODE === '1' ||
+    isIsolatedTestPath(home)
+  );
+  const instStateDir = opts.stateDir || (!inIsolatedTest ? (() => { try { return getStateDir(); } catch { return ''; } })() : '');
+  if (instStateDir) {
+    try {
+      const instPath = path.join(instStateDir, 'installation.json');
+      if (fs.existsSync(instPath)) {
+        const inst = JSON.parse(fs.readFileSync(instPath, 'utf8'));
+        if (inst?.installed && typeof inst.installed === 'string') {
+          pushCand(path.join(path.dirname(inst.installed), 'bin', binName));
+        }
+      }
+    } catch {}
+  }
+
+  // 6. Linux 运行中 daemon/hub_*.json 存活 PID -> /proc/<pid>/exe 探测
+  if (platform === 'linux') {
+    const daemonDir = opts.daemonDir || (!inIsolatedTest ? path.join(home, '.gemini', 'antigravity', 'daemon') : '');
+    const procDir = opts.procDir || '/proc';
+    const isPidAlive = typeof opts.isPidAlive === 'function' ? opts.isPidAlive : isPidAliveDefault;
+    if (daemonDir && fs.existsSync(daemonDir)) {
+      try {
+        const hubEntries = fs.readdirSync(daemonDir)
+          .filter((name) => /^hub_.*\.json$/i.test(name))
+          .map((name) => {
+            const full = path.join(daemonDir, name);
+            try {
+              const st = fs.statSync(full);
+              const raw = JSON.parse(fs.readFileSync(full, 'utf8'));
+              return { pid: Number(raw?.pid), mtimeMs: Number(st.mtimeMs) || 0 };
+            } catch {
+              return null;
+            }
+          })
+          .filter((item) => item && Number.isInteger(item.pid) && item.pid > 0)
+          .sort((a, b) => b.mtimeMs - a.mtimeMs);
+        for (const item of hubEntries) {
+          if (!isPidAlive(item.pid)) continue;
+          try {
+            const rawExe = fs.readlinkSync(path.join(procDir, String(item.pid), 'exe'));
+            const exePath = String(rawExe || '').replace(/ \(deleted\)$/, '').trim();
+            if (exePath && path.basename(exePath).startsWith('language_server')) {
+              pushCand(exePath);
+            }
+          } catch {}
+        }
+      } catch {}
+    }
   }
 
   for (const p of candidates) {

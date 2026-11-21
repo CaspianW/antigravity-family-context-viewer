@@ -2479,3 +2479,295 @@ test('按账号汇总 Gemini / Claude 周额度对照：忽略 5h 仅看 7d 并�
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('Linux 切号全链路回归：detectTargetBinary 跨路径探测、Secret Service 读写回滚、writer_id/expires_in、自动补齐刷新凭证与 v2.34.0 authBootstrap 核验', async () => {
+  const { detectTargetBinary } = require('./meter-context-unlock');
+  const tmpDir = makeTempDir('acm-linux-switch-');
+  try {
+    // 1. detectTargetBinary 跨平台探测：process.resourcesPath / ~/Antigravity/* / daemon/hub_*.json /proc/<pid>/exe
+    const fakeHome = path.join(tmpDir, 'home');
+    const fakeRes = path.join(tmpDir, 'electron-res');
+    const resBin = path.join(fakeRes, 'bin', 'language_server');
+    fs.mkdirSync(path.dirname(resBin), { recursive: true });
+    fs.writeFileSync(resBin, 'ls-res');
+    assert.equal(
+      detectTargetBinary(null, { platform: 'linux', homeDir: fakeHome, resourcesPath: fakeRes, env: {} }),
+      resBin,
+      'Electron process.resourcesPath/bin/language_server 应优先命中'
+    );
+
+    const customHomeBin = path.join(fakeHome, 'Antigravity', 'Antigravity-x64', 'resources', 'bin', 'language_server');
+    const customHomeAsar = path.join(fakeHome, 'Antigravity', 'Antigravity-x64', 'resources', 'app.asar');
+    fs.mkdirSync(path.dirname(customHomeBin), { recursive: true });
+    fs.writeFileSync(customHomeBin, 'ls-home');
+    fs.writeFileSync(customHomeAsar, 'asar');
+    assert.equal(
+      detectTargetBinary(null, { platform: 'linux', homeDir: fakeHome, resourcesPath: '', env: {} }),
+      customHomeBin,
+      'Linux ~/Antigravity/Antigravity-x64/resources/bin/language_server 应被自动发现'
+    );
+
+    const procDir = path.join(tmpDir, 'proc');
+    const daemonDir = path.join(tmpDir, 'daemon');
+    const procBin = path.join(tmpDir, 'custom-opt', 'bin', 'language_server');
+    fs.mkdirSync(path.join(procDir, '54321'), { recursive: true });
+    fs.mkdirSync(daemonDir, { recursive: true });
+    fs.mkdirSync(path.dirname(procBin), { recursive: true });
+    fs.writeFileSync(procBin, 'ls-proc');
+    fs.symlinkSync(procBin, path.join(procDir, '54321', 'exe'));
+    fs.writeFileSync(path.join(daemonDir, 'hub_12345.json'), JSON.stringify({ pid: 54321, httpsPort: 54000, csrfToken: 'tok' }));
+    const emptyHome = path.join(tmpDir, 'empty-home');
+    fs.mkdirSync(emptyHome, { recursive: true });
+    assert.equal(
+      detectTargetBinary(null, {
+        platform: 'linux',
+        homeDir: emptyHome,
+        resourcesPath: '',
+        env: {},
+        daemonDir,
+        procDir,
+        isPidAlive: (pid) => pid === 54321
+      }),
+      procBin,
+      'Linux 存活 daemon/hub_*.json PID -> /proc/<pid>/exe 应作为后备命中'
+    );
+
+    // 2. Linux Secret Service 读写、writer_id/expires_in 对齐与回滚 + 校验敏感载荷仅走 stdin 绝不进 argv
+    let storedSecret = JSON.stringify({
+      token: {
+        access_token: 'ya29.orig-a',
+        token_type: 'Bearer',
+        refresh_token: '1//orig-refresh-a',
+        expiry: new Date(Date.now() + 3600000).toISOString(),
+        expires_in: 3599
+      },
+      auth_method: 'consumer',
+      id_token_email: 'acct-a@example.com',
+      writer_id: 'orig_writer_id_1234567890123456789012345678'
+    });
+    const keyringWrites = [];
+    const linuxCredStore = accountsMod.createDefaultSystemCredentialStore({
+      platform: 'linux',
+      homeDir: emptyHome,
+      linuxKeyringBackend: {
+        read(meta) {
+          assert.equal(meta.service, 'gemini');
+          assert.equal(meta.username, 'antigravity');
+          assert.equal(meta.schema, 'org.freedesktop.Secret.Generic');
+          return storedSecret;
+        },
+        write(req) {
+          keyringWrites.push(req);
+          storedSecret = req.payload;
+          return { ok: true, backend: 'mock-dbus' };
+        }
+      }
+    });
+    assert.ok(
+      linuxCredStore.getPaths().desktopDbPath.includes(path.join('.config', 'Antigravity')),
+      'Linux desktopDbPath 应使用 XDG ~/.config 而非 Windows AppData/Roaming'
+    );
+
+    const snapBefore = linuxCredStore.captureSnapshot();
+    assert.equal(snapBefore.linuxCred?.id_token_email, 'acct-a@example.com');
+    const applyRes = linuxCredStore.applyCredential({
+      email: 'acct-b@example.com',
+      name: 'Account B',
+      accessToken: 'ya29.target-b',
+      refreshToken: '1//target-refresh-b',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      idToken: ''
+    });
+    assert.equal(applyRes.ok, true);
+    assert.equal(keyringWrites.length, 1);
+    assert.equal(keyringWrites[0].contentType, 'text/plain');
+    assert.equal(keyringWrites[0].label, "Password for 'antigravity' on 'gemini'");
+    assert.equal(keyringWrites[0].payload.startsWith('go-keyring-base64:'), false, 'Linux Secret Service 必须写入纯 UTF-8 JSON');
+    const writtenJson = JSON.parse(keyringWrites[0].payload);
+    assert.equal(writtenJson.id_token_email, 'acct-b@example.com');
+    assert.equal(writtenJson.token.refresh_token, '1//target-refresh-b');
+    assert.equal(typeof writtenJson.token.expires_in, 'number');
+    assert.ok(writtenJson.token.expires_in > 3000 && writtenJson.token.expires_in <= 3600);
+    assert.match(writtenJson.writer_id, /^[A-Za-z0-9_-]{43}$/, 'writer_id 应为 43 字符 base64url');
+    assert.notEqual(writtenJson.writer_id, snapBefore.linuxCred.writer_id);
+
+    const rbRes = linuxCredStore.restoreSnapshot(snapBefore);
+    assert.equal(rbRes.ok, true);
+    assert.equal(JSON.parse(storedSecret).id_token_email, 'acct-a@example.com', '回滚必须还原 Linux Keyring 原凭据');
+
+    // 验证真实 spawnSync 路径下：secret-tool ENOENT 时自动回退 python3，且敏感载荷仅通过 opts.input (stdin) 传递
+    const spawnCalls = [];
+    const spawnStore = accountsMod.createDefaultSystemCredentialStore({
+      platform: 'linux',
+      homeDir: emptyHome,
+      spawnSync: (cmd, args, opts) => {
+        spawnCalls.push({ cmd, args, input: opts?.input || '' });
+        if (cmd === 'secret-tool') {
+          const err = new Error('not found');
+          err.code = 'ENOENT';
+          return { status: null, error: err, stdout: '', stderr: '' };
+        }
+        return { status: 0, stdout: 'ok:dbus', stderr: '' };
+      }
+    });
+    const spWrite = spawnStore.writeLinuxKeyringCredential({ token: { refresh_token: '1//secret-stdin-only' } });
+    assert.equal(spWrite.ok, true);
+    assert.equal(spWrite.backend, 'dbus');
+    assert.equal(spawnCalls.length, 2);
+    assert.equal(spawnCalls[0].cmd, 'secret-tool');
+    assert.equal(spawnCalls[1].cmd, 'python3');
+    for (const call of spawnCalls) {
+      assert.equal(call.args.join(' ').includes('secret-stdin-only'), false, '敏感 Token 严禁出现在子进程命令行参数中');
+      assert.ok(call.input.includes('secret-stdin-only'), '敏感 Token 必须仅经 stdin 传递');
+    }
+
+    // 验证无 Secret Service 时降级写入 jetski-standalone-oauth-token，而活跃 keyring 写入报错时必须明确失败不静默撒谎
+    const noSvcHome = path.join(tmpDir, 'no-svc-home');
+    fs.mkdirSync(noSvcHome, { recursive: true });
+    const fallbackStore = accountsMod.createDefaultSystemCredentialStore({
+      platform: 'linux',
+      homeDir: noSvcHome,
+      linuxKeyringBackend: {
+        read: () => null,
+        write: () => ({ ok: false, noSecretService: true, error: 'NO_SECRET_SERVICE' })
+      }
+    });
+    const fbSnap = fallbackStore.captureSnapshot();
+    const fbApply = fallbackStore.applyCredential({
+      email: 'fb@example.com',
+      accessToken: 'ya29.fb',
+      refreshToken: '1//fb-ref',
+      expiresAt: new Date(Date.now() + 3600000).toISOString()
+    });
+    assert.equal(fbApply.ok, true);
+    assert.equal(fbApply.stepResults.jetskiFallbackFile?.ok, true);
+    assert.equal(fs.existsSync(fallbackStore.getPaths().jetskiTokenPath), true);
+    fallbackStore.restoreSnapshot(fbSnap);
+    assert.equal(fs.existsSync(fallbackStore.getPaths().jetskiTokenPath), false, '降级文件回滚应删除新建的 jetski token 文件');
+
+    const failKeyringStore = accountsMod.createDefaultSystemCredentialStore({
+      platform: 'linux',
+      homeDir: noSvcHome,
+      linuxKeyringBackend: {
+        read: () => ({ id_token_email: 'old@example.com' }),
+        write: () => ({ ok: false, noSecretService: false, error: 'KEYRING_PROMPT_REQUIRED' })
+      }
+    });
+    const failApply = failKeyringStore.applyCredential({
+      email: 'new@example.com',
+      accessToken: 'ya29.new',
+      refreshToken: '1//new-ref',
+      expiresAt: new Date(Date.now() + 3600000).toISOString()
+    });
+    assert.equal(failApply.ok, false);
+    assert.equal(failApply.stage, 'linux_keyring');
+
+    // 3. importFromCurrentClient 与 syncActiveHostQuotaSnapshot 自动安全补齐刷新凭证（严格校验邮箱一致）
+    const stateDir = makeTempDir('acm-linux-state-');
+    try {
+      const mgr = accountsMod.createAccountsManager({
+        stateDir,
+        homeDir: emptyHome,
+        platform: 'linux',
+        linuxKeyringBackend: {
+          read: () => storedSecret,
+          write: (req) => { storedSecret = req.payload; return { ok: true }; }
+        }
+      });
+      // 先同步一个与 keyring 邮箱不同的账号 acct-other -> 绝不得误绑 acct-a 的 refresh_token
+      const snapOther = mgr.syncActiveHostQuotaSnapshot({ snapshot: { pools: [] }, fetchedAtMs: Date.now() }, 'acct-other@example.com');
+      assert.equal(snapOther.hasRefreshToken, false, 'keyring 邮箱不匹配时绝不得跨账号误填 refresh_token');
+      // 再同步与 keyring 一致的 acct-a -> 自动补齐 refresh_token
+      const snapA = mgr.syncActiveHostQuotaSnapshot({ snapshot: { pools: [] }, fetchedAtMs: Date.now() + 1000 }, 'acct-a@example.com');
+      assert.equal(snapA.hasRefreshToken, true, '活跃账号与 Linux Keyring id_token_email 一致时应自动补齐 refresh_token');
+      // importFromCurrentClient 在无 state.vscdb / 无 id_token 时也能直接识别 id_token_email 导入成功
+      const impRes = await mgr.importFromCurrentClient();
+      assert.equal(impRes.ok, true);
+      assert.equal(impRes.account.email, 'acct-a@example.com');
+      assert.equal(impRes.account.hasRefreshToken, true);
+
+      // 4. v2.34.0 getHostUserStatus：优先消费 authBootstrap 内存 CSRF 与 daemon/hub_*.json，避免因空 __APP_CONFIG__.csrfToken 阻断切号核验
+      const v234Calls = [];
+      const localApiReal = require('./local-api');
+      const v234Mgr = accountsMod.getSharedAccountsManager({
+        forceNew: true,
+        stateDir,
+        homeDir: emptyHome,
+        daemonDir,
+        isPidAlive: (pid) => pid === 54321,
+        localApi: localApiReal,
+        authBootstrapModule: {
+          getActiveLsPort: () => 54999,
+          getActiveLsCsrfToken: () => 'v234-mem-csrf',
+          getActiveLsBaseUrl: () => 'https://127.0.0.1:54999'
+        },
+        directRequestFn: async (origin, token) => {
+          v234Calls.push(`${origin}#${token}`);
+          return { email: 'acct-b@example.com', userStatus: { email: 'acct-b@example.com' } };
+        }
+      });
+      const det234 = await v234Mgr.detectCurrentActiveAccount();
+      assert.equal(det234.email, 'acct-b@example.com');
+      assert.equal(v234Calls[0], 'https://127.0.0.1:54999#v234-mem-csrf', 'v2.34.0 应优先走主进程 authBootstrap 内存端口与 CSRF Token');
+
+      // 5. openExternalBrowserFallback 跨平台安全验证：win32 严禁 cmd.exe（防 & 截断），强制使用 rundll32.exe 且仅放行 https://
+      const oauthUrl = 'https://accounts.google.com/o/oauth2/auth?client_id=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A11451&response_type=code&state=xyz';
+      const browserCalls = [];
+      const mockSpawn = (cmd, args, opts) => {
+        browserCalls.push({ cmd, args, opts });
+        return { on() {}, unref() {} };
+      };
+      const winOpen = accountsMod.openExternalBrowserFallback(oauthUrl, { platform: 'win32', spawnFn: mockSpawn });
+      assert.equal(winOpen.ok, true);
+      assert.equal(browserCalls[0].cmd, 'rundll32.exe', 'win32 必须使用 rundll32.exe 避免 cmd.exe 按 & 截断 OAuth URL');
+      assert.deepEqual(browserCalls[0].args, ['url.dll,FileProtocolHandler', oauthUrl]);
+      assert.equal(browserCalls[0].opts.windowsHide, true);
+
+      const linuxOpen = accountsMod.openExternalBrowserFallback(oauthUrl, { platform: 'linux', spawnFn: mockSpawn });
+      assert.equal(linuxOpen.ok, true);
+      assert.equal(browserCalls[1].cmd, 'xdg-open');
+      assert.deepEqual(browserCalls[1].args, [oauthUrl]);
+
+      const macOpen = accountsMod.openExternalBrowserFallback(oauthUrl, { platform: 'darwin', spawnFn: mockSpawn });
+      assert.equal(macOpen.ok, true);
+      assert.equal(browserCalls[2].cmd, 'open');
+      assert.deepEqual(browserCalls[2].args, [oauthUrl]);
+
+      assert.equal(accountsMod.openExternalBrowserFallback('http://127.0.0.1:8080/x', { platform: 'win32', spawnFn: mockSpawn }).ok, false);
+      assert.equal(accountsMod.openExternalBrowserFallback('file:///etc/passwd', { platform: 'linux', spawnFn: mockSpawn }).ok, false);
+      assert.equal(browserCalls.length, 3, '非 https:// URL 必须被拒绝且不得触发 spawn');
+
+      // 6. 验证 LINUX_KEYRING_PY_READ 在缺 python3-dbus 与 gi 时不会抛 NameError（dbus_err 已初始化）
+      let capturedReadScript = '';
+      const probeReadStore = accountsMod.createDefaultSystemCredentialStore({
+        platform: 'linux',
+        homeDir: emptyHome,
+        spawnSync: (cmd, args) => {
+          if (cmd === 'secret-tool') {
+            const err = new Error('not found');
+            err.code = 'ENOENT';
+            return { status: null, error: err, stdout: '', stderr: '' };
+          }
+          if (cmd === 'python3' && args[0] === '-c') capturedReadScript = args[1];
+          return { status: 3, stdout: '', stderr: '' };
+        }
+      });
+      probeReadStore.readLinuxKeyringCredential();
+      assert.ok(capturedReadScript.includes('dbus_err = ""'), 'LINUX_KEYRING_PY_READ 必须在 try 前初始化 dbus_err');
+      if (process.platform === 'linux') {
+        const { spawnSync: realSpawnSync } = require('child_process');
+        const pyCheck = realSpawnSync('python3', [
+          '-c',
+          `import sys\nsys.modules["dbus"] = None\nsys.modules["gi"] = None\n${capturedReadScript}`
+        ], { encoding: 'utf8', timeout: 4000 });
+        assert.equal(pyCheck.status, 11);
+        assert.equal((pyCheck.stderr || '').includes('NameError'), false, '缺 python3-dbus 时不得因未定义 dbus_err 抛 NameError');
+        assert.ok((pyCheck.stderr || '').includes('LIBSECRET:'), '应正常记录 LIBSECRET 回退错误');
+      }
+    } finally {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

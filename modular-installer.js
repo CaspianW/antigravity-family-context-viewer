@@ -401,7 +401,7 @@ function cleanUtilsSource(source) {
     .replace(/\s*try\s*\{\s*require\("\.\/meter-main"\)\.ensureProxyEnvironment\(process\.env\);\s*\}\s*catch\s*\{\}\r?\n?/g, '')
     .replace(/\s*try\s*\{\s*require\("\.\/meter-main"\)\.ensureProxyEnvironment\(env\);\s*\}\s*catch\s*\{\}\r?\n?/g, '')
     .replace('\n' + storageFallbackLine, '')
-    .replace(/\s*require\("\.\/meter-main"\)\.installContextMeter\(win\);?\r?\n?/g, '')
+    .replace(/[ \t]*require\("\.\/meter-main"\)\.installContextMeter\(win\);?[ \t]*\r?\n?/g, '')
     .replace(/\n\s*try\s*\{\s*require\("\.\/meter-main"\)\.installContextMeter\(wins\[0\]\);[\s\S]*?\}\s*catch\s*\{\}/g, '')
     .replace(/const _mWin = createWindow\(`\$\{constants_1\.WINDOW_ORIGIN\}:\$\{port\}\/`\);\s*\n\s*try\s*\{\s*require\("\.\/meter-main"\)\.installContextMeter\(_mWin\);[\s\S]*?\}\s*catch\s*\{\}/g, 'createWindow(`${constants_1.WINDOW_ORIGIN}:${port}/`);');
 
@@ -431,6 +431,43 @@ function cleanPreloadSource(source) {
   return code;
 }
 
+// 兼容旧版 (v<=2.32.x: `    void win.loadURL(url);`) 与 v2.34.0+ (`    void loadHubWindowUrl(win, url, ...);`)
+const WINDOW_LOAD_ANCHOR_RE = /^[ \t]*void (?:win\.loadURL\(url\)|loadHubWindowUrl\(win,\s*url\b[^\r\n]*\));[ \t]*(?=\r?$)/gm;
+
+/**
+ * 定位 dist/utils.js createWindow 末尾的窗口 URL 加载语句锚点（保留原缩进与参数）
+ */
+function findWindowLoadAnchors(source) {
+  if (typeof source !== 'string' || !source) return [];
+  const matches = [];
+  const re = new RegExp(WINDOW_LOAD_ANCHOR_RE.source, 'gm');
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    matches.push({
+      text: m[0],
+      index: m.index,
+      kind: m[0].includes('loadHubWindowUrl(') ? 'loadHubWindowUrl' : 'win.loadURL'
+    });
+  }
+  return matches;
+}
+
+/**
+ * 在 dist/utils.js 唯一的窗口 URL 加载锚点前插入上下文监控挂载代码（原样保留宿主加载调用及第三方补丁）
+ */
+function injectMeterWindowLoadHook(source, windowLoadHook) {
+  if (typeof source !== 'string') {
+    return { ok: false, code: source, anchor: null, matchCount: 0 };
+  }
+  const matches = findWindowLoadAnchors(source);
+  if (matches.length !== 1) {
+    return { ok: false, code: source, anchor: null, matchCount: matches.length };
+  }
+  const anchor = matches[0];
+  const code = source.slice(0, anchor.index) + windowLoadHook + anchor.text + source.slice(anchor.index + anchor.text.length);
+  return { ok: true, code, anchor, matchCount: 1 };
+}
+
 /**
  * 校验清洗后的 utils 结构合法性与 JavaScript 语法
  */
@@ -438,14 +475,15 @@ function verifyCleanStructure(cleanUtils) {
   if (!cleanUtils) return false;
   if (cleanUtils.includes('installContextMeter')) return false;
   if (cleanUtils.includes(TAGS.PROXY_START) || cleanUtils.includes(TAGS.METER_UTILS_START)) return false;
-  const marker = '    void win.loadURL(url);';
+  const anchors = findWindowLoadAnchors(cleanUtils);
   const setupNodeMarker = 'function setupNodeWrapper(env) {';
-  const structuralOk = cleanUtils.split(marker).length === 2 && cleanUtils.includes(setupNodeMarker);
+  const structuralOk = anchors.length === 1 && cleanUtils.includes(setupNodeMarker);
   return structuralOk && validateSyntax(cleanUtils, 'dist/utils.js');
 }
 
 module.exports = {
   TAGS,
+  WINDOW_LOAD_ANCHOR_RE,
   validateSyntax,
   generateProxyUtilsCode,
   generateMeterUtilsCode,
@@ -454,5 +492,7 @@ module.exports = {
   generateChinesePreloadCode,
   cleanUtilsSource,
   cleanPreloadSource,
+  findWindowLoadAnchors,
+  injectMeterWindowLoadHook,
   verifyCleanStructure
 };

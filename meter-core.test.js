@@ -5452,3 +5452,218 @@ test('collect 与 compactConversation(waitForCheckpoint) 端到端链路：压�
   assert.equal(nextSnap.latest.actual, 23792);
   assert.ok(nextSnap.latest.percent > 4 && nextSnap.latest.percent < 5);
 });
+
+test('v2.34.0 免 CDP LS/CSRF 解析器：测试隔离门禁、authBootstrap、daemon hub_*.json、CDP localStorage 与 401 刷新重试', async (t) => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const http = require('node:http');
+  const os = require('node:os');
+  const localApi = require('./local-api');
+  const collector = require('./meter-collector');
+  const liveHost = require('./live-host');
+  const cli = require('./cli');
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-v234-auth-'));
+  const prevTestMode = process.env.AG_METER_TEST_MODE;
+  const prevStateDir = process.env.AG_METER_STATE_DIR;
+  process.env.AG_METER_TEST_MODE = '1';
+  process.env.AG_METER_STATE_DIR = path.join(tmpDir, 'state');
+  t.after(() => {
+    if (prevTestMode !== undefined) process.env.AG_METER_TEST_MODE = prevTestMode;
+    else delete process.env.AG_METER_TEST_MODE;
+    if (prevStateDir !== undefined) process.env.AG_METER_STATE_DIR = prevStateDir;
+    else delete process.env.AG_METER_STATE_DIR;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // 1. 严格测试隔离：未显式传入 daemonDir/agDir/homeDir 时，绝不读取宿主机真实 ~/.gemini/antigravity/daemon
+  assert.equal(localApi.resolveDaemonDir({}), null);
+  assert.deepEqual(localApi.discoverDaemonHubInstances({}), []);
+  const emptyAppData = path.join(tmpDir, 'empty-appdata');
+  fs.mkdirSync(emptyAppData, { recursive: true });
+  await assert.rejects(() => localApi.connect({ appDataDir: emptyAppData }), /尚未就绪/);
+
+  // 2. 启动模拟 v2.34.0 LS HTTP 服务：GET / 返回空 csrfToken: ""，RPC 校验当前轮转 token
+  let expectedToken = 'daemon-tok-v1';
+  const receivedTokens = [];
+  const srv = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><script>window.__APP_CONFIG__ = {"productName":"antigravity","csrfToken":"","appVersion":"2.34.0"};</script>');
+      return;
+    }
+    const provided = req.headers['x-codeium-csrf-token'] || '';
+    receivedTokens.push(provided);
+    if (provided !== expectedToken) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ code: 'unauthenticated', message: 'unauthenticated: invalid CSRF token' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url.endsWith('/GetUserStatus')) {
+      res.end(JSON.stringify({ userStatus: { email: 'v234@example.com' } }));
+    } else if (req.url.endsWith('/GetAllCascadeTrajectories')) {
+      res.end(JSON.stringify({ trajectorySummaries: { '11111111-2222-3333-4444-555555555555': {} } }));
+    } else {
+      res.end(JSON.stringify({ ok: true }));
+    }
+  });
+  await new Promise(resolve => srv.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => srv.close(resolve)));
+  const port = srv.address().port;
+  const httpOrigin = `http://127.0.0.1:${port}`;
+
+  // 3. 优先级 ①：Electron 主进程 authBootstrap 内存凭据（免 CDP、忽略 HTML 空 csrfToken）
+  expectedToken = 'main-auth-tok-1';
+  let mainAuthToken = 'main-auth-tok-1';
+  const mockAuthBootstrap = {
+    getActiveLsPort: () => port,
+    getActiveLsBaseUrl: () => httpOrigin,
+    getActiveLsCsrfToken: () => mainAuthToken
+  };
+  const mpConn = await localApi.connect({
+    appDataDir: emptyAppData,
+    authBootstrapModule: mockAuthBootstrap
+  });
+  assert.equal(mpConn.origin, httpOrigin);
+  assert.equal(mpConn.authSource, 'main_process_auth_bootstrap');
+  const mpUser = await mpConn.call('GetUserStatus', {});
+  assert.equal(mpUser.userStatus.email, 'v234@example.com');
+
+  // 4. 优先级 ②：daemon/hub_*.json 存活 PID 过滤 + 最新 mtime 排序 + 无 CDP 自动降级 + 401 刷新重试
+  const daemonDir = path.join(tmpDir, 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  const deadHubPath = path.join(daemonDir, 'hub_10001.json');
+  fs.writeFileSync(deadHubPath, JSON.stringify({
+    pid: 999991,
+    httpPort: 10001,
+    lsVersion: '2.32.2',
+    csrfToken: 'dead-tok'
+  }));
+  const liveHubPath = path.join(daemonDir, `hub_${port}.json`);
+  expectedToken = 'daemon-tok-v1';
+  fs.writeFileSync(liveHubPath, JSON.stringify({
+    pid: process.pid,
+    httpPort: port,
+    lsVersion: '2.34.0',
+    csrfToken: 'daemon-tok-v1'
+  }));
+
+  const hubs = localApi.discoverDaemonHubInstances({
+    daemonDir,
+    isPidAlive: (pid) => pid === process.pid
+  });
+  assert.equal(hubs.length, 1);
+  assert.equal(hubs[0].origin, httpOrigin);
+  assert.equal(hubs[0].lsVersion, '2.34.0');
+
+  // live-host 免 CDP 探测 daemon origin
+  assert.deepEqual(
+    liveHost.discoverDaemonHubOrigins({ daemonDir, isPidAlive: (pid) => pid === process.pid }),
+    [httpOrigin]
+  );
+
+  // 无 CDP 下 connect() 自动降级至 daemon/hub_*.json
+  const daemonConn = await localApi.connect({
+    appDataDir: emptyAppData,
+    daemonDir,
+    isPidAlive: (pid) => pid === process.pid
+  });
+  assert.equal(daemonConn.origin, httpOrigin);
+  assert.equal(daemonConn.authSource, 'daemon_hub');
+  assert.equal(daemonConn.lsVersion, '2.34.0');
+  const firstCall = await daemonConn.call('GetAllCascadeTrajectories', {});
+  assert.ok(firstCall.trajectorySummaries);
+
+  // 轮转服务端与 daemon 文件中的 token，验证 401 自动刷新重试
+  expectedToken = 'daemon-tok-v2';
+  fs.writeFileSync(liveHubPath, JSON.stringify({
+    pid: process.pid,
+    httpPort: port,
+    lsVersion: '2.34.0',
+    csrfToken: 'daemon-tok-v2'
+  }));
+  const rotatedCall = await daemonConn.call('GetUserStatus', {});
+  assert.equal(rotatedCall.userStatus.email, 'v234@example.com');
+  assert.equal(receivedTokens[receivedTokens.length - 1], 'daemon-tok-v2');
+
+  // 5. 优先级 ④：当 HTML csrfToken 为空且无主进程/daemon 凭据时，CDP localStorage['agy_session_csrf_token'] 兜底生效
+  const cdpResolved = await localApi.resolveLsAuth(httpOrigin, {
+    appDataDir: emptyAppData,
+    page: { webSocketDebuggerUrl: 'ws://127.0.0.1:9222/devtools/page/mock' },
+    extractAppConfigViaCdp: async () => ({
+      hasConfig: true,
+      csrfToken: 'cdp-ls-session-tok',
+      source: 'cdp_local_storage'
+    })
+  });
+  assert.equal(cdpResolved.csrfToken, 'cdp-ls-session-tok');
+  assert.equal(cdpResolved.source, 'cdp_local_storage');
+
+  // 6. meter-collector createOriginRpcCaller & compactConversation 适配空 __APP_CONFIG__.csrfToken + 401 刷新重试
+  let collectorExpected = 'col-tok-1';
+  fs.writeFileSync(liveHubPath, JSON.stringify({
+    pid: process.pid,
+    httpPort: port,
+    lsVersion: '2.34.0',
+    csrfToken: 'col-tok-1'
+  }));
+  const seenColTokens = [];
+  const cid = '11111111-2222-3333-4444-555555555555';
+  const compactRes = await collector.compactConversation(httpOrigin, cid, {
+    force: true,
+    daemonDir,
+    isPidAlive: (pid) => pid === process.pid,
+    requestFn: async (_orig, method, _body, tok) => {
+      if (method === null) {
+        return '<script>window.__APP_CONFIG__ = {"csrfToken":""};</script>';
+      }
+      seenColTokens.push({ method, tok });
+      if (method === 'GetCascadeTrajectory') {
+        assert.equal(tok, 'col-tok-1');
+        return { status: 'CASCADE_RUN_STATUS_IDLE', numTotalSteps: 3, numTotalGeneratorMetadata: 1, trajectory: { steps: [{}, {}, {}] } };
+      }
+      if (method === 'SendUserCascadeMessage') {
+        if (tok === 'col-tok-1') {
+          collectorExpected = 'col-tok-2';
+          fs.writeFileSync(liveHubPath, JSON.stringify({
+            pid: process.pid,
+            httpPort: port,
+            lsVersion: '2.34.0',
+            csrfToken: 'col-tok-2'
+          }));
+          throw new Error('HTTP 401 unauthenticated');
+        }
+        assert.equal(tok, collectorExpected);
+        return { queued: true };
+      }
+      throw new Error(`unexpected method ${method}`);
+    }
+  });
+  assert.equal(compactRes.ok, true);
+  assert.deepEqual(
+    seenColTokens.filter(x => x.method === 'SendUserCascadeMessage').map(x => x.tok),
+    ['col-tok-1', 'col-tok-2']
+  );
+
+  // 7. cli.js cmdStatus 在无 CDP 且存在 daemon LS 时准确汇报 daemonLs 与 v2.34.0 提示
+  const origLog = console.log;
+  console.log = () => {};
+  let statusReport;
+  try {
+    statusReport = await cli.cmdStatus(null, {
+      appDataDir: emptyAppData,
+      daemonDir,
+      isPidAlive: (pid) => pid === process.pid
+    });
+  } finally {
+    console.log = origLog;
+  }
+  assert.equal(statusReport.daemonLs.running, true);
+  assert.equal(statusReport.daemonLs.origin, httpOrigin);
+  assert.equal(statusReport.daemonLs.lsVersion, '2.34.0');
+  assert.equal(statusReport.liveWindow.running, false);
+  assert.equal(statusReport.liveWindow.cdpDisabled, true);
+  assert.equal(statusReport.liveWindow.lsRunningViaDaemon, true);
+  assert.match(statusReport.liveWindow.hint, /--remote-debugging-port=0/);
+});

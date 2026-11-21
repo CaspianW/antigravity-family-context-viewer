@@ -2221,3 +2221,111 @@ test('专项复核 17：更新浮层在应用内更新或 diskPendingRestart 时
     h.sandbox.__AGContextMeter?.dispose();
   }
 });
+
+test('专项复核 18：Antigravity v2.34.0 loadHubWindowUrl 锚点适配、第三方 inline-cot 共存、幂等重装与原位还原清理', async () => {
+  const {
+    findWindowLoadAnchors,
+    injectMeterWindowLoadHook,
+    verifyCleanStructure,
+    TAGS
+  } = require('./modular-installer');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-v234-compat-'));
+  const prevStateDir = process.env.AG_METER_STATE_DIR;
+  const prevTestMode = process.env.AG_METER_TEST_MODE;
+  process.env.AG_METER_STATE_DIR = path.join(tmpDir, 'state');
+  process.env.AG_METER_TEST_MODE = '1';
+
+  try {
+    const v234UtilsWithThirdParty = `"use strict";
+const constants_1 = require("./constants");
+async function invokeWindowLoadUrl(win, url) {
+    await win.loadURL(url);
+}
+async function loadHubWindowUrl(win, targetUrl, options) {
+    await invokeWindowLoadUrl(win, targetUrl);
+}
+function createWindow(url, storageManager, options) {
+    const win = {
+        titleBarStyle: 'hidden',
+        loadURL: async () => {}
+    };
+    const skipBootstrapMint = Boolean(options?.partition || options?.navigationPolicy);
+// --- Antigravity Inline CoT utils Injection Start ---
+    try { require("./inline-cot-main").installInlineCot(win); } catch {}
+// --- Antigravity Inline CoT utils Injection End ---
+    void loadHubWindowUrl(win, url, { skipBootstrapMint });
+    return win;
+}
+const showOrCreateWindow = (port) => {
+    const wins = [];
+    if (wins.length > 0) {
+        wins[0].focus();
+    } else if (port > 0) {
+        createWindow(\`\${constants_1.WINDOW_ORIGIN}:\${port}/\`);
+    }
+};
+function setupNodeWrapper(env) {
+    return env;
+}
+`;
+    // 1. 锚点定位必须精准命中 loadHubWindowUrl 且绝不误匹配 invokeWindowLoadUrl 里的 await win.loadURL(url) 或注释行
+    const withComments = `// void win.loadURL(url);\n// void loadHubWindowUrl(win, url, { skipBootstrapMint });\n/* old: void win.loadURL(url); */\n` + v234UtilsWithThirdParty;
+    const anchors = findWindowLoadAnchors(withComments);
+    assert.equal(anchors.length, 1);
+    assert.equal(anchors[0].kind, 'loadHubWindowUrl');
+    assert.equal(anchors[0].text, '    void loadHubWindowUrl(win, url, { skipBootstrapMint });');
+    assert.equal(verifyCleanStructure(withComments), true);
+
+    const dryInject = injectMeterWindowLoadHook(v234UtilsWithThirdParty, `${TAGS.METER_UTILS_START}\n    require("./meter-main").installContextMeter(win);\n${TAGS.METER_UTILS_END}\n`);
+    assert.equal(dryInject.ok, true);
+    assert.ok(dryInject.code.includes('installInlineCot(win)'), '第三方补丁必须完整保留');
+    assert.ok(dryInject.code.includes('    void loadHubWindowUrl(win, url, { skipBootstrapMint });'), '宿主原调用与参数必须原样保留');
+
+    // 误传 customPath 时 install() 与 restore() 均必须显式报错拒绝，绝不回落至真实宿主路径
+    await assert.rejects(() => install({ customPath: path.join(tmpDir, 'never.asar') }), /无效的安装选项字段 "customPath"/);
+    await assert.rejects(() => restore({ customPath: path.join(tmpDir, 'never.asar') }), /无效的卸载选项字段 "customPath"/);
+
+    // 2. 首次安装到 v2.34.0 ASAR
+    const targetAsar = path.join(tmpDir, 'app.asar');
+    const baseAsar = await createMockHostAsar(tmpDir, '2.34.0', v234UtilsWithThirdParty);
+    fs.copyFileSync(baseAsar, targetAsar);
+    const origSha = sha256(fs.readFileSync(targetAsar));
+
+    const m1 = await install({ path: targetAsar });
+    assert.equal(m1.version, '2.34.0');
+    const u1 = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
+    assert.ok(u1.includes('require("./meter-main").installContextMeter(win);'));
+    assert.ok(u1.includes('    void loadHubWindowUrl(win, url, { skipBootstrapMint });'));
+    assert.ok(u1.includes('installInlineCot(win)'));
+    assert.ok(builtinAsar.listPackage(targetAsar).some(p => p.endsWith('/meter-family-sync.js')));
+
+    // 3. 幂等二次重装（原位清洗后再注入，无重复标记）
+    const m2 = await install({ path: targetAsar });
+    assert.equal(m2.version, '2.34.0');
+    const u2 = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
+    assert.equal(u2.split(TAGS.METER_UTILS_START).length - 1, 1);
+    assert.equal(findWindowLoadAnchors(u2).length, 1);
+    assert.ok(u2.includes('installInlineCot(win)'));
+
+    // 4. 原位卸载 restore({ inPlace: true })：完整剥离插件与 meter-family-sync.js，并保留第三方 inline-cot
+    const rInPlace = await restore({ path: targetAsar, inPlace: true });
+    assert.equal(rInPlace.inPlaceCleaned, true);
+    const uAfterInPlace = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
+    assert.equal(verifyCleanStructure(uAfterInPlace), true);
+    assert.equal(uAfterInPlace.includes('installContextMeter'), false);
+    assert.ok(uAfterInPlace.includes('installInlineCot(win)'), '原位卸载必须保留第三方补丁');
+    assert.equal(builtinAsar.listPackage(targetAsar).some(p => p.endsWith('/meter-family-sync.js')), false, '原位卸载必须清理 meter-family-sync.js');
+
+    // 5. 重装后常规备份还原：字节级 SHA-256 还原一致
+    await install({ path: targetAsar });
+    const rBackup = await restore({ path: targetAsar });
+    assert.equal(rBackup.inPlaceCleaned, undefined);
+    assert.equal(sha256(fs.readFileSync(targetAsar)), origSha);
+  } finally {
+    if (prevStateDir !== undefined) process.env.AG_METER_STATE_DIR = prevStateDir;
+    else delete process.env.AG_METER_STATE_DIR;
+    if (prevTestMode !== undefined) process.env.AG_METER_TEST_MODE = prevTestMode;
+    else delete process.env.AG_METER_TEST_MODE;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

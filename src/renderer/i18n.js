@@ -1624,6 +1624,32 @@ const PANEL_I18N = {
   'accounts.poolPending': { 'zh-CN': '额度暂不可用', 'zh-TW': '額度暫不可用', en: 'Quota unavailable' },
   'accounts.retryQuota': { 'zh-CN': '刷新/重试额度', 'zh-TW': '重試額度', en: 'Retry quota' },
   'accounts.reauthRequired': { 'zh-CN': '需重登授权', 'zh-TW': '需重新登入授權', en: 'Re-auth required' },
+  'accounts.missingCredTag': { 'zh-CN': '未导入凭证', 'zh-TW': '未匯入憑證', en: 'No token' },
+  'accounts.switchNeedsCredHint': {
+    'zh-CN': '缺少切换凭证：请先在客户端登录该账号后点击“导入当前”，或点击“+ 登录添加”完成授权',
+    'zh-TW': '缺少切換憑證：請先在用戶端登入此帳號後點擊「匯入目前帳號」，或點擊「+ 登入新增」完成授權',
+    en: 'Missing switch credential: sign in with this account and click "Import Current", or use "+ Google Sign-In"'
+  },
+  'accounts.switchReauthHint': {
+    'zh-CN': '授权已失效，请重新点击“导入当前”或“+ 登录添加”后再切号',
+    'zh-TW': '授權已失效，請重新點擊「匯入目前帳號」或「+ 登入新增」後再切號',
+    en: 'Authorization expired: click "Import Current" or "+ Google Sign-In" to re-authorize before switching'
+  },
+  'accounts.switchNeedsCredFeedback': {
+    'zh-CN': '{email} 尚未保存切换凭证（仅自动识别邮箱），请先在客户端切换至该账号后点击「导入当前」，或点击「+ 登录添加」授权。',
+    'zh-TW': '{email} 尚未儲存切換憑證（僅自動識別信箱），請先在用戶端切換至此帳號後點擊「匯入目前帳號」，或點擊「+ 登入新增」授權。',
+    en: '{email} has no saved switch credential yet (auto-detected only). Sign in with it and click "Import Current", or authorize via "+ Google Sign-In".'
+  },
+  'accounts.switchReauthFeedback': {
+    'zh-CN': '{email} 授权已失效，无法切号；请重新点击「+ 登录添加」或「导入当前」更新凭证。',
+    'zh-TW': '{email} 授權已失效，無法切號；請重新點擊「+ 登入新增」或「匯入目前帳號」更新憑證。',
+    en: '{email} authorization has expired. Click "+ Google Sign-In" or "Import Current" to refresh credentials before switching.'
+  },
+  'accounts.switchingInProgress': {
+    'zh-CN': '正在切换账号并校验宿主生效状态，请稍候…',
+    'zh-TW': '正在切換帳號並校驗宿主生效狀態，請稍候…',
+    en: 'Switching account and verifying active host session…'
+  },
   'accounts.removeBtn': { 'zh-CN': '移除账号', 'zh-TW': '移除帳號', en: 'Remove' },
   'accounts.removeModal.title': { 'zh-CN': '移除账号', 'zh-TW': '移除帳號', en: 'Remove account' },
   'accounts.removeModal.body': {

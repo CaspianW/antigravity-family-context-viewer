@@ -15,7 +15,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const { loadAsarEngine, getStateDir, getAppDataDir, isIsolatedTestPath } = require('./asar-engine');
-const { discoverAntigravityCdp, createCdpClient, parseExplicitPort, normalizeLoopbackOrigin } = require('./local-api');
+const { discoverAntigravityCdp, createCdpClient, parseExplicitPort, normalizeLoopbackOrigin, discoverDaemonHubInstances } = require('./local-api');
 const {
   install,
   findAsarPath,
@@ -892,6 +892,25 @@ async function cmdStatus(customPath, cdpOptions = {}) {
   } catch {}
 
   const live = await queryLiveWindow(cdpOptions);
+  const daemonHubs = discoverDaemonHubInstances(cdpOptions);
+  const primaryDaemon = daemonHubs[0] || null;
+  const daemonLs = primaryDaemon
+    ? {
+        running: true,
+        pid: primaryDaemon.pid,
+        origin: primaryDaemon.origin,
+        httpsPort: primaryDaemon.httpsPort,
+        httpPort: primaryDaemon.httpPort,
+        lsVersion: primaryDaemon.lsVersion,
+        instanceCount: daemonHubs.length
+      }
+    : { running: false };
+  if (!live.running && daemonLs.running) {
+    live.cdpDisabled = true;
+    live.lsRunningViaDaemon = true;
+    live.origin = live.origin || daemonLs.origin;
+    live.hint = 'Antigravity v2.34.0+ 默认关闭 CDP 调试端口；请重启客户端以加载持久化 app.asar 补丁，或以 --remote-debugging-port=0 启动客户端以启用热注入。';
+  }
   let liveSessionInfo = null;
   try {
     const lp = path.join(getStateDir(), '.live-session.json');
@@ -918,6 +937,7 @@ async function cmdStatus(customPath, cdpOptions = {}) {
       effectiveBackendSource: live.effectiveBackendSource || live.liveBridgeAttached?.backendSource || null,
       effectiveBackendVersion: live.effectiveBackendVersion || live.liveBridgeAttached?.version || null
     },
+    daemonLs,
     liveSession: liveSessionInfo,
     liveWindow: live,
     pythonAttachmentScanner: py || 'unavailable (optional)'
@@ -945,7 +965,14 @@ async function cmdCheck(customPath, cdpOptions = {}) {
   const py = resolvePython();
   console.log(`  - Python 附件深度解析器: ${py || '未检测到（基础上下文统计不受影响）'}`);
   const live = await queryLiveWindow(cdpOptions);
-  console.log(`  - 运行中窗口 CDP 状态: ${live.running ? `已连接 (端口 ${live.cdpPort})` : '客户端未运行或未开启调试端口'}`);
+  const daemonHubs = discoverDaemonHubInstances(cdpOptions);
+  if (live.running) {
+    console.log(`  - 运行中窗口 CDP 状态: 已连接 (端口 ${live.cdpPort})`);
+  } else if (daemonHubs.length > 0) {
+    console.log(`  - 运行中窗口 CDP 状态: 未开启调试端口（检测到运行中语言服务 ${daemonHubs[0].origin}${daemonHubs[0].lsVersion ? ` / v${daemonHubs[0].lsVersion}` : ''}；v2.34.0+ 默认关闭 CDP，持久化安装请重启客户端生效，或使用 --remote-debugging-port=0 启动以启用热注入）`);
+  } else {
+    console.log('  - 运行中窗口 CDP 状态: 客户端未运行或未开启调试端口');
+  }
   console.log('✅ 环境预检通过！');
 }
 
@@ -1107,12 +1134,17 @@ async function main() {
     console.log('   - ⚡ 上下文与 Token 监控:');
     console.log(`     * 配置状态: [配置: ${cfg.modules.meter.enabled ? '已开启' : '已关闭'}]`);
     console.log(`     * 磁盘注入: ${disk.meter ? '✅ 已注入' : '⚪ 未注入'} (磁盘版本 v${manifest.meterVersion})`);
+    const daemonHubs = discoverDaemonHubInstances(cdpOptions);
     if (manifest.liveInjected && backendAligned) {
       console.log(`     * 运行中加载: ✅ 界面与后台已同步热加载为 v${meterVersion} (${reportBackendSource === 'live-host' ? '外置 Live-Host 接管，无需重启' : 'Electron IPC 已对齐，无需重启'})`);
     } else if (manifest.liveInjected) {
       console.log(`     * 运行中加载: ⚠️ 界面已热挂载为 v${meterVersion}，但当前后台仍为旧版 (${reportBackendVersion || liveBefore.version || '未知'}，请重启客户端以加载新版主进程模块)`);
     } else {
-      console.log('     * 运行中加载: ⏳ 未连接到支持热挂载的运行中窗口（如客户端未使用调试端口启动），请重启客户端后生效');
+      if (daemonHubs.length > 0) {
+        console.log(`     * 运行中加载: ⏳ 检测到语言服务运行中 (${daemonHubs[0].origin})，但 Antigravity v2.34.0+ 默认关闭 CDP；请重启客户端以加载持久化 app.asar 补丁（如需热注入请以 --remote-debugging-port=0 启动）`);
+      } else {
+        console.log('     * 运行中加载: ⏳ 未连接到支持热挂载的运行中窗口（如客户端未使用调试端口启动），请重启客户端后生效');
+      }
     }
 
     console.log('   - 🇨🇳 客户端界面汉化 (桌面客户端):');
@@ -1130,6 +1162,7 @@ async function main() {
       console.log('__AG_INSTALL_META__=' + JSON.stringify({
         meterVersion: manifest.meterVersion,
         liveInjected: Boolean(manifest.liveInjected),
+        daemonLsRunning: daemonHubs.length > 0,
         backendHotReloaded: Boolean(backendAligned),
         backendVersion: reportBackendVersion,
         backendSource: reportBackendSource,
@@ -1156,6 +1189,10 @@ async function main() {
     }
     if (!report.ok) {
       await rollbackPreparedLiveBridge(bridgePrep);
+      const daemonHubs = discoverDaemonHubInstances(cdpOptions);
+      if (daemonHubs.length > 0) {
+        throw new Error('检测到 Antigravity 语言服务正在运行，但未开启 CDP 调试端口（v2.34.0+ 默认关闭）。请使用 node cli.js install 持久化安装并重启客户端，或以 --remote-debugging-port=0 启动 Antigravity 后再执行热注入。');
+      }
       throw new Error('未检测到运行中的 Antigravity 主窗口，请先打开 Antigravity 或使用 node cli.js watch。');
     }
     if (bridgePrep.previousLiveInfo) {

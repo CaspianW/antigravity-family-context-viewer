@@ -5508,12 +5508,24 @@
     return { ok: true, autoCompact: saved };
   }
 
+  function getRendererCsrfToken() {
+    try {
+      const fromConfig = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : '';
+      if (typeof fromConfig === 'string' && fromConfig.trim()) return fromConfig.trim();
+    } catch { }
+    try {
+      const fromStorage = typeof window !== 'undefined' ? window.localStorage?.getItem?.('agy_session_csrf_token') : '';
+      if (typeof fromStorage === 'string' && fromStorage.trim()) return fromStorage.trim();
+    } catch { }
+    return '';
+  }
+
   async function compactViaDirectLanguageServerFetch(id, options = {}) {
     const fetchFn = (typeof window !== 'undefined' && typeof window.__agOrigFetch === 'function')
       ? window.__agOrigFetch
       : (typeof fetch === 'function' ? fetch : null);
     if (!fetchFn) return { ok: false, error: 'fetch_unavailable' };
-    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    const csrf = getRendererCsrfToken() || null;
     const headers = {
       'Content-Type': 'application/json',
       'Connect-Protocol-Version': '1',
@@ -13748,7 +13760,7 @@
     const controller = new AbortController(); state.controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const csrf = window.__APP_CONFIG__?.csrfToken; if (!csrf) throw new Error('后台尚未就绪');
+      const csrf = getRendererCsrfToken(); if (!csrf) throw new Error('后台尚未就绪');
       const offset = Math.max(0, state.count - 3);
       const response = await fetch('/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1', 'x-codeium-csrf-token': csrf }, body: JSON.stringify({ cascadeId: id, generatorMetadataOffset: offset, includeMessages: false }), signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -14015,7 +14027,7 @@
   async function fetchAvailableModelsIfNeeded() {
     if (availableModelsFetchInFlight) return;
     if (typeof fetch !== 'function') return;
-    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    const csrf = getRendererCsrfToken();
     if (!csrf) return;
     if (Date.now() - lastAvailableModelsSync < 300000 && state.modelCapabilitiesById && Object.keys(state.modelCapabilitiesById).length > 0) {
       return;
@@ -14205,11 +14217,16 @@
     }
   }
 
+  let switchInProgressPollTimer = null;
+  let switchInProgressPollAttempts = 0;
+
   function clearQuotaTimers() {
     if (quotaAutoTimer) { clearTimeout(quotaAutoTimer); quotaAutoTimer = null; }
     if (quotaResetTimer) { clearTimeout(quotaResetTimer); quotaResetTimer = null; }
     if (quotaPostTurnTimer) { clearTimeout(quotaPostTurnTimer); quotaPostTurnTimer = null; }
     if (quotaFeedbackTimer) { clearTimeout(quotaFeedbackTimer); quotaFeedbackTimer = null; }
+    if (switchInProgressPollTimer) { clearTimeout(switchInProgressPollTimer); switchInProgressPollTimer = null; }
+    switchInProgressPollAttempts = 0;
     clearQuotaAnimations();
     try { quotaAbortController?.abort?.(); } catch { }
     quotaAbortController = null;
@@ -16013,7 +16030,10 @@
     );
     let displayFeedback = accountsUiState.feedback || '';
     let displayTone = accountsUiState.feedbackTone;
-    if (!displayFeedback && hasRecentPersistedResult) {
+    if (!displayFeedback && ov.switchInProgress) {
+      displayFeedback = t('accounts.switchingInProgress');
+      displayTone = 'info';
+    } else if (!displayFeedback && hasRecentPersistedResult) {
       if (lr.ok === false) {
         displayFeedback = formatPersistedError(rawLastErr || t('accounts.actionFail'));
         displayTone = 'error';
@@ -16053,11 +16073,19 @@
           left.title = acc.email;
           const right = document.createElement('div');
           right.className = 'quota-subsec-actions';
+          const needsCred = !acc.hasRefreshToken || Boolean(acc.authInvalid);
+          if (needsCred) {
+            const statusTag = document.createElement('span');
+            statusTag.className = 'key-pill pill-warn quota-acct-status-tag';
+            statusTag.textContent = acc.authInvalid ? t('accounts.reauthRequired') : t('accounts.missingCredTag');
+            statusTag.title = acc.authInvalid ? t('accounts.switchReauthHint') : t('accounts.switchNeedsCredHint');
+            right.appendChild(statusTag);
+          }
           if (acc.hasRefreshToken) {
             const refBtn = document.createElement('button');
             refBtn.className = 'switch-pill-btn quota-acct-refresh-btn';
             refBtn.type = 'button';
-            refBtn.disabled = accountsUiState.busy;
+            refBtn.disabled = accountsUiState.busy || Boolean(ov.switchInProgress);
             refBtn.textContent = t('accounts.retryQuota');
             refBtn.addEventListener('click', () => void performAccountAction('refresh_quota', { email: acc.email }));
             right.appendChild(refBtn);
@@ -16069,11 +16097,23 @@
             right.appendChild(pill);
           } else {
             const swBtn = document.createElement('button');
-            swBtn.className = 'switch-pill-btn';
+            swBtn.className = `switch-pill-btn quota-acct-switch-btn${needsCred ? ' is-needs-cred' : ''}`;
             swBtn.type = 'button';
-            swBtn.disabled = accountsUiState.busy || Boolean(accountsUiState.removeModal?.busy) || !acc.hasRefreshToken || Boolean(acc.authInvalid);
+            swBtn.disabled = accountsUiState.busy || Boolean(accountsUiState.removeModal?.busy) || Boolean(ov.switchInProgress);
             swBtn.textContent = t('accounts.switchBtn');
-            swBtn.addEventListener('click', () => void performAccountAction('switch', { email: acc.email }));
+            if (needsCred) {
+              swBtn.setAttribute?.('aria-disabled', 'true');
+              swBtn.title = acc.authInvalid ? t('accounts.switchReauthHint') : t('accounts.switchNeedsCredHint');
+              swBtn.addEventListener('click', () => {
+                accountsUiState.feedback = acc.authInvalid
+                  ? t('accounts.switchReauthFeedback', { email: acc.email })
+                  : t('accounts.switchNeedsCredFeedback', { email: acc.email });
+                accountsUiState.feedbackTone = 'error';
+                renderAccountsOverviewSection();
+              });
+            } else {
+              swBtn.addEventListener('click', () => void performAccountAction('switch', { email: acc.email }));
+            }
             right.appendChild(swBtn);
           }
           const rmBtn = document.createElement('button');
@@ -16101,7 +16141,9 @@
           const upd = (acc.quotaSnapshot && acc.lastQuotaError && acc.lastQuotaUpdatedAtMs)
             ? t('accounts.lastSnapshotTime', { time: updRaw })
             : updRaw;
-          const authNote = acc.authInvalid ? ` · ${t('accounts.reauthRequired')}` : '';
+          const authNote = acc.authInvalid
+            ? ` · ${t('accounts.reauthRequired')}`
+            : (!acc.hasRefreshToken ? ` · ${t('accounts.missingCredTag')}` : '');
           const emptyPoolText = acc.lastQuotaError ? t('accounts.poolPending') : t('accounts.poolUnknown');
           metaRow.textContent = `${poolSummaries.length ? poolSummaries.join(' | ') : emptyPoolText} · ${upd}${authNote}`;
           card.appendChild(metaRow);
@@ -16347,6 +16389,21 @@
         if (prevRes?.result?.ok) accountsUiState.toolsPreview = prevRes.result;
       }
       renderAccountsOverviewSection();
+      if (accountsUiState.overview?.switchInProgress && !state.disposed) {
+        if (!switchInProgressPollTimer && switchInProgressPollAttempts < 15) {
+          switchInProgressPollAttempts += 1;
+          switchInProgressPollTimer = setTimeout(() => {
+            switchInProgressPollTimer = null;
+            if (!state.disposed) void refreshAccountsOverview({ silent: true });
+          }, 1200);
+        }
+      } else {
+        if (switchInProgressPollTimer) {
+          clearTimeout(switchInProgressPollTimer);
+          switchInProgressPollTimer = null;
+        }
+        switchInProgressPollAttempts = 0;
+      }
       return accountsUiState.overview;
     } catch (e) {
       if (!silent) {
@@ -17163,6 +17220,8 @@
       renderAccountsOverviewSection();
       return accountsUiState.overview;
     },
+    refreshAccountsOverviewForTest: (opts) => refreshAccountsOverview(opts),
+    getRendererCsrfTokenForTest: () => getRendererCsrfToken(),
     getAccountsPanelStateForTest: () => ({
       activeFilter: activeTokenAccountFilter,
       filterOptions: Array.from(el('token-account-select')?.children || []).map(o => ({ val: o.value, label: o.textContent })),

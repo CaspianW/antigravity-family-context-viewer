@@ -1088,12 +1088,151 @@ async function writeBinarySafelyAsync(targetPath, oldBuf, newBuf, dirtyRanges = 
 
 let lsProcCache = { ts: 0, running: false, startTimeMs: null };
 
-function checkLanguageServerRunning() {
-  if (process.platform === 'darwin') {
+function isExactLinuxLanguageServerProcess({ pid, exePath, cmdline = [], daemonHubPids = new Set(), knownTargetSet = new Set(), includeCli = true }) {
+  const cleanExe = String(exePath || '').replace(/ \(deleted\)$/, '').trim();
+  const base = cleanExe ? path.basename(cleanExe).toLowerCase() : '';
+  const lowerPath = cleanExe.toLowerCase();
+  const cmdStr = Array.isArray(cmdline) ? cmdline.join(' ').toLowerCase() : String(cmdline || '').toLowerCase();
+
+  const isCliFlag = /(?:^|\s)--subclient_type(?:=|\s+)cli(?:\s|$)/i.test(cmdStr);
+  const isCliBinary = base === 'agy' || base === 'antigravity-cli';
+  if (!includeCli && (isCliFlag || isCliBinary)) {
+    return false;
+  }
+
+  const isLsBinary = base === 'language_server' || /^language_server_linux_[a-z0-9_-]+$/i.test(base);
+  const hasAntigravitySignal =
+    (cleanExe && knownTargetSet.has(path.resolve(cleanExe))) ||
+    lowerPath.includes('antigravity') ||
+    /(?:^|\s)--override_ide_name(?:=|\s+)antigravity(?:\s|$)/i.test(cmdStr) ||
+    /(?:^|\s)--app_data_dir(?:=|\s+)antigravity(?:\s|$)/i.test(cmdStr) ||
+    /(?:^|\s)--subclient_type(?:=|\s+)hub(?:\s|$)/i.test(cmdStr);
+
+  if (daemonHubPids.has(Number(pid))) {
+    if (!cleanExe || isLsBinary || hasAntigravitySignal) {
+      return includeCli || !isCliFlag;
+    }
+  }
+
+  if (isLsBinary && hasAntigravitySignal) {
+    return true;
+  }
+
+  if (includeCli && isCliBinary) {
+    if ((cleanExe && knownTargetSet.has(path.resolve(cleanExe))) || lowerPath.includes('antigravity') || lowerPath.includes('.gemini')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 枚举 Linux 平台上运行中的 Antigravity language_server（可选包含 agy CLI）进程：
+ * 仅读取 /proc/<pid>/{exe,cmdline} 与 ~/.gemini/antigravity/daemon/hub_*.json，零外部命令依赖，精准排除无关进程。
+ */
+function listLinuxLanguageServerProcesses(options = {}) {
+  const includeCli = options?.includeCli !== false;
+  const procDir = options.procDir || '/proc';
+  const home = options.homeDir || os.homedir();
+  const daemonDir = options.daemonDir !== undefined
+    ? options.daemonDir
+    : path.join(home, '.gemini', 'antigravity', 'daemon');
+  const readlinkFn = typeof options.readlinkSync === 'function' ? options.readlinkSync : fs.readlinkSync;
+  const readFileFn = typeof options.readFileSync === 'function' ? options.readFileSync : fs.readFileSync;
+  const readdirFn = typeof options.readdirSync === 'function' ? options.readdirSync : fs.readdirSync;
+  const statFn = typeof options.statSync === 'function' ? options.statSync : fs.statSync;
+  const selfPid = Number.isInteger(options.selfPid) ? options.selfPid : process.pid;
+
+  const knownTargetSet = new Set(
+    (Array.isArray(options.knownTargetPaths) ? options.knownTargetPaths : [])
+      .filter(Boolean)
+      .map((p) => path.resolve(String(p)))
+  );
+
+  const daemonHubPids = new Set();
+  if (daemonDir) {
+    try {
+      if (fs.existsSync(daemonDir)) {
+        for (const name of readdirFn(daemonDir)) {
+          if (!/^hub_.*\.json$/i.test(name)) continue;
+          try {
+            const raw = JSON.parse(readFileFn(path.join(daemonDir, name), 'utf8'));
+            const pid = Number(raw?.pid);
+            if (Number.isInteger(pid) && pid > 0 && pid !== selfPid) {
+              daemonHubPids.add(pid);
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  const procs = [];
+  const seenPids = new Set();
+  let procEntries = [];
+  try {
+    procEntries = readdirFn(procDir);
+  } catch {
+    return procs;
+  }
+
+  for (const entry of procEntries) {
+    if (!/^\d+$/.test(String(entry))) continue;
+    const pid = Number(entry);
+    if (!Number.isInteger(pid) || pid <= 0 || pid === selfPid || seenPids.has(pid)) continue;
+
+    const pidDir = path.join(procDir, String(pid));
+    let exePath = '';
+    try {
+      exePath = String(readlinkFn(path.join(pidDir, 'exe')) || '').replace(/ \(deleted\)$/, '').trim();
+    } catch {}
+
+    let cmdline = [];
+    try {
+      const rawCmd = readFileFn(path.join(pidDir, 'cmdline'));
+      const buf = Buffer.isBuffer(rawCmd) ? rawCmd : Buffer.from(String(rawCmd || ''), 'utf8');
+      cmdline = buf.toString('utf8').split('\0').filter(Boolean);
+    } catch {}
+
+    if (!exePath && !cmdline.length && !daemonHubPids.has(pid)) continue;
+    if (!exePath && cmdline.length > 0 && path.isAbsolute(cmdline[0])) {
+      exePath = cmdline[0];
+    }
+
+    if (!isExactLinuxLanguageServerProcess({ pid, exePath, cmdline, daemonHubPids, knownTargetSet, includeCli })) {
+      continue;
+    }
+
+    let startTimeMs = null;
+    try {
+      const st = statFn(pidDir);
+      if (st && Number.isFinite(st.mtimeMs) && st.mtimeMs > 0) startTimeMs = st.mtimeMs;
+    } catch {}
+
+    seenPids.add(pid);
+    procs.push({
+      pid,
+      path: exePath || 'language_server',
+      cmdline,
+      startTimeMs,
+      fromDaemonHub: daemonHubPids.has(pid)
+    });
+  }
+
+  return procs;
+}
+
+function checkLanguageServerRunning(options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform === 'darwin') {
     const procs = listMacProcessesSync();
     return procs.some((p) => isExactMacLanguageServerProcess(p.path));
   }
-  if (process.platform !== 'win32') return false;
+  if (platform === 'linux') {
+    return listLinuxLanguageServerProcesses(options).length > 0;
+  }
+  if (platform !== 'win32') return false;
   try {
     const out = execFileSync('tasklist.exe', ['/NH', '/FO', 'CSV'], {
       encoding: 'utf8',
@@ -1112,21 +1251,46 @@ function checkLanguageServerRunning() {
 }
 
 async function checkLanguageServerRunningAsync(options = {}) {
-  if ((process.platform !== 'win32' && process.platform !== 'darwin') || options.skipProcessCheck) {
+  const platform = options.platform || process.platform;
+  if ((platform !== 'win32' && platform !== 'darwin' && platform !== 'linux') || options.skipProcessCheck) {
     return { running: false, startTimeMs: null };
   }
   const now = Date.now();
-  if (options.forceRefresh !== true && now - lsProcCache.ts < 1500) {
+  if (options.forceRefresh !== true && !options.procDir && now - lsProcCache.ts < 1500) {
     return { running: lsProcCache.running, startTimeMs: lsProcCache.startTimeMs };
   }
   const targets = resolveTargetBinaries(options).filter((t) => fs.existsSync(t.path));
   let running = false;
   let earliestStartMs = null;
-  if (process.platform === 'darwin') {
+  if (platform === 'darwin') {
     const procs = await listMacProcessesAsync();
     const targetPaths = new Set(targets.map((t) => path.resolve(t.path)));
     for (const p of procs) {
       if (targetPaths.has(path.resolve(p.path))) {
+        running = true;
+        if (p.startTimeMs && (!earliestStartMs || p.startTimeMs < earliestStartMs)) {
+          earliestStartMs = p.startTimeMs;
+        }
+      }
+    }
+  } else if (platform === 'linux') {
+    const hasLinuxIsolationGate = Boolean(
+      options.backupDir ||
+      options.enhanceBackupDir ||
+      options.stateDir ||
+      process.env.NODE_TEST_CONTEXT ||
+      process.env.AG_METER_TEST_MODE === '1'
+    );
+    if (hasLinuxIsolationGate && targets.length === 0 && !options.procDir && !options.daemonDir) {
+      return { running: false, startTimeMs: null };
+    }
+    const targetPaths = new Set(targets.map((t) => path.resolve(t.path)));
+    const procs = listLinuxLanguageServerProcesses({
+      ...options,
+      knownTargetPaths: targets.map((t) => t.path)
+    });
+    for (const p of procs) {
+      if (targetPaths.size === 0 || targetPaths.has(path.resolve(p.path))) {
         running = true;
         if (p.startTimeMs && (!earliestStartMs || p.startTimeMs < earliestStartMs)) {
           earliestStartMs = p.startTimeMs;
@@ -1146,19 +1310,23 @@ async function checkLanguageServerRunningAsync(options = {}) {
       } catch {}
     }
   }
-  lsProcCache = { ts: Date.now(), running, startTimeMs: earliestStartMs };
+  if (!options.procDir) {
+    lsProcCache = { ts: Date.now(), running, startTimeMs: earliestStartMs };
+  }
   return { running, startTimeMs: earliestStartMs };
 }
 
 function restartLanguageServers(options = {}) {
   const includeCli = options?.includeCli !== false;
-  if (process.platform === 'darwin') {
+  const platform = options.platform || process.platform;
+  const killFn = typeof options.killFn === 'function' ? options.killFn : (pid, sig) => process.kill(pid, sig);
+  if (platform === 'darwin') {
     const procs = listMacProcessesSync();
     const killed = [];
     for (const p of procs) {
       if (isExactMacLanguageServerProcess(p.path)) {
         try {
-          process.kill(p.pid, 'SIGTERM');
+          killFn(p.pid, 'SIGTERM');
           killed.push(`${path.basename(p.path)}#${p.pid}`);
         } catch {}
       }
@@ -1166,8 +1334,20 @@ function restartLanguageServers(options = {}) {
     lsProcCache = { ts: 0, running: false, startTimeMs: null };
     return { ok: true, killed };
   }
-  if (process.platform !== 'win32') {
-    return { ok: false, killed: [], error: '仅支持 Windows / macOS 平台重启后台语言服务' };
+  if (platform === 'linux') {
+    const procs = listLinuxLanguageServerProcesses({ ...options, includeCli });
+    const killed = [];
+    for (const p of procs) {
+      try {
+        killFn(p.pid, 'SIGTERM');
+        killed.push(`${path.basename(p.path || 'language_server')}#${p.pid}`);
+      } catch {}
+    }
+    lsProcCache = { ts: 0, running: false, startTimeMs: null };
+    return { ok: true, killed };
+  }
+  if (platform !== 'win32') {
+    return { ok: false, killed: [], error: '仅支持 Windows / macOS / Linux 平台重启后台语言服务' };
   }
   const images = includeCli
     ? ['language_server.exe', 'language_server_windows_x64.exe', 'agy.exe']
@@ -1190,13 +1370,15 @@ function restartLanguageServers(options = {}) {
 
 async function restartLanguageServersAsync(options = {}) {
   const includeCli = options?.includeCli !== false;
-  if (process.platform === 'darwin') {
+  const platform = options.platform || process.platform;
+  const killFn = typeof options.killFn === 'function' ? options.killFn : (pid, sig) => process.kill(pid, sig);
+  if (platform === 'darwin') {
     const procs = await listMacProcessesAsync();
     const killed = [];
     for (const p of procs) {
       if (isExactMacLanguageServerProcess(p.path)) {
         try {
-          process.kill(p.pid, 'SIGTERM');
+          killFn(p.pid, 'SIGTERM');
           killed.push(`${path.basename(p.path)}#${p.pid}`);
         } catch {}
       }
@@ -1204,8 +1386,20 @@ async function restartLanguageServersAsync(options = {}) {
     lsProcCache = { ts: 0, running: false, startTimeMs: null };
     return { ok: true, killed };
   }
-  if (process.platform !== 'win32') {
-    return { ok: false, killed: [], error: '仅支持 Windows / macOS 平台重启后台语言服务' };
+  if (platform === 'linux') {
+    const procs = listLinuxLanguageServerProcesses({ ...options, includeCli });
+    const killed = [];
+    for (const p of procs) {
+      try {
+        killFn(p.pid, 'SIGTERM');
+        killed.push(`${path.basename(p.path || 'language_server')}#${p.pid}`);
+      } catch {}
+    }
+    lsProcCache = { ts: 0, running: false, startTimeMs: null };
+    return { ok: true, killed };
+  }
+  if (platform !== 'win32') {
+    return { ok: false, killed: [], error: '仅支持 Windows / macOS / Linux 平台重启后台语言服务' };
   }
   const images = includeCli
     ? ['language_server.exe', 'language_server_windows_x64.exe', 'agy.exe']
@@ -2616,6 +2810,9 @@ module.exports = {
   applyEnhancePatchAsync,
   restoreAllEnhance,
   restoreAllEnhanceAsync,
+  listLinuxLanguageServerProcesses,
+  checkLanguageServerRunning,
+  checkLanguageServerRunningAsync,
   restartLanguageServers,
   restartLanguageServersAsync,
   invalidateBinaryCache

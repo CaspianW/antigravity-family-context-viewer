@@ -72,6 +72,16 @@ async function tryHotDispose(options = {}) {
 }
 
 async function restore(options = {}) {
+  if (options && typeof options === 'object') {
+    if (options.path === undefined) {
+      const misnamedKey = ['asarPath', 'targetPath', 'target', 'file', 'asar', 'customPath'].find(k => options[k] !== undefined);
+      if (misnamedKey) {
+        throw new Error(`无效的卸载选项字段 "${misnamedKey}"：请使用 { path: "<app.asar>" } 指定卸载目标，已拒绝回落至默认宿主路径。`);
+      }
+    } else if (options.path !== null && (typeof options.path !== 'string' || !options.path.trim())) {
+      throw new Error('卸载选项 path 必须为非空字符串。');
+    }
+  }
   const customPathIdx = process.argv.indexOf('--path');
   const customPath = options.path || (customPathIdx >= 0 ? process.argv[customPathIdx + 1] : null);
   const previous = process.argv.includes('--previous') || Boolean(options.previous);
@@ -277,6 +287,7 @@ async function restore(options = {}) {
             'meter-context-unlock.js',
             'meter-enhance.js',
             'meter-accounts.js',
+            'meter-family-sync.js',
             'macos-binary-utils.js',
             'local-api.js',
             'attachment_scan.py',

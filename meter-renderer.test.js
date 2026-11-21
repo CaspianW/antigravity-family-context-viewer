@@ -7271,3 +7271,135 @@ test('家庭看板请求节流回归：45s 基础轮询、后台隐藏跳过、�
     api.dispose();
   }
 });
+
+test('切号体验与 v2.34.0 CSRF 回归：localStorage agy_session_csrf_token 兜底、禁用态 CSS、无凭证点击引导与 switchInProgress 补拉', async () => {
+  // 1. 核查样式表已补齐 .switch-pill-btn:disabled 明确禁用态
+  const cssSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.match(cssSrc, /\.switch-pill-btn:disabled\{[^}]*opacity:0\.45[^}]*cursor:not-allowed/, '必须存在 .switch-pill-btn:disabled 禁用样式');
+
+  // 2. 核查新增三语词条严格符合繁简英隔离规范
+  const i18nSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'i18n.js'), 'utf8');
+  const i18nCtx = {};
+  vm.runInNewContext(`${i18nSrc}\nthis.__I18N = PANEL_I18N;`, i18nCtx);
+  const newKeys = [
+    'accounts.missingCredTag',
+    'accounts.switchNeedsCredHint',
+    'accounts.switchReauthHint',
+    'accounts.switchNeedsCredFeedback',
+    'accounts.switchReauthFeedback',
+    'accounts.switchingInProgress'
+  ];
+  for (const k of newKeys) {
+    const entry = i18nCtx.__I18N[k];
+    assert.ok(entry && entry['zh-CN'] && entry['zh-TW'] && entry.en, `缺少词条: ${k}`);
+    assert.equal(/[\u4e00-\u9fff]/.test(entry.en), false, `${k}.en 不得包含中文字符`);
+    assert.equal(/[凭证号录换户导权态请击邮仅储]/u.test(entry['zh-TW']), false, `${k}.zh-TW 不得混入简体字`);
+  }
+
+  // 3. v2.34.0 前端 CSRF 兜底 + 无凭证/失效账号切号引导 + switchInProgress 自动补拉
+  const scheduled = [];
+  let nextTid = 10;
+  const h = harness(session(), {
+    setTimeout(fn, delay) {
+      const id = nextTid++;
+      scheduled.push({ id, fn, delay, cleared: false });
+      return id;
+    },
+    clearTimeout(id) {
+      const t = scheduled.find(x => x.id === id);
+      if (t) t.cleared = true;
+    }
+  });
+  const api = h.sandbox.__AGContextMeter;
+  const flush = () => new Promise(r => setImmediate(r));
+  try {
+    await api.setPanelLanguage('zh-CN', { persist: false });
+
+    // v2.34.0：window.__APP_CONFIG__.csrfToken 为空时必须回退读取 localStorage['agy_session_csrf_token']
+    h.sandbox.window.__APP_CONFIG__ = { csrfToken: '' };
+    const lsStore = new Map([['agy_session_csrf_token', 'session-csrf-v234']]);
+    h.sandbox.window.localStorage = {
+      getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+      setItem: (k, v) => lsStore.set(k, String(v))
+    };
+    assert.equal(api.getRendererCsrfTokenForTest(), 'session-csrf-v234');
+    h.sandbox.window.__APP_CONFIG__ = { csrfToken: 'direct-csrf-v234' };
+    assert.equal(api.getRendererCsrfTokenForTest(), 'direct-csrf-v234');
+
+    const dispatchedActions = [];
+    let overviewCalls = 0;
+    h.sandbox.window.contextMeterAPI.accountsAction = async (payload) => {
+      dispatchedActions.push(payload);
+      if (payload.action === 'preview_tools') return { ok: true, available: false, count: 0, accounts: [] };
+      return { ok: true, message: 'ok' };
+    };
+    h.sandbox.window.contextMeterAPI.getAccountsOverview = async () => {
+      overviewCalls += 1;
+      if (overviewCalls === 1) {
+        return {
+          ok: true,
+          switchInProgress: true,
+          activeAccountEmail: 'active@example.com',
+          accounts: [
+            { email: 'active@example.com', isActive: true, hasRefreshToken: true, authInvalid: false },
+            { email: 'nocred@example.com', isActive: false, hasRefreshToken: false, authInvalid: false }
+          ],
+          autoSwitch: {},
+          autoSwitchStatus: { state: 'disabled' }
+        };
+      }
+      return {
+        ok: true,
+        switchInProgress: false,
+        activeAccountEmail: 'ready@example.com',
+        accounts: [
+          { email: 'ready@example.com', isActive: true, hasRefreshToken: true, authInvalid: false },
+          { email: 'nocred@example.com', isActive: false, hasRefreshToken: false, authInvalid: false },
+          { email: 'expired@example.com', isActive: false, hasRefreshToken: true, authInvalid: true }
+        ],
+        autoSwitch: {},
+        autoSwitchStatus: {
+          state: 'disabled',
+          lastResult: { ok: true, toEmail: 'ready@example.com', atMs: Date.now(), message: '已切换至 ready@example.com' }
+        }
+      };
+    };
+
+    // switchInProgress=true 时，展示切号中提示、禁用切号按钮，并自动调度 1200ms 补拉
+    await api.refreshAccountsOverviewForTest({ silent: true });
+    assert.match(h.elements.get('quota-acct-feedback').textContent, /正在切换账号/);
+    const pollTimer = scheduled.find(t => !t.cleared && t.delay === 1200);
+    assert.ok(pollTimer, 'switchInProgress=true 时必须自动调度短间隔补拉');
+
+    // 触发补拉 -> switchInProgress 归零，拿到最终成功结果横幅
+    pollTimer.fn();
+    for (let i = 0; i < 6; i++) await flush();
+    assert.equal(overviewCalls, 2);
+    assert.match(h.elements.get('quota-acct-feedback').textContent, /已切换至 ready@example\.com/);
+
+    // 缺 refreshToken 账号：展示「未导入凭证」标签，点击「切号」展示明确引导而不是静默吞点击或误发 switch RPC
+    const listEl = h.elements.get('quota-accounts-list');
+    assert.equal(listEl.children.length, 3);
+    const noCredCard = listEl.children[1];
+    const noCredActions = noCredCard.children[0].children[1].children;
+    const noCredTag = noCredActions.find(n => (n.className || '').includes('quota-acct-status-tag'));
+    const noCredSwBtn = noCredActions.find(n => (n.className || '').includes('quota-acct-switch-btn'));
+    assert.equal(noCredTag?.textContent, '未导入凭证');
+    assert.ok(noCredSwBtn && noCredSwBtn.className.includes('is-needs-cred'));
+    assert.ok(noCredSwBtn.title.includes('导入当前'));
+    noCredSwBtn.click();
+    assert.equal(dispatchedActions.some(a => a.action === 'switch'), false, '无凭证点击不得发起无效 switch RPC');
+    assert.match(h.elements.get('quota-acct-feedback').textContent, /nocred@example\.com.*尚未保存切换凭证/);
+
+    // authInvalid 账号：展示「需重登授权」标签，点击「切号」展示重登引导
+    const expiredCard = listEl.children[2];
+    const expiredActions = expiredCard.children[0].children[1].children;
+    const expiredTag = expiredActions.find(n => (n.className || '').includes('quota-acct-status-tag'));
+    const expiredSwBtn = expiredActions.find(n => (n.className || '').includes('quota-acct-switch-btn'));
+    assert.equal(expiredTag?.textContent, '需重登授权');
+    expiredSwBtn.click();
+    assert.match(h.elements.get('quota-acct-feedback').textContent, /expired@example\.com.*授权已失效/);
+  } finally {
+    api.dispose();
+  }
+});

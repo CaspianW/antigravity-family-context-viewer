@@ -522,3 +522,105 @@ test('macOS Mach-O arm64 适配：embed.FS 槽位解析、0~4 档切换、中文
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('Linux 平台 language_server 枚举、运行检测与 SIGTERM 精准重启（排除无关进程与 CLI）', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-enhance-linux-ls-'));
+  try {
+    const procDir = path.join(tmpDir, 'proc');
+    const daemonDir = path.join(tmpDir, 'daemon');
+    fs.mkdirSync(procDir, { recursive: true });
+    fs.mkdirSync(daemonDir, { recursive: true });
+
+    const fakeLsBin = path.join(tmpDir, 'Antigravity-x64', 'resources', 'bin', 'language_server');
+    const fakeCliBin = path.join(tmpDir, '.gemini', 'antigravity', 'bin', 'agy');
+    const unrelatedBin = path.join(tmpDir, 'other', 'language_server');
+    fs.mkdirSync(path.dirname(fakeLsBin), { recursive: true });
+    fs.mkdirSync(path.dirname(fakeCliBin), { recursive: true });
+    fs.mkdirSync(path.dirname(unrelatedBin), { recursive: true });
+    fs.writeFileSync(fakeLsBin, 'ls');
+    fs.writeFileSync(fakeCliBin, 'cli');
+    fs.writeFileSync(unrelatedBin, 'other');
+
+    const mkProc = (pid, exeTarget, argv) => {
+      const pDir = path.join(procDir, String(pid));
+      fs.mkdirSync(pDir, { recursive: true });
+      fs.symlinkSync(exeTarget, path.join(pDir, 'exe'));
+      fs.writeFileSync(path.join(pDir, 'cmdline'), argv.join('\0') + '\0');
+    };
+
+    // PID 1001: Antigravity Hub language_server（同时在 daemon/hub_*.json 登记）
+    mkProc(1001, fakeLsBin, [fakeLsBin, '--standalone', '--override_ide_name', 'antigravity', '--subclient_type', 'hub']);
+    // PID 1002: Antigravity CLI agy（includeCli: false 时必须排除）
+    mkProc(1002, fakeCliBin, [fakeCliBin, '--subclient_type', 'cli']);
+    // PID 1003: CLI 模式的 language_server（includeCli: false 时必须排除）
+    mkProc(1003, fakeLsBin, [fakeLsBin, '--override_ide_name', 'antigravity', '--subclient_type', 'cli']);
+    // PID 1004: 无关应用的同名 language_server（绝不可误杀）
+    mkProc(1004, unrelatedBin, [unrelatedBin, '--lsp']);
+
+    fs.writeFileSync(path.join(daemonDir, 'hub_34901.json'), JSON.stringify({ pid: 1001, httpsPort: 40799, httpPort: 34901, csrfToken: 't' }));
+
+    const hubOnly = enhance.listLinuxLanguageServerProcesses({ procDir, daemonDir, includeCli: false, selfPid: 999999 });
+    assert.deepEqual(hubOnly.map((p) => p.pid), [1001], 'includeCli=false 时仅匹配 Hub language_server，不误伤 CLI 与无关进程');
+
+    const withCli = enhance.listLinuxLanguageServerProcesses({ procDir, daemonDir, includeCli: true, selfPid: 999999 });
+    assert.deepEqual(withCli.map((p) => p.pid).sort((a, b) => a - b), [1001, 1002, 1003], 'includeCli=true 时包含 Hub 与 CLI，仍排除无关进程 1004');
+
+    assert.equal(enhance.checkLanguageServerRunning({ platform: 'linux', procDir, daemonDir, includeCli: false, selfPid: 999999 }), true);
+    const asyncRunning = await enhance.checkLanguageServerRunningAsync({
+      platform: 'linux',
+      procDir,
+      daemonDir,
+      includeCli: false,
+      selfPid: 999999,
+      targets: [{ id: 'desktop', label: 'LS', path: fakeLsBin }]
+    });
+    assert.equal(asyncRunning.running, true);
+    assert.ok(Number.isFinite(asyncRunning.startTimeMs));
+
+    // 无 targets 传入时（与真实 Linux 宿主 resolveTargetBinaries() 返回 [] 一致）仍须正常检出运行中的 LS
+    const asyncNoTargets = await enhance.checkLanguageServerRunningAsync({
+      platform: 'linux',
+      procDir,
+      daemonDir,
+      includeCli: false,
+      selfPid: 999999
+    });
+    assert.equal(asyncNoTargets.running, true, 'Linux 无 targets 时 checkLanguageServerRunningAsync 仍应检出存活 LS');
+    assert.ok(Number.isFinite(asyncNoTargets.startTimeMs));
+
+    // 测试隔离门禁：在 NODE_TEST_CONTEXT 下未显式传 procDir/daemonDir/targets 时绝不扫描真实 /proc
+    const asyncIsolated = await enhance.checkLanguageServerRunningAsync({
+      platform: 'linux',
+      stateDir: path.join(tmpDir, 'isolated-state')
+    });
+    assert.equal(asyncIsolated.running, false);
+
+    const killedSync = [];
+    const syncRes = enhance.restartLanguageServers({
+      platform: 'linux',
+      procDir,
+      daemonDir,
+      includeCli: false,
+      selfPid: 999999,
+      killFn: (pid, sig) => killedSync.push({ pid, sig })
+    });
+    assert.equal(syncRes.ok, true);
+    assert.deepEqual(killedSync, [{ pid: 1001, sig: 'SIGTERM' }]);
+    assert.deepEqual(syncRes.killed, ['language_server#1001']);
+
+    const killedAsync = [];
+    const asyncRes = await enhance.restartLanguageServersAsync({
+      platform: 'linux',
+      procDir,
+      daemonDir,
+      includeCli: false,
+      selfPid: 999999,
+      killFn: (pid, sig) => killedAsync.push({ pid, sig })
+    });
+    assert.equal(asyncRes.ok, true);
+    assert.deepEqual(killedAsync, [{ pid: 1001, sig: 'SIGTERM' }]);
+    assert.deepEqual(asyncRes.killed, ['language_server#1001']);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

@@ -313,12 +313,14 @@ function classifyInstallError(combinedOutput = '') {
 
 function evaluateRestartRequired({
   liveRunning = false,
+  daemonLsRunning = false,
   liveInjected = false,
   hasStaleMainProcess = false,
   backendSource = null,
   backendChanged = false
 } = {}) {
-  if (!liveRunning) {
+  const clientRunning = Boolean(liveRunning || daemonLsRunning);
+  if (!clientRunning) {
     return { restartRequired: false, reason: 'client_not_running' };
   }
   if (!liveInjected) {
@@ -711,10 +713,16 @@ function runDeploy(argv = process.argv.slice(2), deps = {}) {
   });
 
   const liveRunning = statusReport?.liveWindow ? Boolean(statusReport.liveWindow.running) : Boolean(installMeta?.liveInjected);
+  const daemonLsRunning = Boolean(
+    statusReport?.daemonLs?.running ||
+    statusReport?.liveWindow?.lsRunningViaDaemon ||
+    installMeta?.daemonLsRunning
+  );
   const liveInjected = installMeta ? Boolean(installMeta.liveInjected) : Boolean(statusReport?.liveWindow?.active);
   const backendSource = installMeta?.backendSource || statusReport?.versions?.effectiveBackendSource || null;
   const restart = evaluateRestartRequired({
     liveRunning,
+    daemonLsRunning,
     liveInjected,
     hasStaleMainProcess: Boolean(installMeta?.hasStaleMainProcess),
     backendSource,

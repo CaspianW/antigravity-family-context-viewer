@@ -516,3 +516,92 @@ test('runDeploy re-execs without --pull when git pull updates deploy.js', () => 
     fs.rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
+test('evaluateRestartRequired and runDeploy require restart when v2.34.0 CDP is disabled but daemonLs is running (including --skip-status)', () => {
+  assert.deepEqual(
+    evaluateRestartRequired({
+      liveRunning: false,
+      daemonLsRunning: true,
+      liveInjected: false
+    }),
+    { restartRequired: true, reason: 'live_hot_inject_unavailable' }
+  );
+  assert.deepEqual(
+    evaluateRestartRequired({
+      liveRunning: false,
+      daemonLsRunning: false,
+      liveInjected: false
+    }),
+    { restartRequired: false, reason: 'client_not_running' }
+  );
+
+  const rootDir = makeTempDir('ag-deploy-v234-root-');
+  const stateDir = makeTempDir('ag-deploy-v234-state-');
+  const fakeAsar = path.join(rootDir, 'app.asar');
+  try {
+    fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ version: '0.8.8' }));
+    fs.writeFileSync(path.join(rootDir, 'meter-renderer.js'), '// renderer\n');
+    fs.writeFileSync(path.join(rootDir, 'meter-core.js'), '// core\n');
+    fs.writeFileSync(fakeAsar, 'fake-asar');
+
+    // Case 1: 正常跑 status，v2.34.0 默认无 CDP (liveWindow.running=false)，但 daemonLs.running=true
+    const resWithStatus = runDeploy(['--path', fakeAsar, '--json'], {
+      rootDir,
+      stateDir,
+      findAsarPath: (p) => p,
+      spawnSync: (_cmd, args) => {
+        if (args.includes('install')) {
+          return {
+            status: 0,
+            stdout: '__AG_INSTALL_META__={"meterVersion":"0.8.8","liveInjected":false,"daemonLsRunning":true,"backendHotReloaded":false,"backendSource":null,"hasStaleMainProcess":false}\n',
+            stderr: ''
+          };
+        }
+        if (args.includes('status')) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              pluginVersion: '0.8.8',
+              asarPatched: true,
+              daemonLs: { running: true, pid: 12345, origin: 'https://127.0.0.1:40799', lsVersion: '2.34.0' },
+              liveWindow: { running: false, cdpDisabled: true, lsRunningViaDaemon: true }
+            }),
+            stderr: ''
+          };
+        }
+        throw new Error('Unexpected spawn args: ' + args.join(' '));
+      },
+      stdout: makeMemoryStream(),
+      stderr: makeMemoryStream()
+    });
+    assert.equal(resWithStatus.ok, true);
+    assert.equal(resWithStatus.restartRequired, true);
+    assert.equal(resWithStatus.restartReason, 'live_hot_inject_unavailable');
+
+    // Case 2: --skip-status 场景下，仅凭 installMeta.daemonLsRunning=true 也必须准确提示需重启
+    const resSkipStatus = runDeploy(['--path', fakeAsar, '--skip-status', '--json'], {
+      rootDir,
+      stateDir,
+      findAsarPath: (p) => p,
+      spawnSync: (_cmd, args) => {
+        if (args.includes('install')) {
+          return {
+            status: 0,
+            stdout: '__AG_INSTALL_META__={"meterVersion":"0.8.8","liveInjected":false,"daemonLsRunning":true,"backendHotReloaded":false,"backendSource":null,"hasStaleMainProcess":false}\n',
+            stderr: ''
+          };
+        }
+        throw new Error('Unexpected spawn args: ' + args.join(' '));
+      },
+      stdout: makeMemoryStream(),
+      stderr: makeMemoryStream()
+    });
+    assert.equal(resSkipStatus.ok, true);
+    assert.equal(resSkipStatus.status, null);
+    assert.equal(resSkipStatus.restartRequired, true);
+    assert.equal(resSkipStatus.restartReason, 'live_hot_inject_unavailable');
+  } finally {
+    fs.rmSync(rootDir, { recursive: true, force: true });
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});

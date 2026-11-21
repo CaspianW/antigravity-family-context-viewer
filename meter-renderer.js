@@ -780,9 +780,10 @@
     }
     .switch-pill-btn{
       border:0;background:transparent;color:var(--ag-text-muted);font-size:11px;font-weight:500;
-      padding:2px 8px;border-radius:4px;cursor:pointer;transition:background-color .12s,color .12s;
+      padding:2px 8px;border-radius:4px;cursor:pointer;transition:background-color .12s,color .12s,opacity .12s;
     }
-    .switch-pill-btn:hover{color:var(--ag-text-primary)}
+    .switch-pill-btn:hover:not(:disabled){color:var(--ag-text-primary)}
+    .switch-pill-btn:disabled{opacity:0.45;cursor:not-allowed}
     .switch-pill-btn.active{
       background:var(--ag-unified-bg);color:var(--ag-text-primary);font-weight:600;
       box-shadow:0 1px 3px rgba(0,0,0,0.18);
@@ -2362,6 +2363,8 @@
     .quota-acct-meta{color:var(--ag-text-muted);font-size:10px;overflow-wrap:anywhere}
     .quota-acct-error{color:#f59e0b;font-size:10px;overflow-wrap:anywhere;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25)}
     .quota-acct-refresh-btn{font-size:10px;padding:2px 6px}
+    .quota-acct-switch-btn.is-needs-cred{opacity:0.55;border-style:dashed !important}
+    .quota-acct-status-tag{font-size:9.5px;padding:1px 5px;border-radius:4px;line-height:1.3;white-space:nowrap;flex-shrink:0}
     .quota-acct-remove-btn{font-size:10px;padding:2px 7px;border-radius:4px;color:#f87171;border:1px solid rgba(239,68,68,0.28);background:rgba(239,68,68,0.08);cursor:pointer;transition:background-color .12s,border-color .12s,opacity .12s}
     .quota-acct-remove-btn:hover:not(:disabled){background:rgba(239,68,68,0.16);border-color:rgba(239,68,68,0.45);color:#fca5a5}
     .quota-acct-remove-btn:disabled{opacity:0.45;cursor:not-allowed}
@@ -7394,6 +7397,32 @@ const PANEL_I18N = {
   'accounts.poolPending': { 'zh-CN': '额度暂不可用', 'zh-TW': '額度暫不可用', en: 'Quota unavailable' },
   'accounts.retryQuota': { 'zh-CN': '刷新/重试额度', 'zh-TW': '重試額度', en: 'Retry quota' },
   'accounts.reauthRequired': { 'zh-CN': '需重登授权', 'zh-TW': '需重新登入授權', en: 'Re-auth required' },
+  'accounts.missingCredTag': { 'zh-CN': '未导入凭证', 'zh-TW': '未匯入憑證', en: 'No token' },
+  'accounts.switchNeedsCredHint': {
+    'zh-CN': '缺少切换凭证：请先在客户端登录该账号后点击“导入当前”，或点击“+ 登录添加”完成授权',
+    'zh-TW': '缺少切換憑證：請先在用戶端登入此帳號後點擊「匯入目前帳號」，或點擊「+ 登入新增」完成授權',
+    en: 'Missing switch credential: sign in with this account and click "Import Current", or use "+ Google Sign-In"'
+  },
+  'accounts.switchReauthHint': {
+    'zh-CN': '授权已失效，请重新点击“导入当前”或“+ 登录添加”后再切号',
+    'zh-TW': '授權已失效，請重新點擊「匯入目前帳號」或「+ 登入新增」後再切號',
+    en: 'Authorization expired: click "Import Current" or "+ Google Sign-In" to re-authorize before switching'
+  },
+  'accounts.switchNeedsCredFeedback': {
+    'zh-CN': '{email} 尚未保存切换凭证（仅自动识别邮箱），请先在客户端切换至该账号后点击「导入当前」，或点击「+ 登录添加」授权。',
+    'zh-TW': '{email} 尚未儲存切換憑證（僅自動識別信箱），請先在用戶端切換至此帳號後點擊「匯入目前帳號」，或點擊「+ 登入新增」授權。',
+    en: '{email} has no saved switch credential yet (auto-detected only). Sign in with it and click "Import Current", or authorize via "+ Google Sign-In".'
+  },
+  'accounts.switchReauthFeedback': {
+    'zh-CN': '{email} 授权已失效，无法切号；请重新点击「+ 登录添加」或「导入当前」更新凭证。',
+    'zh-TW': '{email} 授權已失效，無法切號；請重新點擊「+ 登入新增」或「匯入目前帳號」更新憑證。',
+    en: '{email} authorization has expired. Click "+ Google Sign-In" or "Import Current" to refresh credentials before switching.'
+  },
+  'accounts.switchingInProgress': {
+    'zh-CN': '正在切换账号并校验宿主生效状态，请稍候…',
+    'zh-TW': '正在切換帳號並校驗宿主生效狀態，請稍候…',
+    en: 'Switching account and verifying active host session…'
+  },
   'accounts.removeBtn': { 'zh-CN': '移除账号', 'zh-TW': '移除帳號', en: 'Remove' },
   'accounts.removeModal.title': { 'zh-CN': '移除账号', 'zh-TW': '移除帳號', en: 'Remove account' },
   'accounts.removeModal.body': {
@@ -18165,12 +18194,24 @@ function closeAllDropdowns(exceptWrap = null) {
     return { ok: true, autoCompact: saved };
   }
 
+  function getRendererCsrfToken() {
+    try {
+      const fromConfig = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : '';
+      if (typeof fromConfig === 'string' && fromConfig.trim()) return fromConfig.trim();
+    } catch { }
+    try {
+      const fromStorage = typeof window !== 'undefined' ? window.localStorage?.getItem?.('agy_session_csrf_token') : '';
+      if (typeof fromStorage === 'string' && fromStorage.trim()) return fromStorage.trim();
+    } catch { }
+    return '';
+  }
+
   async function compactViaDirectLanguageServerFetch(id, options = {}) {
     const fetchFn = (typeof window !== 'undefined' && typeof window.__agOrigFetch === 'function')
       ? window.__agOrigFetch
       : (typeof fetch === 'function' ? fetch : null);
     if (!fetchFn) return { ok: false, error: 'fetch_unavailable' };
-    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    const csrf = getRendererCsrfToken() || null;
     const headers = {
       'Content-Type': 'application/json',
       'Connect-Protocol-Version': '1',
@@ -27817,7 +27858,7 @@ var cumLockedKey = null;
     const controller = new AbortController(); state.controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      const csrf = window.__APP_CONFIG__?.csrfToken; if (!csrf) throw new Error('后台尚未就绪');
+      const csrf = getRendererCsrfToken(); if (!csrf) throw new Error('后台尚未就绪');
       const offset = Math.max(0, state.count - 3);
       const response = await fetch('/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1', 'x-codeium-csrf-token': csrf }, body: JSON.stringify({ cascadeId: id, generatorMetadataOffset: offset, includeMessages: false }), signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -28084,7 +28125,7 @@ var cumLockedKey = null;
   async function fetchAvailableModelsIfNeeded() {
     if (availableModelsFetchInFlight) return;
     if (typeof fetch !== 'function') return;
-    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    const csrf = getRendererCsrfToken();
     if (!csrf) return;
     if (Date.now() - lastAvailableModelsSync < 300000 && state.modelCapabilitiesById && Object.keys(state.modelCapabilitiesById).length > 0) {
       return;
@@ -28274,11 +28315,16 @@ var cumLockedKey = null;
     }
   }
 
+  let switchInProgressPollTimer = null;
+  let switchInProgressPollAttempts = 0;
+
   function clearQuotaTimers() {
     if (quotaAutoTimer) { clearTimeout(quotaAutoTimer); quotaAutoTimer = null; }
     if (quotaResetTimer) { clearTimeout(quotaResetTimer); quotaResetTimer = null; }
     if (quotaPostTurnTimer) { clearTimeout(quotaPostTurnTimer); quotaPostTurnTimer = null; }
     if (quotaFeedbackTimer) { clearTimeout(quotaFeedbackTimer); quotaFeedbackTimer = null; }
+    if (switchInProgressPollTimer) { clearTimeout(switchInProgressPollTimer); switchInProgressPollTimer = null; }
+    switchInProgressPollAttempts = 0;
     clearQuotaAnimations();
     try { quotaAbortController?.abort?.(); } catch { }
     quotaAbortController = null;
@@ -30082,7 +30128,10 @@ var cumLockedKey = null;
     );
     let displayFeedback = accountsUiState.feedback || '';
     let displayTone = accountsUiState.feedbackTone;
-    if (!displayFeedback && hasRecentPersistedResult) {
+    if (!displayFeedback && ov.switchInProgress) {
+      displayFeedback = t('accounts.switchingInProgress');
+      displayTone = 'info';
+    } else if (!displayFeedback && hasRecentPersistedResult) {
       if (lr.ok === false) {
         displayFeedback = formatPersistedError(rawLastErr || t('accounts.actionFail'));
         displayTone = 'error';
@@ -30122,11 +30171,19 @@ var cumLockedKey = null;
           left.title = acc.email;
           const right = document.createElement('div');
           right.className = 'quota-subsec-actions';
+          const needsCred = !acc.hasRefreshToken || Boolean(acc.authInvalid);
+          if (needsCred) {
+            const statusTag = document.createElement('span');
+            statusTag.className = 'key-pill pill-warn quota-acct-status-tag';
+            statusTag.textContent = acc.authInvalid ? t('accounts.reauthRequired') : t('accounts.missingCredTag');
+            statusTag.title = acc.authInvalid ? t('accounts.switchReauthHint') : t('accounts.switchNeedsCredHint');
+            right.appendChild(statusTag);
+          }
           if (acc.hasRefreshToken) {
             const refBtn = document.createElement('button');
             refBtn.className = 'switch-pill-btn quota-acct-refresh-btn';
             refBtn.type = 'button';
-            refBtn.disabled = accountsUiState.busy;
+            refBtn.disabled = accountsUiState.busy || Boolean(ov.switchInProgress);
             refBtn.textContent = t('accounts.retryQuota');
             refBtn.addEventListener('click', () => void performAccountAction('refresh_quota', { email: acc.email }));
             right.appendChild(refBtn);
@@ -30138,11 +30195,23 @@ var cumLockedKey = null;
             right.appendChild(pill);
           } else {
             const swBtn = document.createElement('button');
-            swBtn.className = 'switch-pill-btn';
+            swBtn.className = `switch-pill-btn quota-acct-switch-btn${needsCred ? ' is-needs-cred' : ''}`;
             swBtn.type = 'button';
-            swBtn.disabled = accountsUiState.busy || Boolean(accountsUiState.removeModal?.busy) || !acc.hasRefreshToken || Boolean(acc.authInvalid);
+            swBtn.disabled = accountsUiState.busy || Boolean(accountsUiState.removeModal?.busy) || Boolean(ov.switchInProgress);
             swBtn.textContent = t('accounts.switchBtn');
-            swBtn.addEventListener('click', () => void performAccountAction('switch', { email: acc.email }));
+            if (needsCred) {
+              swBtn.setAttribute?.('aria-disabled', 'true');
+              swBtn.title = acc.authInvalid ? t('accounts.switchReauthHint') : t('accounts.switchNeedsCredHint');
+              swBtn.addEventListener('click', () => {
+                accountsUiState.feedback = acc.authInvalid
+                  ? t('accounts.switchReauthFeedback', { email: acc.email })
+                  : t('accounts.switchNeedsCredFeedback', { email: acc.email });
+                accountsUiState.feedbackTone = 'error';
+                renderAccountsOverviewSection();
+              });
+            } else {
+              swBtn.addEventListener('click', () => void performAccountAction('switch', { email: acc.email }));
+            }
             right.appendChild(swBtn);
           }
           const rmBtn = document.createElement('button');
@@ -30170,7 +30239,9 @@ var cumLockedKey = null;
           const upd = (acc.quotaSnapshot && acc.lastQuotaError && acc.lastQuotaUpdatedAtMs)
             ? t('accounts.lastSnapshotTime', { time: updRaw })
             : updRaw;
-          const authNote = acc.authInvalid ? ` · ${t('accounts.reauthRequired')}` : '';
+          const authNote = acc.authInvalid
+            ? ` · ${t('accounts.reauthRequired')}`
+            : (!acc.hasRefreshToken ? ` · ${t('accounts.missingCredTag')}` : '');
           const emptyPoolText = acc.lastQuotaError ? t('accounts.poolPending') : t('accounts.poolUnknown');
           metaRow.textContent = `${poolSummaries.length ? poolSummaries.join(' | ') : emptyPoolText} · ${upd}${authNote}`;
           card.appendChild(metaRow);
@@ -30416,6 +30487,21 @@ var cumLockedKey = null;
         if (prevRes?.result?.ok) accountsUiState.toolsPreview = prevRes.result;
       }
       renderAccountsOverviewSection();
+      if (accountsUiState.overview?.switchInProgress && !state.disposed) {
+        if (!switchInProgressPollTimer && switchInProgressPollAttempts < 15) {
+          switchInProgressPollAttempts += 1;
+          switchInProgressPollTimer = setTimeout(() => {
+            switchInProgressPollTimer = null;
+            if (!state.disposed) void refreshAccountsOverview({ silent: true });
+          }, 1200);
+        }
+      } else {
+        if (switchInProgressPollTimer) {
+          clearTimeout(switchInProgressPollTimer);
+          switchInProgressPollTimer = null;
+        }
+        switchInProgressPollAttempts = 0;
+      }
       return accountsUiState.overview;
     } catch (e) {
       if (!silent) {
@@ -31232,6 +31318,8 @@ var cumLockedKey = null;
       renderAccountsOverviewSection();
       return accountsUiState.overview;
     },
+    refreshAccountsOverviewForTest: (opts) => refreshAccountsOverview(opts),
+    getRendererCsrfTokenForTest: () => getRendererCsrfToken(),
     getAccountsPanelStateForTest: () => ({
       activeFilter: activeTokenAccountFilter,
       filterOptions: Array.from(el('token-account-select')?.children || []).map(o => ({ val: o.value, label: o.textContent })),

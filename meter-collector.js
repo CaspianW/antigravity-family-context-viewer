@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
-const { normalizeLoopbackOrigin } = require('./local-api');
+const { normalizeLoopbackOrigin, resolveLsAuth } = require('./local-api');
 const { fileURLToPath } = require('url');
 const { spawn, spawnSync } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
@@ -574,17 +574,42 @@ const latestCollectSeqByOrigin = new Map();
 function createOriginRpcCaller(origin, options = {}) {
   const safeOrigin = normalizeLoopbackOrigin(origin);
   if (!safeOrigin) throw new Error('无效本机服务地址');
-  const reqFn = typeof options.requestFn === 'function' ? options.requestFn : request;
+  const hasCustomRequestFn = typeof options.requestFn === 'function';
+  const reqFn = hasCustomRequestFn ? options.requestFn : request;
   const signal = options.signal || null;
   let token = !options.force ? csrfTokenByOrigin.get(safeOrigin) : null;
+  const hasExplicitAuthSource = Boolean(
+    options.daemonDir ||
+    options.agDir ||
+    options.homeDir ||
+    options.authBootstrapModule ||
+    options.languageServerModule
+  );
 
   const ensureToken = async (forceRefresh = false) => {
     if (!forceRefresh && token) return token;
-    if (forceRefresh) csrfTokenByOrigin.delete(safeOrigin);
-    const html = await reqFn(safeOrigin, null, null, null, signal);
-    const match = typeof html === 'string' ? html.match(/window\.__APP_CONFIG__ = (.*?);/) : null;
-    if (!match) throw new Error('未能读取语言服务会话凭证');
-    token = JSON.parse(match[1]).csrfToken;
+    if (forceRefresh) {
+      token = null;
+      csrfTokenByOrigin.delete(safeOrigin);
+    }
+    const resolved = await resolveLsAuth(safeOrigin, {
+      forceRefresh,
+      daemonDir: options.daemonDir,
+      agDir: options.agDir,
+      homeDir: options.homeDir,
+      appDataDir: options.appDataDir,
+      authBootstrapModule: options.authBootstrapModule,
+      languageServerModule: options.languageServerModule,
+      isPidAlive: options.isPidAlive,
+      allowHostDaemon: hasExplicitAuthSource ? true : !hasCustomRequestFn,
+      allowMainProcessAuth: hasExplicitAuthSource ? true : !hasCustomRequestFn,
+      allowCdpFallback: false,
+      requestFn: async () => reqFn(safeOrigin, null, null, null, signal)
+    });
+    if (!resolved || !resolved.csrfToken) {
+      throw new Error('未能读取语言服务会话凭证');
+    }
+    token = resolved.csrfToken;
     csrfTokenByOrigin.set(safeOrigin, token);
     return token;
   };
@@ -633,7 +658,18 @@ async function collect(origin, id, options = {}) {
   const task = (async () => {
     const signal = abortController?.signal || null;
     try {
-      const rpc = createOriginRpcCaller(origin, { force: options.force, signal, requestFn: options.requestFn });
+      const rpc = createOriginRpcCaller(origin, {
+        force: options.force,
+        signal,
+        requestFn: options.requestFn,
+        daemonDir: options.daemonDir,
+        agDir: options.agDir,
+        homeDir: options.homeDir,
+        appDataDir: options.appDataDir,
+        authBootstrapModule: options.authBootstrapModule,
+        languageServerModule: options.languageServerModule,
+        isPidAlive: options.isPidAlive
+      });
       const call = async (method, body) => {
         if (isSuperseded()) {
           const err = new Error('请求已取消');
@@ -778,7 +814,17 @@ async function compactConversation(origin, id, options = {}) {
     return { ok: false, error: '无效本机会话标识，请先进入具体对话后再压缩' };
   }
   try {
-    const rpc = createOriginRpcCaller(safeOrigin, { force: options.force === true, requestFn: options.requestFn });
+    const rpc = createOriginRpcCaller(safeOrigin, {
+      force: options.force === true,
+      requestFn: options.requestFn,
+      daemonDir: options.daemonDir,
+      agDir: options.agDir,
+      homeDir: options.homeDir,
+      appDataDir: options.appDataDir,
+      authBootstrapModule: options.authBootstrapModule,
+      languageServerModule: options.languageServerModule,
+      isPidAlive: options.isPidAlive
+    });
     const full = await rpc.call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 });
     const status = String(full?.status || '').trim();
     if (
@@ -854,7 +900,17 @@ async function compactConversation(origin, id, options = {}) {
     while (Date.now() <= deadline) {
       await sleepFn(pollIntervalMs);
       conversations.delete(`${safeOrigin}/${id}`);
-      const nextSnap = await collect(safeOrigin, id, { bypassCache: true, requestFn: options.requestFn });
+      const nextSnap = await collect(safeOrigin, id, {
+        bypassCache: true,
+        requestFn: options.requestFn,
+        daemonDir: options.daemonDir,
+        agDir: options.agDir,
+        homeDir: options.homeDir,
+        appDataDir: options.appDataDir,
+        authBootstrapModule: options.authBootstrapModule,
+        languageServerModule: options.languageServerModule,
+        isPidAlive: options.isPidAlive
+      });
       snapshot = nextSnap;
       const runStatus = String(nextSnap?.trajectoryStatus || '').trim();
       const isRunning = runStatus === 'CASCADE_RUN_STATUS_RUNNING' ||
@@ -3672,7 +3728,16 @@ async function fetchQuotaSnapshotFromHost(options = {}) {
     } else {
       try {
         const connector = typeof options.connect === 'function' ? options.connect : require('./local-api').connect;
-        const api = await connector(options.origin ? { origin: options.origin } : undefined);
+        const connectOpts = {
+          ...(options.origin ? { origin: options.origin } : {}),
+          ...(options.daemonDir ? { daemonDir: options.daemonDir } : {}),
+          ...(options.agDir ? { agDir: options.agDir } : {}),
+          ...(options.homeDir ? { homeDir: options.homeDir } : {}),
+          ...(options.authBootstrapModule ? { authBootstrapModule: options.authBootstrapModule } : {}),
+          ...(options.languageServerModule ? { languageServerModule: options.languageServerModule } : {}),
+          ...(options.isPidAlive ? { isPidAlive: options.isPidAlive } : {})
+        };
+        const api = await connector(Object.keys(connectOpts).length ? connectOpts : undefined);
         const [uRes, qRes] = await Promise.allSettled([
           api.call('GetUserStatus', {}),
           api.call('RetrieveUserQuotaSummary', {})
@@ -3856,7 +3921,16 @@ async function fetchUserStatusFromHost(options = {}) {
   }
   try {
     const { connect } = require('./local-api');
-    const api = await connect(options.origin ? { origin: options.origin } : undefined);
+    const connectOpts = {
+      ...(options.origin ? { origin: options.origin } : {}),
+      ...(options.daemonDir ? { daemonDir: options.daemonDir } : {}),
+      ...(options.agDir ? { agDir: options.agDir } : {}),
+      ...(options.homeDir ? { homeDir: options.homeDir } : {}),
+      ...(options.authBootstrapModule ? { authBootstrapModule: options.authBootstrapModule } : {}),
+      ...(options.languageServerModule ? { languageServerModule: options.languageServerModule } : {}),
+      ...(options.isPidAlive ? { isPidAlive: options.isPidAlive } : {})
+    };
+    const api = await connect(Object.keys(connectOpts).length ? connectOpts : undefined);
     const [res, availRes] = await Promise.all([
       api.call('GetUserStatus', {}),
       api.call('GetAvailableModels', { forceRefresh: false }).catch(() => null)
@@ -8479,6 +8553,7 @@ module.exports = {
   fetchQuotaSnapshotFromHost,
   buildAccountScopeKey,
   resetQuotaHostCacheForTest,
+  createOriginRpcCaller,
   collect,
   compactConversation,
   collectTokenHistory,

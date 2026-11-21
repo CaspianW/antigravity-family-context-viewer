@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { connect, normalizeLoopbackOrigin, getAppDataDir } = require('./local-api');
+const { connect, normalizeLoopbackOrigin, getAppDataDir, discoverDaemonHubInstances } = require('./local-api');
 const {
   collect,
   compactConversation,
@@ -647,6 +647,21 @@ function discoverCdpPageOrigins() {
   });
 }
 
+function discoverDaemonHubOrigins(options = {}) {
+  try {
+    const hubs = discoverDaemonHubInstances(options);
+    const out = [];
+    for (const hub of hubs) {
+      if (hub && hub.origin && !out.includes(hub.origin)) {
+        out.push(hub.origin);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function probeOriginAlive(origin) {
   return new Promise((resolve) => {
     try {
@@ -763,8 +778,9 @@ async function startLiveHost() {
         }
       }
       const cdpOrigins = await discoverCdpPageOrigins();
-      if (cdpOrigins.length > 0) {
-        currentOrigins = Array.from(new Set([...cdpOrigins, ...envOrigins]));
+      const daemonOrigins = discoverDaemonHubOrigins();
+      if (cdpOrigins.length > 0 || daemonOrigins.length > 0) {
+        currentOrigins = Array.from(new Set([...cdpOrigins, ...daemonOrigins, ...envOrigins]));
         misses = 0;
         return;
       }
@@ -794,6 +810,7 @@ module.exports = {
   LIVE_HOST_BUILD_ID,
   buildLiveRuntimeModulesMeta,
   createLiveRequestHandler,
+  discoverDaemonHubOrigins,
   parseInitialOriginsEnv,
   startLiveHost
 };
