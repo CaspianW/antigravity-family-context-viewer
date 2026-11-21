@@ -5325,11 +5325,14 @@ test('v0.8.8 chart visual redesign E2E: single 1.82M vs heavy 100..3.64B, cross-
     assert.ok(Math.abs(segHeights.reduce((a, b) => a + b, 0) - todayTotalH) < 0.01);
     assert.ok(segHeights.every(sh => sh >= 1.49));
 
-    const minorBarH_mixed = parseFloat(mBars.children[mBars.children.length - 2].children[0].getAttribute('data-total-height'));
-    h.elements.get('model-scale-linear').click();
+    assert.equal(api.getModelUsageScaleForTest().scaleMode, 'linear');
+    assert.ok(h.elements.get('model-chart-mid-lbl').textContent, '线性比例模式下应显示 50% 中位刻度标签');
     const minorBarH_linear = parseFloat(mBars.children[mBars.children.length - 2].children[0].getAttribute('data-total-height'));
-    assert.ok(minorBarH_mixed > minorBarH_linear + 5);
     h.elements.get('model-scale-mixed').click();
+    assert.equal(api.getModelUsageScaleForTest().scaleMode, 'mixed');
+    const minorBarH_mixed = parseFloat(mBars.children[mBars.children.length - 2].children[0].getAttribute('data-total-height'));
+    assert.ok(minorBarH_mixed > minorBarH_linear + 1, `mixed(${minorBarH_mixed}) should lift minor bar above linear(${minorBarH_linear})`);
+    h.elements.get('model-scale-linear').click();
 
     const targetLegendKey = mLegend.children[1].getAttribute('data-series-key');
     mLegend.children[1].click();
@@ -6314,7 +6317,16 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     assert.match(caspianDetailText, /WinDesktop/);
     assert.match(caspianDetailText, /Orchestrator \(Neon\) \(估算\)/);
 
-    // 验证紫色环形饼图（同周期取各端最高已用 18.1% 防回退跳动 + 当服务端退回 tokens 时改用模型加权等效价值分摊）
+    // 验证环形饼图（独立置顶卡片，与下方今日/筛选卡分离；同周期取各端最高已用 18.1% 防回退跳动 + 当服务端退回 tokens 时改用模型加权等效价值分摊）
+    const templateSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'template.html'), 'utf8');
+    const famViewIdx = templateSrc.indexOf('<div id="family-usage-view"');
+    const pieCardIdx = templateSrc.indexOf('<div id="family-pie-card"', famViewIdx);
+    const heroCardIdx = templateSrc.indexOf('<div class="family-panel-card family-hero-card"', famViewIdx);
+    const rangeFilterIdx = templateSrc.indexOf('<select id="family-range"', famViewIdx);
+    assert.ok(famViewIdx >= 0 && pieCardIdx > famViewIdx && pieCardIdx < heroCardIdx && pieCardIdx < rangeFilterIdx,
+      '#family-pie-card 必须作为 #family-usage-view 首个顶部独立卡片位于今日筛选卡之外');
+    const stylesSrcForFamily = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
+    assert.match(stylesSrcForFamily, /\.family-pie-card\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i);
     const pieCard = h.elements.get('family-pie-card');
     assert.equal(pieCard.hidden, false);
     assert.match(collectText(h.elements.get('family-pie-center')), /^18\.1% 共享池已用$/);

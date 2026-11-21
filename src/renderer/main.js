@@ -2127,7 +2127,7 @@
   let modelUsageGroupBy = 'model';
   let modelUsageMetric = 'total';
   let modelUsageHideUnattr = false;
-  let modelUsageScaleMode = 'mixed'; // 'mixed' | 'linear'
+  let modelUsageScaleMode = 'linear'; // 'linear' | 'mixed'
   let modelUsageLockedKey = null;
   let modelUsageHoveredKey = null;
   const OTHER_SERIES_KEY = '__other_series__';
@@ -2285,13 +2285,14 @@
     if (prevBtn) prevBtn.disabled = Boolean(earliestKnown && summary.startDate <= earliestKnown);
     if (nextBtn) nextBtn.disabled = modelUsageOffsetDays <= 0;
 
-    const chartPxHeight = 140;
+    const chartPxHeight = 168;
     const env = typeof core.resolveScaleEnvelope === 'function'
       ? core.resolveScaleEnvelope(summary.maxDayTotal, 'dailyBar')
       : { tier: '500M', anchor: 500e6, hCap: 1.0, refTicks: [1e6, 10e6, 100e6, 500e6], overflowThreshold: 500e6 };
 
     const gridWrap = el('model-usage-gridlines');
     const maxLblEl = el('model-chart-max-lbl');
+    const midLblEl = el('model-chart-mid-lbl');
     if (gridWrap) {
       const childrenArr = Array.from(gridWrap.children || []);
       const baseLines = [];
@@ -2326,6 +2327,7 @@
             ? formatCompactTokenCount(summary.maxDayTotal)
             : '';
         }
+        if (midLblEl) midLblEl.textContent = '';
       } else {
         gridWrap.style.display = 'flex';
         gridWrap.style.flexDirection = 'column';
@@ -2334,9 +2336,19 @@
         if (maxLblEl) {
           maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
         }
+        if (midLblEl) {
+          midLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(Math.round(summary.maxDayTotal / 2)) : '';
+        }
       }
-    } else if (maxLblEl) {
-      maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
+    } else {
+      if (maxLblEl) {
+        maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
+      }
+      if (midLblEl) {
+        midLblEl.textContent = (modelUsageScaleMode === 'linear' && summary.maxDayTotal > 0)
+          ? formatCompactTokenCount(Math.round(summary.maxDayTotal / 2))
+          : '';
+      }
     }
 
     const barsEl = el('model-usage-bars');

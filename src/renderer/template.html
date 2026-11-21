@@ -1889,8 +1889,8 @@
             <button id="model-metric-nocache" class="switch-pill-btn" type="button" data-i18n="modelsUsage.metricNoCache">不含缓存</button>
           </div>
           <div class="source-switch-bar">
-            <button id="model-scale-mixed" class="switch-pill-btn active" type="button" data-i18n="modelsUsage.scaleMixed">量级刻度</button>
-            <button id="model-scale-linear" class="switch-pill-btn" type="button" data-i18n="modelsUsage.scaleLinear">线性比例</button>
+            <button id="model-scale-linear" class="switch-pill-btn active" type="button" data-i18n="modelsUsage.scaleLinear">线性比例</button>
+            <button id="model-scale-mixed" class="switch-pill-btn" type="button" data-i18n="modelsUsage.scaleMixed">量级刻度</button>
           </div>
           <button id="model-toggle-unattr" class="switch-pill-btn model-unattr-btn" type="button" style="display:none" data-i18n="modelsUsage.hideUnattr">隐藏未标明</button>
         </div>
@@ -1911,6 +1911,7 @@
         <div id="model-usage-gridlines" class="model-usage-gridlines" aria-hidden="true">
           <div class="model-usage-gridline"><span id="model-chart-max-lbl" class="model-chart-max-lbl"></span></div>
           <div class="model-usage-gridline"></div>
+          <div class="model-usage-gridline"><span id="model-chart-mid-lbl" class="model-chart-mid-lbl"></span></div>
           <div class="model-usage-gridline"></div>
           <div class="model-usage-gridline"></div>
         </div>
@@ -1924,6 +1925,30 @@
 
     <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
+      <div id="family-pie-card" class="family-panel-card family-pie-card" hidden>
+        <div class="family-pie-hdr">
+          <div class="family-pie-title-wrap">
+            <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
+            <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
+          </div>
+          <div class="source-switch-bar family-pie-ctrls">
+            <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
+            <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
+          </div>
+        </div>
+        <div class="family-pie-body">
+          <div class="family-donut-wrap">
+            <div id="family-pie-svg-wrap"></div>
+            <div id="family-pie-center" class="family-donut-center">
+              <strong>—</strong>
+              <span></span>
+            </div>
+          </div>
+          <div id="family-pie-legend" class="family-pie-legend"></div>
+        </div>
+        <small id="family-pie-note" class="family-pie-note"></small>
+      </div>
+
       <div class="family-panel-card family-hero-card">
         <div class="family-hero-top">
           <div class="family-hero-meta">
@@ -1962,30 +1987,6 @@
               <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
             </select>
           </div>
-        </div>
-
-        <div id="family-pie-card" class="family-pie-card" hidden>
-          <div class="family-pie-hdr">
-            <div class="family-pie-title-wrap">
-              <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
-              <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
-            </div>
-            <div class="source-switch-bar family-pie-ctrls">
-              <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
-              <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
-            </div>
-          </div>
-          <div class="family-pie-body">
-            <div class="family-donut-wrap">
-              <div id="family-pie-svg-wrap"></div>
-              <div id="family-pie-center" class="family-donut-center">
-                <strong>—</strong>
-                <span></span>
-              </div>
-            </div>
-            <div id="family-pie-legend" class="family-pie-legend"></div>
-          </div>
-          <small id="family-pie-note" class="family-pie-note"></small>
         </div>
 
         <div id="family-results" class="family-card"></div>

@@ -655,7 +655,7 @@
       position:relative;padding-top:10px;margin-bottom:14px;
     }
     .model-usage-gridlines{
-      position:absolute;left:0;right:0;top:10px;height:140px;
+      position:absolute;left:0;right:0;top:10px;height:168px;
       pointer-events:none;
     }
     .model-usage-gridline{
@@ -670,8 +670,11 @@
     .model-chart-max-lbl{
       position:absolute;right:0;top:-14px;font-size:9.5px;color:var(--ag-text-muted);opacity:0.85;
     }
+    .model-chart-mid-lbl{
+      position:absolute;right:0;top:-12px;font-size:9px;color:var(--ag-text-muted);opacity:0.75;
+    }
     .model-usage-bars{
-      position:relative;z-index:1;height:140px;
+      position:relative;z-index:1;height:168px;
       display:flex;align-items:flex-end;gap:8px;padding:0 36px 0 6px;
     }
     .model-usage-bars.compact-30{
@@ -2110,7 +2113,9 @@
       margin-top:7px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
       border-radius:6px;padding:7px 9px;font-size:10.5px;line-height:1.4;min-width:0;overflow:hidden;
     }
-    #badge-speed .speed-icon{transition:color .18s ease}
+    #badge-speed .speed-icon{color:var(--ag-custom-speed,#f59e0b);transition:color .18s ease}
+    :host([data-theme="light"]) #badge-speed .speed-icon,
+    :host([data-panel-tone="light"]) #badge-speed .speed-icon{color:var(--ag-custom-speed,#d97706)}
     @media (max-width:480px){
       .tcb-ratio-item{margin-left:0}
       #speed-summary .key-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}
@@ -2459,11 +2464,13 @@
     }
     #family-usage-view a.family-link-pill:hover{background:rgba(167,139,250,0.22);border-color:rgba(167,139,250,0.55)}
     #family-usage-view .family-error{color:var(--ag-bad,#f87171)}
+    .family-pie-card[hidden]{display:none!important}
     .family-pie-card{
-      display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:11px 12px;border-radius:9px;min-width:0;
-      background:var(--ag-bg-subcard);border:1px solid rgba(167,139,250,0.22);
+      display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:11px 12px;border-radius:10px;min-width:0;
+      background:var(--ag-bg-card);border:1px solid rgba(167,139,250,0.26);
     }
-    :host([data-theme="light"]) .family-pie-card{border-color:rgba(124,58,237,0.18)}
+    :host([data-theme="light"]) .family-pie-card,
+    :host([data-panel-tone="light"]) .family-pie-card{border-color:rgba(124,58,237,0.20)}
     .family-pie-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .family-pie-title-wrap{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
     .family-pie-title{font-size:12px;font-weight:600;color:var(--ag-text-primary)}

@@ -825,7 +825,7 @@
       position:relative;padding-top:10px;margin-bottom:14px;
     }
     .model-usage-gridlines{
-      position:absolute;left:0;right:0;top:10px;height:140px;
+      position:absolute;left:0;right:0;top:10px;height:168px;
       pointer-events:none;
     }
     .model-usage-gridline{
@@ -840,8 +840,11 @@
     .model-chart-max-lbl{
       position:absolute;right:0;top:-14px;font-size:9.5px;color:var(--ag-text-muted);opacity:0.85;
     }
+    .model-chart-mid-lbl{
+      position:absolute;right:0;top:-12px;font-size:9px;color:var(--ag-text-muted);opacity:0.75;
+    }
     .model-usage-bars{
-      position:relative;z-index:1;height:140px;
+      position:relative;z-index:1;height:168px;
       display:flex;align-items:flex-end;gap:8px;padding:0 36px 0 6px;
     }
     .model-usage-bars.compact-30{
@@ -2280,7 +2283,9 @@
       margin-top:7px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
       border-radius:6px;padding:7px 9px;font-size:10.5px;line-height:1.4;min-width:0;overflow:hidden;
     }
-    #badge-speed .speed-icon{transition:color .18s ease}
+    #badge-speed .speed-icon{color:var(--ag-custom-speed,#f59e0b);transition:color .18s ease}
+    :host([data-theme="light"]) #badge-speed .speed-icon,
+    :host([data-panel-tone="light"]) #badge-speed .speed-icon{color:var(--ag-custom-speed,#d97706)}
     @media (max-width:480px){
       .tcb-ratio-item{margin-left:0}
       #speed-summary .key-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}
@@ -2629,11 +2634,13 @@
     }
     #family-usage-view a.family-link-pill:hover{background:rgba(167,139,250,0.22);border-color:rgba(167,139,250,0.55)}
     #family-usage-view .family-error{color:var(--ag-bad,#f87171)}
+    .family-pie-card[hidden]{display:none!important}
     .family-pie-card{
-      display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:11px 12px;border-radius:9px;min-width:0;
-      background:var(--ag-bg-subcard);border:1px solid rgba(167,139,250,0.22);
+      display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:11px 12px;border-radius:10px;min-width:0;
+      background:var(--ag-bg-card);border:1px solid rgba(167,139,250,0.26);
     }
-    :host([data-theme="light"]) .family-pie-card{border-color:rgba(124,58,237,0.18)}
+    :host([data-theme="light"]) .family-pie-card,
+    :host([data-panel-tone="light"]) .family-pie-card{border-color:rgba(124,58,237,0.20)}
     .family-pie-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .family-pie-title-wrap{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
     .family-pie-title{font-size:12px;font-weight:600;color:var(--ag-text-primary)}
@@ -4953,8 +4960,8 @@
             <button id="model-metric-nocache" class="switch-pill-btn" type="button" data-i18n="modelsUsage.metricNoCache">不含缓存</button>
           </div>
           <div class="source-switch-bar">
-            <button id="model-scale-mixed" class="switch-pill-btn active" type="button" data-i18n="modelsUsage.scaleMixed">量级刻度</button>
-            <button id="model-scale-linear" class="switch-pill-btn" type="button" data-i18n="modelsUsage.scaleLinear">线性比例</button>
+            <button id="model-scale-linear" class="switch-pill-btn active" type="button" data-i18n="modelsUsage.scaleLinear">线性比例</button>
+            <button id="model-scale-mixed" class="switch-pill-btn" type="button" data-i18n="modelsUsage.scaleMixed">量级刻度</button>
           </div>
           <button id="model-toggle-unattr" class="switch-pill-btn model-unattr-btn" type="button" style="display:none" data-i18n="modelsUsage.hideUnattr">隐藏未标明</button>
         </div>
@@ -4975,6 +4982,7 @@
         <div id="model-usage-gridlines" class="model-usage-gridlines" aria-hidden="true">
           <div class="model-usage-gridline"><span id="model-chart-max-lbl" class="model-chart-max-lbl"></span></div>
           <div class="model-usage-gridline"></div>
+          <div class="model-usage-gridline"><span id="model-chart-mid-lbl" class="model-chart-mid-lbl"></span></div>
           <div class="model-usage-gridline"></div>
           <div class="model-usage-gridline"></div>
         </div>
@@ -4988,6 +4996,30 @@
 
     <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
+      <div id="family-pie-card" class="family-panel-card family-pie-card" hidden>
+        <div class="family-pie-hdr">
+          <div class="family-pie-title-wrap">
+            <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
+            <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
+          </div>
+          <div class="source-switch-bar family-pie-ctrls">
+            <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
+            <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
+          </div>
+        </div>
+        <div class="family-pie-body">
+          <div class="family-donut-wrap">
+            <div id="family-pie-svg-wrap"></div>
+            <div id="family-pie-center" class="family-donut-center">
+              <strong>—</strong>
+              <span></span>
+            </div>
+          </div>
+          <div id="family-pie-legend" class="family-pie-legend"></div>
+        </div>
+        <small id="family-pie-note" class="family-pie-note"></small>
+      </div>
+
       <div class="family-panel-card family-hero-card">
         <div class="family-hero-top">
           <div class="family-hero-meta">
@@ -5026,30 +5058,6 @@
               <option value="totalTokens" data-i18n="family.tokens">原始总 Token</option>
             </select>
           </div>
-        </div>
-
-        <div id="family-pie-card" class="family-pie-card" hidden>
-          <div class="family-pie-hdr">
-            <div class="family-pie-title-wrap">
-              <span id="family-pie-title" class="family-pie-title" data-i18n="family.pieTitleQuota">共享周额度分布</span>
-              <select id="family-quota-pool" data-i18n-aria="family.quotaPool" aria-label="额度池" hidden></select>
-            </div>
-            <div class="source-switch-bar family-pie-ctrls">
-              <button type="button" id="family-pie-mode-quota" class="switch-pill-btn active" data-i18n="family.pieModeQuota">周额度占比</button>
-              <button type="button" id="family-pie-mode-usage" class="switch-pill-btn" data-i18n="family.pieModeUsage">当前统计占比</button>
-            </div>
-          </div>
-          <div class="family-pie-body">
-            <div class="family-donut-wrap">
-              <div id="family-pie-svg-wrap"></div>
-              <div id="family-pie-center" class="family-donut-center">
-                <strong>—</strong>
-                <span></span>
-              </div>
-            </div>
-            <div id="family-pie-legend" class="family-pie-legend"></div>
-          </div>
-          <small id="family-pie-note" class="family-pie-note"></small>
         </div>
 
         <div id="family-results" class="family-card"></div>
@@ -14776,7 +14784,7 @@ function closeAllDropdowns(exceptWrap = null) {
   let modelUsageGroupBy = 'model';
   let modelUsageMetric = 'total';
   let modelUsageHideUnattr = false;
-  let modelUsageScaleMode = 'mixed'; // 'mixed' | 'linear'
+  let modelUsageScaleMode = 'linear'; // 'linear' | 'mixed'
   let modelUsageLockedKey = null;
   let modelUsageHoveredKey = null;
   const OTHER_SERIES_KEY = '__other_series__';
@@ -14934,13 +14942,14 @@ function closeAllDropdowns(exceptWrap = null) {
     if (prevBtn) prevBtn.disabled = Boolean(earliestKnown && summary.startDate <= earliestKnown);
     if (nextBtn) nextBtn.disabled = modelUsageOffsetDays <= 0;
 
-    const chartPxHeight = 140;
+    const chartPxHeight = 168;
     const env = typeof core.resolveScaleEnvelope === 'function'
       ? core.resolveScaleEnvelope(summary.maxDayTotal, 'dailyBar')
       : { tier: '500M', anchor: 500e6, hCap: 1.0, refTicks: [1e6, 10e6, 100e6, 500e6], overflowThreshold: 500e6 };
 
     const gridWrap = el('model-usage-gridlines');
     const maxLblEl = el('model-chart-max-lbl');
+    const midLblEl = el('model-chart-mid-lbl');
     if (gridWrap) {
       const childrenArr = Array.from(gridWrap.children || []);
       const baseLines = [];
@@ -14975,6 +14984,7 @@ function closeAllDropdowns(exceptWrap = null) {
             ? formatCompactTokenCount(summary.maxDayTotal)
             : '';
         }
+        if (midLblEl) midLblEl.textContent = '';
       } else {
         gridWrap.style.display = 'flex';
         gridWrap.style.flexDirection = 'column';
@@ -14983,9 +14993,19 @@ function closeAllDropdowns(exceptWrap = null) {
         if (maxLblEl) {
           maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
         }
+        if (midLblEl) {
+          midLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(Math.round(summary.maxDayTotal / 2)) : '';
+        }
       }
-    } else if (maxLblEl) {
-      maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
+    } else {
+      if (maxLblEl) {
+        maxLblEl.textContent = summary.maxDayTotal > 0 ? formatCompactTokenCount(summary.maxDayTotal) : '';
+      }
+      if (midLblEl) {
+        midLblEl.textContent = (modelUsageScaleMode === 'linear' && summary.maxDayTotal > 0)
+          ? formatCompactTokenCount(Math.round(summary.maxDayTotal / 2))
+          : '';
+      }
     }
 
     const barsEl = el('model-usage-bars');

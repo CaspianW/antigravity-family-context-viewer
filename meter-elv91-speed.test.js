@@ -217,6 +217,8 @@ test('ELV-91 2: 四维分档精确边界（1/10/30/80/180/300 tok/s, TTFT 600s, 
 
   // E 小数连续值边界 [90,100], [75,90), [60,75), [40,60), [20,40), [0,20)
   assert.equal(core.classifyEfficiencyGrade(90.0).grade, 'S');
+  assert.equal(core.classifyEfficiencyGrade(95.0).glyph, '★');
+  assert.equal(core.classifyEfficiencyGrade(95.0).color, '#F97316');
   assert.equal(core.classifyEfficiencyGrade(89.9).grade, 'A');
   assert.equal(core.classifyEfficiencyGrade(75.0).grade, 'A');
   assert.equal(core.classifyEfficiencyGrade(74.9).grade, 'B');
@@ -419,6 +421,24 @@ test('ELV-91 5: UI 面板三阶段展示、闪电颜色联动、最新卡片/时
 
     await h.api.setPanelLanguage('en', { persist: false });
     assert.match(h.api.getSpeedPanelStateForTest().badgeText, /13\.4 pts · F/);
+
+    // 4. S 级效率评价在顶栏展示橙色五角星 ★ (#F97316)，不再使用紫色系
+    h.api.setSpeedEvaluationForTest({
+      phase: 'final',
+      ttftSec: 0.4,
+      streamingSec: 6.0,
+      totalDurationSec: 6.4,
+      streamSpeed: 220,
+      overallTps: 206,
+      inputTokens: 8000,
+      outputTokens: 1320
+    });
+    sp = h.api.getSpeedPanelStateForTest();
+    assert.match(sp.badgeText, /· S$/);
+    assert.equal(sp.badgeColor, '#F97316');
+    assert.equal(sp.boltColor, '#F97316');
+    assert.equal(sp.summaryBoltColor, '#F97316');
+    assert.equal(h.elements.get('badge-speed-icon').textContent, '★');
   } finally {
     h.api.dispose();
   }

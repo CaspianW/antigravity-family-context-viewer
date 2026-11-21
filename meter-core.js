@@ -3147,10 +3147,10 @@
   ];
 
   const DAILY_BAR_ANCHORS = [
-    { anchor: 100e3, ratio: 0.38 },
-    { anchor: 1e6, ratio: 0.52 },
-    { anchor: 10e6, ratio: 0.68 },
-    { anchor: 100e6, ratio: 0.84 },
+    { anchor: 100e3, ratio: 0.12 },
+    { anchor: 1e6, ratio: 0.24 },
+    { anchor: 10e6, ratio: 0.42 },
+    { anchor: 100e6, ratio: 0.70 },
     { anchor: 500e6, ratio: 1.0 }
   ];
 
@@ -3272,16 +3272,16 @@
 
     if (mode === 'dailyBar') {
       if (maxVal <= 100e3) {
-        return { mode: 'dailyBar', tier: '100K', label: '100K', anchor: 100e3, hCap: 0.38, overflow: false, overflowThreshold: 500e6, refTicks: [10e3, 100e3] };
+        return { mode: 'dailyBar', tier: '100K', label: '100K', anchor: 100e3, hCap: 0.12, overflow: false, overflowThreshold: 500e6, refTicks: [10e3, 100e3] };
       }
       if (maxVal <= 1e6) {
-        return { mode: 'dailyBar', tier: '1M', label: '1M', anchor: 1e6, hCap: 0.52, overflow: false, overflowThreshold: 500e6, refTicks: [10e3, 100e3, 1e6] };
+        return { mode: 'dailyBar', tier: '1M', label: '1M', anchor: 1e6, hCap: 0.24, overflow: false, overflowThreshold: 500e6, refTicks: [10e3, 100e3, 1e6] };
       }
       if (maxVal <= 10e6) {
-        return { mode: 'dailyBar', tier: '10M', label: '10M', anchor: 10e6, hCap: 0.68, overflow: false, overflowThreshold: 500e6, refTicks: [100e3, 1e6, 10e6] };
+        return { mode: 'dailyBar', tier: '10M', label: '10M', anchor: 10e6, hCap: 0.42, overflow: false, overflowThreshold: 500e6, refTicks: [100e3, 1e6, 10e6] };
       }
       if (maxVal <= 100e6) {
-        return { mode: 'dailyBar', tier: '100M', label: '100M', anchor: 100e6, hCap: 0.84, overflow: false, overflowThreshold: 500e6, refTicks: [1e6, 10e6, 100e6] };
+        return { mode: 'dailyBar', tier: '100M', label: '100M', anchor: 100e6, hCap: 0.70, overflow: false, overflowThreshold: 500e6, refTicks: [1e6, 10e6, 100e6] };
       }
       if (maxVal <= 500e6) {
         return { mode: 'dailyBar', tier: '500M', label: '500M', anchor: 500e6, hCap: 1.0, overflow: false, overflowThreshold: 500e6, refTicks: [1e6, 10e6, 100e6, 500e6] };
@@ -6588,7 +6588,7 @@
       grade: 'S',
       glyph: '★',
       minInclusive: 90,
-      color: '#8B5CF6',
+      color: '#F97316',
       severity: 'epic',
       title: { 'zh-CN': 'S 级 · 帕累托最优', 'zh-TW': 'S 級 · 柏拉圖最優', en: 'Grade S · Optimal' },
       comment: {

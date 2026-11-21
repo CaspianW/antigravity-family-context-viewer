@@ -4441,7 +4441,7 @@ test('v0.8.8 chart visual scale: continuous piecewise anchor interpolation (zero
   assert.equal(mapBubbleDiameter(3.64e9, resolveScaleEnvelope(3.64e9, 'yearly')).overflow, true);
 
   const dayBoundaries = [100e3, 1e6, 10e6, 100e6, 500e6];
-  const expectedDayCaps = [0.38 * 140, 0.52 * 140, 0.68 * 140, 0.84 * 140, 140];
+  const expectedDayCaps = [0.12 * 140, 0.24 * 140, 0.42 * 140, 0.70 * 140, 140];
   dayBoundaries.forEach((b, idx) => {
     const hLo = mapBarHeightPx(b - 1, resolveScaleEnvelope(b - 1, 'dailyBar'), 140, { scaleKind: 'dailyBar' }).height;
     const hAt = mapBarHeightPx(b, resolveScaleEnvelope(b, 'dailyBar'), 140, { scaleKind: 'dailyBar' }).height;
