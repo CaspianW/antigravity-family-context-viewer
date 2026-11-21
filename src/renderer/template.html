@@ -1925,6 +1925,24 @@
 
     <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
+      <div class="family-panel-card family-hero-card">
+        <div class="family-hero-top">
+          <div class="family-hero-meta">
+            <div class="family-hero-title-row">
+              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
+              <strong id="family-device-status"></strong>
+            </div>
+            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
+            <small id="family-sync-error" class="family-error"></small>
+          </div>
+          <div class="family-controls">
+            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
+            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+          </div>
+        </div>
+        <p id="family-feedback" role="status"></p>
+      </div>
+
       <div id="family-pie-card" class="family-panel-card family-pie-card" hidden>
         <div class="family-pie-hdr">
           <div class="family-pie-title-wrap">
@@ -1947,24 +1965,6 @@
           <div id="family-pie-legend" class="family-pie-legend"></div>
         </div>
         <small id="family-pie-note" class="family-pie-note"></small>
-      </div>
-
-      <div class="family-panel-card family-hero-card">
-        <div class="family-hero-top">
-          <div class="family-hero-meta">
-            <div class="family-hero-title-row">
-              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
-              <strong id="family-device-status"></strong>
-            </div>
-            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
-            <small id="family-sync-error" class="family-error"></small>
-          </div>
-          <div class="family-controls">
-            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
-            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
-          </div>
-        </div>
-        <p id="family-feedback" role="status"></p>
       </div>
 
       <div class="family-panel-card">

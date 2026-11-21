@@ -1140,11 +1140,17 @@ test('tray/root startup visibility, settings save/restore (country, subscription
   assert.equal(api.getLastCliLaunchResult().ok, true);
   assert.match(h.elements.get('cli-launch-toast').textContent, /已启动 Antigravity CLI/);
 
+  const toastDelays = [];
+  h.sandbox.setTimeout = (_fn, ms) => { toastDelays.push(ms); return toastDelays.length; };
+  h.elements.get('badge-cli').getBoundingClientRect = () => ({ left: 820, top: 44, right: 868, bottom: 72, width: 48, height: 28 });
   cliMockResult = { ok: false, error: '未找到 agy.exe' };
   h.elements.get('badge-cli').click();
   await h.flush();
   assert.equal(api.getLastCliLaunchResult().ok, false);
-  assert.match(h.elements.get('cli-launch-toast').textContent, /启动 CLI 失败.*未找到 agy\.exe/);
+  const cliToastEl = h.elements.get('cli-launch-toast');
+  assert.match(cliToastEl.textContent, /启动 CLI 失败.*未找到 agy\.exe/);
+  assert.ok(parseFloat(cliToastEl.style.top) >= 84, `toast top (${cliToastEl.style.top}) 必须下移避开顶栏按钮`);
+  assert.equal(toastDelays[toastDelays.length - 1], 3000);
 
   api.dispose();
 });
@@ -6317,14 +6323,14 @@ test('家庭组看板位于 Token 用量面板，按加权等效价值对比且�
     assert.match(caspianDetailText, /WinDesktop/);
     assert.match(caspianDetailText, /Orchestrator \(Neon\) \(估算\)/);
 
-    // 验证环形饼图（独立置顶卡片，与下方今日/筛选卡分离；同周期取各端最高已用 18.1% 防回退跳动 + 当服务端退回 tokens 时改用模型加权等效价值分摊）
+    // 验证环形饼图（位于同步状态卡下方、夹在价格/筛选卡上方且与之分离；同周期取各端最高已用 18.1% 防回退跳动 + 当服务端退回 tokens 时改用模型加权等效价值分摊）
     const templateSrc = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'template.html'), 'utf8');
     const famViewIdx = templateSrc.indexOf('<div id="family-usage-view"');
-    const pieCardIdx = templateSrc.indexOf('<div id="family-pie-card"', famViewIdx);
     const heroCardIdx = templateSrc.indexOf('<div class="family-panel-card family-hero-card"', famViewIdx);
+    const pieCardIdx = templateSrc.indexOf('<div id="family-pie-card"', famViewIdx);
     const rangeFilterIdx = templateSrc.indexOf('<select id="family-range"', famViewIdx);
-    assert.ok(famViewIdx >= 0 && pieCardIdx > famViewIdx && pieCardIdx < heroCardIdx && pieCardIdx < rangeFilterIdx,
-      '#family-pie-card 必须作为 #family-usage-view 首个顶部独立卡片位于今日筛选卡之外');
+    assert.ok(famViewIdx >= 0 && heroCardIdx > famViewIdx && pieCardIdx > heroCardIdx && pieCardIdx < rangeFilterIdx,
+      '同步卡 (#family-usage-view 首卡) 应在最顶部，#family-pie-card 应位于其下方且夹在今日价格/筛选卡上方');
     const stylesSrcForFamily = fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
     assert.match(stylesSrcForFamily, /\.family-pie-card\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i);
     const pieCard = h.elements.get('family-pie-card');

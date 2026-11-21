@@ -592,7 +592,7 @@
 
     /* CLI 启动状态提示浮层 */
     #cli-launch-toast{
-      position:fixed;top:38px;right:140px;z-index:2147483650;
+      position:fixed;top:84px;right:140px;z-index:2147483650;
       max-width:360px;padding:7px 11px;border-radius:8px;
       border:1px solid var(--ag-float-border);
       background:var(--ag-float-bg);color:var(--ag-text-primary);
@@ -4996,6 +4996,24 @@
 
     <!-- 家庭组多人用量、紫色环形图与引导设置视图 -->
     <div id="family-usage-view" class="family-usage-view" style="display:none">
+      <div class="family-panel-card family-hero-card">
+        <div class="family-hero-top">
+          <div class="family-hero-meta">
+            <div class="family-hero-title-row">
+              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
+              <strong id="family-device-status"></strong>
+            </div>
+            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
+            <small id="family-sync-error" class="family-error"></small>
+          </div>
+          <div class="family-controls">
+            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
+            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
+          </div>
+        </div>
+        <p id="family-feedback" role="status"></p>
+      </div>
+
       <div id="family-pie-card" class="family-panel-card family-pie-card" hidden>
         <div class="family-pie-hdr">
           <div class="family-pie-title-wrap">
@@ -5018,24 +5036,6 @@
           <div id="family-pie-legend" class="family-pie-legend"></div>
         </div>
         <small id="family-pie-note" class="family-pie-note"></small>
-      </div>
-
-      <div class="family-panel-card family-hero-card">
-        <div class="family-hero-top">
-          <div class="family-hero-meta">
-            <div class="family-hero-title-row">
-              <span id="family-enabled-pill" class="family-status-pill" data-i18n="family.off">自动上报已暂停</span>
-              <strong id="family-device-status"></strong>
-            </div>
-            <small id="family-sync-status" data-i18n="family.waiting">等待首次同步</small>
-            <small id="family-sync-error" class="family-error"></small>
-          </div>
-          <div class="family-controls">
-            <button type="button" id="family-sync" class="family-button family-btn-primary" data-i18n="family.sync" disabled>立即同步</button>
-            <a id="family-web" class="family-link-pill" target="_blank" rel="noopener noreferrer" data-i18n="family.web" hidden>打开网页看板</a>
-          </div>
-        </div>
-        <p id="family-feedback" role="status"></p>
       </div>
 
       <div class="family-panel-card">
@@ -11983,6 +11983,7 @@ function formatPeriodCalendarLabel(currentPeriod) {
       placePanel(el('panel-tokens'), 730, el(activeTokensAnchorId) || el('badge-tokens'));
       placePanel(el('overflow-menu'), 220, el('badge-overflow'));
       positionColorPickerPopover();
+      if (!el('cli-launch-toast')?.hidden) positionCliToast();
     } catch { }
   }
 
@@ -15337,6 +15338,30 @@ function closeAllDropdowns(exceptWrap = null) {
   let cliToastTimer = null;
   let lastCliLaunchResult = null;
 
+  function positionCliToast() {
+    const toast = el('cli-launch-toast');
+    if (!toast || toast.hidden) return;
+    try {
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+      const hRect = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
+      const cliBtn = el('badge-cli');
+      const cRect = cliBtn?.getBoundingClientRect ? cliBtn.getBoundingClientRect() : null;
+      const hasCliRect = Boolean(cRect && (cRect.width > 0 || cRect.height > 0) && cRect.bottom > 0);
+      const bRect = hasCliRect ? cRect : hRect;
+      const anchorBottom = Math.max(Number(bRect?.bottom) || 0, Number(hRect?.bottom) || 0);
+      const anchorRight = Number(bRect?.right) || Number(hRect?.right) || (vw - 140);
+      if (anchorBottom > 0) {
+        const top = snapToDevicePixel(Math.max(56, Math.min(vh - 80, anchorBottom + 12)));
+        toast.style.top = `${top}px`;
+      } else {
+        toast.style.top = '84px';
+      }
+      toast.style.right = `${Math.max(12, Math.min(vw - 120, Math.round(vw - anchorRight)))}px`;
+      toast.style.left = 'auto';
+    } catch { }
+  }
+
   function showCliToast(message, isError = false) {
     const toast = el('cli-launch-toast');
     if (!toast) return;
@@ -15347,10 +15372,11 @@ function closeAllDropdowns(exceptWrap = null) {
     toast.hidden = false;
     toast.setAttribute('data-tone', isError ? 'error' : 'info');
     toast.textContent = message;
+    positionCliToast();
     cliToastTimer = setTimeout(() => {
       toast.hidden = true;
       cliToastTimer = null;
-    }, isError ? 5200 : 3200);
+    }, 3000);
   }
 
   async function triggerLaunchCli(customOpts = {}) {

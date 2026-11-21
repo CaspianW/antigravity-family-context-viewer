@@ -422,7 +422,7 @@
 
     /* CLI 启动状态提示浮层 */
     #cli-launch-toast{
-      position:fixed;top:38px;right:140px;z-index:2147483650;
+      position:fixed;top:84px;right:140px;z-index:2147483650;
       max-width:360px;padding:7px 11px;border-radius:8px;
       border:1px solid var(--ag-float-border);
       background:var(--ag-float-bg);color:var(--ag-text-primary);

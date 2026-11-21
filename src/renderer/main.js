@@ -1126,6 +1126,7 @@
       placePanel(el('panel-tokens'), 730, el(activeTokensAnchorId) || el('badge-tokens'));
       placePanel(el('overflow-menu'), 220, el('badge-overflow'));
       positionColorPickerPopover();
+      if (!el('cli-launch-toast')?.hidden) positionCliToast();
     } catch { }
   }
 
@@ -2680,6 +2681,30 @@
   let cliToastTimer = null;
   let lastCliLaunchResult = null;
 
+  function positionCliToast() {
+    const toast = el('cli-launch-toast');
+    if (!toast || toast.hidden) return;
+    try {
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+      const hRect = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
+      const cliBtn = el('badge-cli');
+      const cRect = cliBtn?.getBoundingClientRect ? cliBtn.getBoundingClientRect() : null;
+      const hasCliRect = Boolean(cRect && (cRect.width > 0 || cRect.height > 0) && cRect.bottom > 0);
+      const bRect = hasCliRect ? cRect : hRect;
+      const anchorBottom = Math.max(Number(bRect?.bottom) || 0, Number(hRect?.bottom) || 0);
+      const anchorRight = Number(bRect?.right) || Number(hRect?.right) || (vw - 140);
+      if (anchorBottom > 0) {
+        const top = snapToDevicePixel(Math.max(56, Math.min(vh - 80, anchorBottom + 12)));
+        toast.style.top = `${top}px`;
+      } else {
+        toast.style.top = '84px';
+      }
+      toast.style.right = `${Math.max(12, Math.min(vw - 120, Math.round(vw - anchorRight)))}px`;
+      toast.style.left = 'auto';
+    } catch { }
+  }
+
   function showCliToast(message, isError = false) {
     const toast = el('cli-launch-toast');
     if (!toast) return;
@@ -2690,10 +2715,11 @@
     toast.hidden = false;
     toast.setAttribute('data-tone', isError ? 'error' : 'info');
     toast.textContent = message;
+    positionCliToast();
     cliToastTimer = setTimeout(() => {
       toast.hidden = true;
       cliToastTimer = null;
-    }, isError ? 5200 : 3200);
+    }, 3000);
   }
 
   async function triggerLaunchCli(customOpts = {}) {
