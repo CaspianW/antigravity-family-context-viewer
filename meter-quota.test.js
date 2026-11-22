@@ -2694,3 +2694,166 @@ test('模型额度看板精简回归：已移除当前会话模型卡片与保�
     assert.equal(built.includes(`id="${deadId}"`), false, `meter-renderer.js 不应再包含 ${deadId}`);
   }
 });
+
+test('v2.34.0 统一 Gemini Models 共享池与新版 [data-testid="model-selector-trigger"] 文本额度匹配回归', () => {
+  const nowMs = Date.UTC(2026, 10, 22, 8, 40, 0);
+  const weeklyResetIso = '2026-11-28T08:48:49Z';
+  const fiveHourResetIso = '2026-11-22T13:01:31Z';
+  const userStatusRes = {
+    userStatus: {
+      email: 'v234@example.com',
+      userTier: { name: 'Google AI Ultra' },
+      cascadeModelConfigData: {
+        clientModelConfigs: [
+          {
+            label: 'Gemini 4 Neon (XHigh)',
+            modelId: 'gemini-4-neon-xhigh',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M535' },
+            quotaInfo: { remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          },
+          {
+            label: 'Gemini 4 Carbon (High)',
+            modelId: 'gemini-4-carbon-high',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M427' },
+            quotaInfo: { remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          },
+          {
+            label: 'Gemini 4 Hydrogen (High)',
+            modelId: 'gemini-4-hydrogen-high',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M525' },
+            quotaInfo: { remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          },
+          {
+            label: 'Orchestrator (Neon)',
+            modelId: 'gemini-pro-orchestrator-neon',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M537' },
+            quotaInfo: { remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          },
+          {
+            label: 'Orchestrator (Carbon)',
+            modelId: 'gemini-pro-orchestrator',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M667' },
+            quotaInfo: { remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          },
+          {
+            label: 'Claude Opus 5.5 (High)',
+            modelId: 'claude-opus-5-5-high',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M402' },
+            quotaInfo: { remainingFraction: 1, resetTime: '2026-11-22T13:39:59Z' }
+          }
+        ]
+      }
+    }
+  };
+  const quotaSummaryRes = {
+    response: {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          description: 'Models within this group: Gemini 4 Neon, Gemini 4 Carbon, Gemini 4 Argon, Gemini 4 Hydrogen, Orchestrator (Neon), Orchestrator (Carbon), Orchestrator (Argon), Gemini 3.8 Flash',
+          buckets: [
+            { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.88, resetTime: weeklyResetIso },
+            { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.94, resetTime: fiveHourResetIso }
+          ]
+        },
+        {
+          displayName: 'Claude and GPT models',
+          description: 'Models within this group: Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B',
+          buckets: [
+            { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 1 },
+            { bucketId: '3p-5h', window: '5h', remainingFraction: 1 }
+          ]
+        }
+      ]
+    }
+  };
+
+  // 1. 纯函数校验：M669 (Plan/Execute Worker)、Neon、Orchestrator、未知变体边界
+  for (const modelInput of [
+    { modelId: 'MODEL_PLACEHOLDER_M669', label: 'MODEL_PLACEHOLDER_M669' },
+    { modelId: 'MODEL_PLACEHOLDER_M535', label: 'Gemini 4 Neon (XHigh)' },
+    { modelId: 'Orchestrator', label: 'Orchestrator' },
+    { modelId: 'Orchestrator Neon', label: 'Orchestrator Neon' },
+    { modelId: 'Orchestrator Gemini 4 Neon XHigh', label: 'Orchestrator Gemini 4 Neon XHigh' }
+  ]) {
+    const snap = core.buildModelQuotaSnapshot({ userStatusRes, quotaSummaryRes, currentModel: modelInput, nowMs });
+    assert.equal(snap.activeStatus, 'available', `${modelInput.label} 不得判为 unknown`);
+    assert.equal(snap.badge.text, '88%');
+    assert.equal(snap.currentModel?.poolKey, 'shared_gemini_argon');
+  }
+  const claudeOrchSnap = core.buildModelQuotaSnapshot({
+    userStatusRes,
+    quotaSummaryRes,
+    currentModel: { modelId: 'Orchestrator Claude Opus 5.5 High', label: 'Orchestrator Claude Opus 5.5 High' },
+    nowMs
+  });
+  assert.equal(claudeOrchSnap.activeStatus, 'available');
+  assert.equal(claudeOrchSnap.badge.text, '100%');
+  assert.equal(claudeOrchSnap.currentModel?.poolKey, 'shared_3p_pool');
+
+  const baseSnap = core.buildModelQuotaSnapshot({ userStatusRes, quotaSummaryRes, nowMs });
+  assert.deepEqual(
+    core.matchQuotaPoolForModel(baseSnap.pools, 'gemini-pro-orchestrator-xenon'),
+    { pool: null, model: null },
+    '未知 Orchestrator 变体不得误匹配'
+  );
+
+  // 2. 渲染层真实 v2.34.0 model-selector-trigger 文案覆盖（含 · 1M 后缀、Orchestrator 复合标题、No Model Selected）
+  const h = createQuotaRendererHarness();
+  let triggerText = 'Gemini 4 Neon XHigh · 1M';
+  const origQuerySelectorAll = h.sandbox.document.querySelectorAll;
+  const origQuerySelector = h.sandbox.document.querySelector;
+  const mockTrigger = {
+    tagName: 'BUTTON',
+    getAttribute: (n) => (n === 'data-testid' ? 'model-selector-trigger' : n === 'aria-label' ? `Select model, current: ${triggerText}` : null),
+    closest: () => null,
+    getBoundingClientRect: () => ({ left: 490, top: 795, width: 180, height: 28 }),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    cloneNode: () => ({ querySelectorAll: () => [], textContent: triggerText }),
+    get textContent() { return triggerText; }
+  };
+  h.sandbox.document.querySelectorAll = (sel) => (sel === '[data-testid="model-selector-trigger"]' ? [mockTrigger] : origQuerySelectorAll(sel));
+  h.sandbox.document.querySelector = (sel) => (sel === '[data-testid="model-selector-trigger"]' ? mockTrigger : origQuerySelector(sel));
+
+  const api = h.sandbox.__AGContextMeter;
+  try {
+    api.setQuotaSnapshotForTest({ accountScopeKey: 'acct_v234', fetchedAtMs: nowMs, userStatusRes, quotaSummaryRes }, nowMs);
+    const cfgs = userStatusRes.userStatus.cascadeModelConfigData.clientModelConfigs;
+
+    api.setContextLatestForTest(null, cfgs);
+    let view = api.getModelQuotaStateForTest(nowMs).view;
+    assert.equal(view.activeStatus, 'available');
+    assert.equal(view.badge.text, '88%');
+    assert.equal(view.currentModel?.productLabel, 'Gemini 4 Neon');
+
+    triggerText = 'Orchestrator Gemini 4 Neon XHigh';
+    api.setContextLatestForTest(null, cfgs);
+    view = api.getModelQuotaStateForTest(nowMs).view;
+    assert.equal(view.activeStatus, 'available');
+    assert.equal(view.badge.text, '88%');
+    assert.equal(view.currentModel?.productLabel, 'Gemini 4 Neon');
+
+    triggerText = 'Orchestrator Neon';
+    api.setContextLatestForTest(null, cfgs);
+    view = api.getModelQuotaStateForTest(nowMs).view;
+    assert.equal(view.activeStatus, 'available');
+    assert.equal(view.badge.text, '88%');
+    assert.equal(view.currentModel?.productLabel, 'Orchestrator (Neon)');
+
+    triggerText = 'Orchestrator Claude Opus 5.5 High · 1M';
+    api.setContextLatestForTest(null, cfgs);
+    view = api.getModelQuotaStateForTest(nowMs).view;
+    assert.equal(view.activeStatus, 'available');
+    assert.equal(view.badge.text, '100%');
+    assert.equal(view.currentModel?.productLabel, 'Claude Opus 5.5');
+
+    triggerText = 'No Model Selected';
+    api.setContextLatestForTest(null, cfgs);
+    view = api.getModelQuotaStateForTest(nowMs).view;
+    assert.equal(view.activeStatus, 'unknown');
+    assert.equal(view.currentModel, null);
+  } finally {
+    api.dispose();
+  }
+});

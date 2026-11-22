@@ -6572,7 +6572,7 @@ test('一键压缩上下文与剩余百分比自动压缩：配置保存、忙�
   }
 });
 
-test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止用今日占比覆盖服务端周额度', async () => {
+test('家庭组周额度饼图优先信任服务端本周期加权分摊，仅在 tokens/缺失时回退 7d 且禁止用今日覆盖', async () => {
   const flush = () => new Promise(resolve => setImmediate(resolve));
   const collectText = (node) => {
     if (!node) return '';
@@ -6638,11 +6638,12 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
     }
   ];
 
-  // Case A: 宿主机未重启导致 dashboard(range=today) 不返回 weeklyMembers，前端自动补查 range=7d 并保持别名与设备去重
+  // Case A: 服务端返回本周期加权 familyWeekly (basis: 'weighted') -> 直接采用服务端周期分摊且不额外拉取 7d
+  let currentBasis = 'weighted';
   let fail7d = false;
   const h = htmlAwareRendererHarness();
   const api = h.sandbox.__AGContextMeter;
-  const calls = [];
+  let calls = [];
   try {
     h.sandbox.window.contextMeterAPI.familyAction = async (payload) => {
       calls.push(payload);
@@ -6695,7 +6696,7 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
                   observedAt: 1795175514553,
                   estimates: [{ name: 'Larry', pct: 17.5 }, { name: 'FDNAN', pct: 9.4 }, { name: 'JacksonMo', pct: 2.5 }],
                   unattributedPct: 0,
-                  basis: 'weighted'
+                  basis: currentBasis
                 }
               ],
               quotaSnapshots: []
@@ -6715,7 +6716,7 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
                 observedAt: 1795175514553,
                 estimates: [{ name: 'Larry', pct: 17.5 }, { name: 'FDNAN', pct: 9.4 }, { name: 'JacksonMo', pct: 2.5 }],
                 unattributedPct: 0,
-                basis: 'weighted'
+                basis: currentBasis
               }
             ],
             quotaSnapshots: []
@@ -6732,29 +6733,45 @@ test('家庭组今日视角在缺少 weeklyMembers 时自动补查 7d 且禁止�
     // 验证状态栏不会重复出现 Ubuntu · Ubuntu
     assert.equal(h.elements.get('family-device-status').textContent, 'FDNAN · Ubuntu · user•••@example.com · 家庭统计');
 
-    // 验证补查了 7d 数据
-    const dashRanges = calls.filter(c => c.action === 'dashboard').map(c => c.range);
-    assert.deepEqual(dashRanges, ['today', '7d']);
+    // 服务端已提供 basis='weighted' 本周期估算，无需额外查 7d
+    const dashRangesA = calls.filter(c => c.action === 'dashboard').map(c => c.range);
+    assert.deepEqual(dashRangesA, ['today']);
 
     // 下方“今日”柱状列表保持今日口径：FDNAN ($15.05) 在前，Larry ($12.59, 37.6%) 在后
     const rows = h.elements.get('family-results').children.filter(c => c.tagName === 'DETAILS' && c.classList.contains('family-row'));
     assert.match(collectText(rows[0].children[0]), /^FDNAN \$15\.0500 · 45\.0%/);
     assert.match(collectText(rows[1].children[0]), /^Larry \$12\.5900 · 37\.6%/);
 
-    // 上方“共享周额度分布”饼图使用 7d 加权估算：Larry 18.8% > FDNAN 7.7% > JacksonMo 2.9%
+    // 上方“共享周额度分布”饼图保留服务端本周期加权估算，不被 7d 滚动历史覆盖
     const legendTextA = collectText(h.elements.get('family-pie-legend'));
-    assert.match(legendTextA, /Larry 18\.8%/);
-    assert.match(legendTextA, /FDNAN 7\.7%/);
-    assert.match(legendTextA, /JacksonMo 2\.9%/);
+    assert.match(legendTextA, /Larry 17\.5%/);
+    assert.match(legendTextA, /FDNAN 9\.4%/);
+    assert.match(legendTextA, /JacksonMo 2\.5%/);
+    assert.match(h.elements.get('family-pie-note').textContent, /按本周期模型加权等效价值估算/);
 
-    // Case B: 即使补查 7d 失败，也绝不用“今日”数据覆盖服务端已提供的周额度估算
-    fail7d = true;
+    // Case B: 当服务端退回 basis='tokens' 且缺失 weeklyMembers 时，前端自动补查 7d 并按 7d 模型加权重算 (18.8% / 7.7% / 2.9%)
+    calls = [];
+    currentBasis = 'tokens';
+    h.elements.get('family-range').value = '5h';
     h.elements.get('family-range').trigger('change');
     for (let i = 0; i < 8; i++) await flush();
+    const dashRangesB = calls.filter(c => c.action === 'dashboard').map(c => c.range);
+    assert.deepEqual(dashRangesB, ['5h', '7d']);
     const legendTextB = collectText(h.elements.get('family-pie-legend'));
-    assert.match(legendTextB, /Larry 17\.5%/);
-    assert.match(legendTextB, /FDNAN 9\.4%/);
-    assert.match(legendTextB, /JacksonMo 2\.5%/);
+    assert.match(legendTextB, /Larry 18\.8%/);
+    assert.match(legendTextB, /FDNAN 7\.7%/);
+    assert.match(legendTextB, /JacksonMo 2\.9%/);
+    assert.match(h.elements.get('family-pie-note').textContent, /按近 7 天模型加权等效价值估算/);
+
+    // Case C: basis='tokens' 时即使补查 7d 失败，也绝不用“今日/5h”数据覆盖服务端已提供的周额度估算
+    fail7d = true;
+    h.elements.get('family-range').value = 'today';
+    h.elements.get('family-range').trigger('change');
+    for (let i = 0; i < 8; i++) await flush();
+    const legendTextC = collectText(h.elements.get('family-pie-legend'));
+    assert.match(legendTextC, /Larry 17\.5%/);
+    assert.match(legendTextC, /FDNAN 9\.4%/);
+    assert.match(legendTextC, /JacksonMo 2\.5%/);
   } finally {
     try { api.dispose(); } catch {}
   }

@@ -15,28 +15,41 @@
     const text = typeof raw === 'object'
       ? [raw.modelId, raw.model, raw.label, raw.modelDisplayName, raw.modelOrAlias?.model, raw.poolKey].filter(Boolean).join(' ')
       : String(raw);
-    const s = String(text || '').toLowerCase().trim();
+    const s = String(text || '')
+      .toLowerCase()
+      .replace(/\s*[·•]\s*[^·•]+$/, '')
+      .trim();
     if (!s) return 'unknown';
-    if (s.includes('carbon') || s.includes('gemini-4-carbon') || s.includes('m670')) {
+    if (s.includes('opus') || s.includes('claude-opus') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m40[012](?![0-9])/.test(s)) {
+      return 'claude-opus-5-5';
+    }
+    if (s.includes('sonnet') || s.includes('claude-sonnet') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m40[345](?![0-9])/.test(s)) {
+      return 'claude-sonnet-5-5';
+    }
+    if (s.includes('claude')) return 'claude-sonnet-5-5';
+    if (s.includes('gpt-oss') || s.includes('gpt')) return 'gpt-oss-120b';
+    if (s.includes('neon') || s.includes('gemini-4-neon') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m(?:532|533|534|535|537)(?![0-9])/.test(s)) {
+      return 'gemini-4-neon';
+    }
+    if (s.includes('carbon') || s.includes('gemini-4-carbon') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m(?:427|437|438|667|670)(?![0-9])/.test(s)) {
       return 'gemini-4-carbon';
     }
     // 优先匹配 Argon / Orchestrator (Argon)，允许裸 gemini-pro-orchestrator 与已知变体但不吞并未知后缀
-    if (s.includes('argon') || s.includes('gemini-4-argon') || s.includes('m668') || /\bgemini-pro-orchestrator(?:-(?:argon|g1(?:-pro)?))?(?![a-z0-9-])/.test(s)) {
+    if (s.includes('argon') || s.includes('gemini-4-argon') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m(?:417|418|419|668|681)(?![0-9])/.test(s) || /\bgemini-pro-orchestrator(?:-(?:argon|g1(?:-pro)?))?(?![a-z0-9-])/.test(s)) {
       return 'gemini-4-argon';
     }
-    if (s.includes('hydrogen') || s.includes('gemini-4-hydrogen')) {
+    if (s.includes('hydrogen') || s.includes('gemini-4-hydrogen') || s.includes('worker-agy') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m(?:525|526|527|528|669)(?![0-9])/.test(s)) {
       return 'gemini-4-hydrogen';
     }
-    if (s.includes('flash') || s.includes('gemini-3.8-flash') || s.includes('gemini-3-flash') || s.includes('gemini-2.5-flash')) {
+    if (s.includes('flash') || s.includes('gemini-3.8-flash') || s.includes('gemini-3-flash') || s.includes('gemini-2.5-flash') || /(?:^|[^a-z0-9])(?:model_placeholder_)?m3(?:18|19|20)(?![0-9])/.test(s)) {
       return 'gemini-3.8-flash';
     }
     if (s.includes('pro') && (s.includes('gemini-3') || s.includes('gemini-4') || s.includes('high') || s.includes('low'))) {
       return 'gemini-4-hydrogen';
     }
-    if (s.includes('opus') || s.includes('claude-opus')) return 'claude-opus-5-5';
-    if (s.includes('sonnet') || s.includes('claude-sonnet')) return 'claude-sonnet-5-5';
-    if (s.includes('claude')) return 'claude-sonnet-5-5';
-    if (s.includes('gpt-oss') || s.includes('gpt')) return 'gpt-oss-120b';
+    if (/^(?:models\/)?orchestrator(?:\s+orchestrator)*$/.test(s)) {
+      return 'gemini-4-argon';
+    }
     return s.replace(/[^a-z0-9_-]/g, '') || 'unknown';
   }
 
@@ -44,6 +57,7 @@
     const pk = getModelPoolKey(raw);
     if (pk === 'gemini-4-hydrogen' || pk === 'gemini-3.8-flash') return 'shared_gemini_main';
     if (pk === 'claude-opus-5-5' || pk === 'claude-sonnet-5-5' || pk === 'gpt-oss-120b') return 'shared_3p_pool';
+    if (pk === 'gemini-4-neon') return 'shared_gemini_neon';
     if (pk === 'gemini-4-argon') return 'shared_gemini_argon';
     if (pk === 'gemini-4-carbon') return 'shared_gemini_carbon';
     return pk && pk !== 'unknown' ? `shared_${pk}` : 'unknown';
@@ -1440,8 +1454,11 @@
       if (c.startsWith('product:anthropic:')) return 'Anthropic';
       if (c.startsWith('product:openai:')) return 'OpenAI';
       if (/^(?:models\/)?(?:gemini|google|gemma|imagen|veo)\b/.test(c)) return 'Google';
-      if (/^(?:models\/)?(?:claude|anthropic)\b/.test(c)) return 'Anthropic';
-      if (/^(?:models\/)?(?:gpt|openai|o1|o3|o4|chatgpt|codex)\b/.test(c)) return 'OpenAI';
+      if (/\b(?:claude|anthropic)\b/.test(c)) return 'Anthropic';
+      if (/\b(?:gpt|openai|o1|o3|o4|chatgpt|codex)\b/.test(c)) return 'OpenAI';
+    }
+    for (const c of candidates) {
+      if (/^(?:models\/)?orchestrator\b/.test(c)) return 'Google';
     }
     return '其他';
   }
@@ -4021,6 +4038,7 @@
   function normalizeModelLookupName(raw) {
     return String(raw || '')
       .toLowerCase()
+      .replace(/\s*[·•]\s*[^·•]+$/, '')
       .replace(/\([^)]*\)/g, ' ')
       .replace(/\b(low|medium|high|xhigh|extra\s*high)\b/gi, ' ')
       .replace(/[^a-z0-9.\u4e00-\u9fa5]+/g, ' ')
@@ -4096,6 +4114,100 @@
       primaryBucket: best,
       selectionReason: isTie ? 'tie_window' : 'tighter_window'
     };
+  }
+
+  function matchQuotaPoolForModel(pools, targetInput) {
+    if (!targetInput || !Array.isArray(pools) || !pools.length) {
+      return { pool: null, model: null };
+    }
+    let candStrs = [];
+    let targetProductKey = '';
+    if (typeof targetInput === 'object') {
+      candStrs = [
+        targetInput.modelId,
+        targetInput.modelOrAlias?.model,
+        targetInput.model,
+        targetInput.label,
+        targetInput.modelDisplayName,
+        targetInput.productLabel
+      ]
+        .filter(v => typeof v === 'string' && v.trim())
+        .map(v => v.trim());
+      if (typeof targetInput.productKey === 'string' && targetInput.productKey.trim()) {
+        targetProductKey = targetInput.productKey.trim().toLowerCase();
+      }
+    } else if (typeof targetInput === 'string' && targetInput.trim()) {
+      candStrs = [targetInput.trim()];
+    }
+    if (!candStrs.length && !targetProductKey) {
+      return { pool: null, model: null };
+    }
+
+    const candLowers = [...new Set(candStrs.map(s => s.toLowerCase()))];
+    const candStripped = [...new Set(candLowers.map(s => s.replace(/^model_/, '')))];
+    const candNorms = [...new Set(candStrs.map(normalizeModelLookupName).filter(Boolean))];
+
+    // 1. 精确匹配池内模型 ID / 别名 / productKey / 标准化产品展示名
+    for (const pool of pools) {
+      for (const m of (pool?.models || [])) {
+        const allIds = [...(m.modelIds || []), ...(m.aliases || [])].map(x => String(x).toLowerCase());
+        if (allIds.some(id => candLowers.includes(id) || candStripped.includes(id.replace(/^model_/, '')))) {
+          return { pool, model: m };
+        }
+        if (targetProductKey && m.productKey && String(m.productKey).toLowerCase() === targetProductKey) {
+          return { pool, model: m };
+        }
+        const mNorm = normalizeModelLookupName(m.productLabel);
+        if (mNorm && candNorms.includes(mNorm)) {
+          return { pool, model: m };
+        }
+      }
+    }
+
+    const fallbackGroup = getSharedQuotaGroupKey(targetInput);
+    const pk = getModelPoolKey(targetInput);
+    const pickModelInPool = (pool) => {
+      const models = Array.isArray(pool?.models) ? pool.models : [];
+      if (!models.length) return null;
+      return models.find(m => candNorms.length && candNorms.includes(normalizeModelLookupName(m.productLabel)))
+        || models.find(m => pk && pk !== 'unknown' && getModelPoolKey(m.productLabel || m.modelIds?.[0]) === pk)
+        || models[0];
+    };
+
+    // 2. 精确匹配 sharedGroupKey
+    const byGroup = pools.find(p => p.poolKey === fallbackGroup);
+    if (byGroup) {
+      return { pool: byGroup, model: pickModelInPool(byGroup) };
+    }
+
+    // 3. Antigravity v2.34.0 单一合并 Gemini Models / 3P 共享池兜底
+    if (fallbackGroup === 'shared_gemini_main' || fallbackGroup === 'shared_gemini_neon' || fallbackGroup === 'shared_gemini_argon' || fallbackGroup === 'shared_gemini_carbon') {
+      const geminiPools = pools.filter(p =>
+        String(p?.poolKey || '').startsWith('shared_gemini') || /gemini/i.test(String(p?.title || ''))
+      );
+      const familyMatch = String(pk || '').match(/gemini-(?:4|3\.8)-([a-z0-9]+)/);
+      const familyToken = familyMatch ? familyMatch[1] : '';
+      let unifiedPool = null;
+      if (familyToken) {
+        unifiedPool = geminiPools.find(p =>
+          String(p?.description || '').toLowerCase().includes(familyToken) ||
+          (p?.models || []).some(m => getModelPoolKey(m.productLabel || m.modelIds?.[0]) === pk)
+        ) || null;
+      }
+      if (!unifiedPool && geminiPools.length === 1) {
+        unifiedPool = geminiPools[0];
+      }
+      if (unifiedPool) {
+        return { pool: unifiedPool, model: pickModelInPool(unifiedPool) };
+      }
+    } else if (fallbackGroup === 'shared_3p_pool') {
+      const pool3p = pools.find(p => /3p|claude|gpt/i.test(`${p?.poolKey || ''} ${p?.title || ''} ${p?.description || ''}`));
+      if (pool3p) {
+        return { pool: pool3p, model: pickModelInPool(pool3p) };
+      }
+    }
+
+    return { pool: null, model: null };
   }
 
   /**
@@ -4461,35 +4573,7 @@
     const pools = Array.from(poolMap.values());
 
     // 4. 匹配当前会话模型与浏览查看池（浏览不修改 currentModel）
-    const findMatchedForTarget = (targetInput) => {
-      if (!targetInput) return { pool: null, model: null };
-      const targetStr = typeof targetInput === 'object'
-        ? String(targetInput.modelId || targetInput.modelOrAlias?.model || targetInput.label || targetInput.model || '')
-        : String(targetInput);
-      const tLower = targetStr.trim().toLowerCase();
-      const tStripped = tLower.replace(/^model_/, '');
-      const tNorm = normalizeModelLookupName(targetStr);
-
-      for (const pool of pools) {
-        for (const m of pool.models) {
-          const allIds = [...m.modelIds, ...m.aliases].map(x => x.toLowerCase());
-          if (allIds.some(id => id === tLower || id.replace(/^model_/, '') === tStripped)) {
-            return { pool, model: m };
-          }
-          if (tNorm && normalizeModelLookupName(m.productLabel) === tNorm) {
-            return { pool, model: m };
-          }
-        }
-      }
-      const fallbackGroup = getSharedQuotaGroupKey(targetInput);
-      const byGroup = pools.find(p => p.poolKey === fallbackGroup);
-      if (byGroup) {
-        return { pool: byGroup, model: byGroup.models[0] || null };
-      }
-      return { pool: null, model: null };
-    };
-
-    const currentMatch = findMatchedForTarget(input.currentModel);
+    const currentMatch = matchQuotaPoolForModel(pools, input.currentModel);
     const browsePool = input.browsePoolKey
       ? (pools.find(p => p.poolKey === input.browsePoolKey) || currentMatch.pool || pools[0] || null)
       : (currentMatch.pool || pools[0] || null);
@@ -7250,6 +7334,8 @@
     resolveModelQuota,
     getModelPoolKey,
     getSharedQuotaGroupKey,
+    normalizeModelLookupName,
+    matchQuotaPoolForModel,
     parseQuotaFraction,
     formatQuotaPercentText,
     formatQuotaResetMeta,

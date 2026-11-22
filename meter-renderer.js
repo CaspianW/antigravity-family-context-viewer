@@ -5905,6 +5905,7 @@ const PANEL_I18N = {
   'family.pieBasisCost': { 'zh-CN': "成员占比按本周已上报调用参考费用估算", 'zh-TW': "成員佔比依本週已上報呼叫參考費用估算", en: "Estimated by reported weekly API cost" },
   'family.pieBasisTokens': { 'zh-CN': "成员占比按本周已上报调用 Token 估算", 'zh-TW': "成員佔比依本週已上報呼叫 Token 估算", en: "Estimated by reported weekly tokens" },
   'family.pieBasisWeighted': { 'zh-CN': "成员占比按近 7 天模型加权等效价值估算", 'zh-TW': "成員佔比依近 7 天模型加權等效價值估算", en: "Estimated by 7-day weighted model value" },
+  'family.pieBasisCycleWeighted': { 'zh-CN': "成员占比按本周期模型加权等效价值估算", 'zh-TW': "成員佔比依本週期模型加權等效價值估算", en: "Estimated by cycle weighted model value" },
   'family.pieBasisDrift': { 'zh-CN': "各端上报 {min}%~{max}%（已按最高已用 {max}% 锁定防回退）· ", 'zh-TW': "各端上報 {min}%~{max}%（已按最高已用 {max}% 鎖定防回退）· ", en: "Device cache range {min}%-{max}% (locked at max {max}%) · " },
   'family.pieBasisNone': { 'zh-CN': "暂无可用于分摊的本周调用记录，已用额度暂未归属", 'zh-TW': "暫無可用於分攤的本週呼叫記錄，已用額度暫未歸屬", en: "No attributed weekly calls yet" },
   'family.pieBasisZero': { 'zh-CN': "当前共享池尚无已用额度", 'zh-TW': "目前共享池尚無已用額度", en: "No pool quota used yet" },
@@ -15931,7 +15932,10 @@ function closeAllDropdowns(exceptWrap = null) {
     const svgs = clone.querySelectorAll ? clone.querySelectorAll('svg, [aria-hidden="true"]') : [];
     if (svgs && svgs.forEach) svgs.forEach(s => s.remove());
     const rawText = (clone.textContent || '').trim();
-    if (!rawText) return null;
+    const cleanedText = rawText.replace(/\s*[·•]\s*[^·•]+$/, '').trim();
+    if (!cleanedText || /^(?:no\s+model\s+selected|\d+\s+models?\s+selected|未选择模型|未選擇模型)$/i.test(cleanedText)) {
+      return null;
+    }
 
     const effortCaseMap = {
       'extra high': 'Extra High',
@@ -15943,38 +15947,110 @@ function closeAllDropdowns(exceptWrap = null) {
       minimal: 'Minimal',
       max: 'Max'
     };
-    let baseText = rawText;
-    const mParen = rawText.match(/^(.*?)\s*\((Extra High|XHigh|Low|Medium|High|Extra|Minimal|Max)\)\s*$/i);
-    if (mParen) {
-      baseText = mParen[1].trim() || rawText;
-      if (!effort) effort = mParen[2];
-    } else {
-      const mTrail = rawText.match(/^(.*?)\s+(Extra High|XHigh|Low|Medium|High|Minimal|Max)\s*$/i);
-      if (mTrail) {
-        baseText = mTrail[1].trim() || rawText;
-        if (!effort) effort = mTrail[2];
+    const parseEffortSplit = (text, fallbackEffort = null) => {
+      let b = text;
+      let eff = fallbackEffort;
+      const mParen = text.match(/^(.*?)\s*\((Extra High|XHigh|Low|Medium|High|Extra|Minimal|Max)\)\s*$/i);
+      if (mParen) {
+        b = mParen[1].trim() || text;
+        if (!eff) eff = mParen[2];
+      } else {
+        const mTrail = text.match(/^(.*?)\s+(Extra High|XHigh|Low|Medium|High|Minimal|Max)\s*$/i);
+        if (mTrail) {
+          b = mTrail[1].trim() || text;
+          if (!eff) eff = mTrail[2];
+        }
       }
-    }
-    const normEffort = effort ? (effortCaseMap[String(effort).trim().toLowerCase()] || effort) : null;
-    const parenLabel = (normEffort && baseText && !baseText.includes('(')) ? `${baseText} (${normEffort})` : rawText;
+      const norm = eff ? (effortCaseMap[String(eff).trim().toLowerCase()] || eff) : null;
+      const paren = (norm && b && !b.includes('(')) ? `${b} (${norm})` : text;
+      return { base: b, effort: norm, paren };
+    };
 
+    const mainParsed = parseEffortSplit(cleanedText, effort);
     const configs = state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [];
     const resolveCand = (cand) => cand
       ? (resolveStableModelKeyClient(cand) || (typeof resolveStableModelId === 'function' ? resolveStableModelId(cand, configs) : null))
       : null;
-    const stableId = resolveCand(parenLabel) || resolveCand(rawText) || resolveCand(baseText);
+    const findConfigMatch = (cand) => {
+      if (!cand || !Array.isArray(configs) || !configs.length) return null;
+      const resolved = resolveCand(cand);
+      if (!resolved) return null;
+      const rLow = String(resolved).trim().toLowerCase();
+      const rStrip = rLow.replace(/^model_/, '');
+      const hit = configs.find(c => {
+        const vals = [c?.modelId, c?.model, c?.modelOrAlias?.model, c?.label]
+          .filter(Boolean)
+          .map(v => String(v).trim().toLowerCase());
+        return vals.some(v => v === rLow || v.replace(/^model_/, '') === rStrip);
+      });
+      return hit ? resolved : null;
+    };
+
+    const candidates = [
+      { cand: mainParsed.paren, label: mainParsed.paren, effort: mainParsed.effort },
+      { cand: cleanedText, label: mainParsed.paren, effort: mainParsed.effort },
+      { cand: mainParsed.base, label: mainParsed.base, effort: mainParsed.effort }
+    ];
+    let subParsed = null;
+    const mOrch = cleanedText.match(/^orchestrator\s+(.+)$/i);
+    if (mOrch) {
+      const subRaw = mOrch[1].trim();
+      subParsed = parseEffortSplit(subRaw, effort);
+      candidates.push(
+        { cand: subParsed.paren, label: subParsed.paren, effort: subParsed.effort || mainParsed.effort },
+        { cand: subRaw, label: subParsed.paren, effort: subParsed.effort || mainParsed.effort },
+        { cand: subParsed.base, label: subParsed.base, effort: subParsed.effort || mainParsed.effort }
+      );
+      const mTier = subRaw.match(/\b(neon|carbon|argon)\b/i);
+      if (mTier) {
+        const tierLabel = `Orchestrator (${mTier[1][0].toUpperCase()}${mTier[1].slice(1).toLowerCase()})`;
+        candidates.push({ cand: tierLabel, label: tierLabel, effort: null });
+      }
+    }
+
+    let stableId = null;
+    let chosenLabel = mainParsed.paren;
+    let chosenEffort = mainParsed.effort;
+    for (const item of candidates) {
+      const hit = findConfigMatch(item.cand);
+      if (hit) {
+        stableId = hit;
+        chosenLabel = item.label;
+        chosenEffort = item.effort;
+        break;
+      }
+    }
+    if (!stableId) {
+      const fallbackOrder = subParsed
+        ? [
+            { cand: subParsed.paren, label: subParsed.paren, effort: subParsed.effort || mainParsed.effort },
+            { cand: subParsed.base, label: subParsed.base, effort: subParsed.effort || mainParsed.effort },
+            { cand: mainParsed.paren, label: mainParsed.paren, effort: mainParsed.effort }
+          ]
+        : candidates;
+      for (const item of fallbackOrder) {
+        const res = resolveCand(item.cand);
+        if (res) {
+          stableId = res;
+          chosenLabel = item.label;
+          chosenEffort = item.effort;
+          break;
+        }
+      }
+    }
+
     const g = groupProductSafe({
-      modelId: stableId || parenLabel,
-      label: parenLabel,
-      effort: normEffort
+      modelId: stableId || chosenLabel,
+      label: chosenLabel,
+      effort: chosenEffort
     });
 
     return {
       rawText,
-      modelId: stableId || parenLabel,
+      modelId: stableId || chosenLabel,
       productKey: g.productKey,
-      productLabel: g.productLabel || baseText,
-      effort: normEffort || g.effort || null,
+      productLabel: g.productLabel || mainParsed.base,
+      effort: chosenEffort || g.effort || null,
       source: 'dom_trigger'
     };
   }
@@ -17139,6 +17215,19 @@ function closeAllDropdowns(exceptWrap = null) {
     return { effectiveUSD, estimatedUSD, hasEstimate };
   }
 
+  function hasTrustedServerWeeklyPools(data, nowMs = Date.now()) {
+    const pools = Array.isArray(data?.familyWeekly) ? data.familyWeekly : [];
+    const active = pools.filter(p => p && (!p.expiresAt || Number(p.expiresAt) > nowMs));
+    if (!active.length) return false;
+    return active.every(p => {
+      const usedPct = Number(p.usedPct || 0);
+      if (!(usedPct > 0)) return true;
+      return (p.basis === 'cost' || p.basis === 'weighted')
+        && Array.isArray(p.estimates)
+        && p.estimates.length > 0;
+    });
+  }
+
   function collectWeeklySnapshotStats(data) {
     const nowMs = Date.now();
     const snapshots = Array.isArray(data?.quotaSnapshots) ? data.quotaSnapshots : [];
@@ -17256,6 +17345,7 @@ function closeAllDropdowns(exceptWrap = null) {
         poolSelect.hidden = poolNames.length < 1;
       }
       const poolObj = weeklyPools.find(p => p.pool === familyView.selectedPool) || weeklyPools[0];
+      const isServerPool = serverPools.includes(poolObj);
       const snapStat = snapStats.get(poolObj?.pool);
       const serverUsedPct = Math.max(0, Math.min(100, Number(poolObj?.usedPct || 0)));
       // 同一重置周期内多设备缓存的 remainingPct 可能存在 0.5%~1% 延迟，取最高已用值防止额度倒退与来回跳动
@@ -17264,9 +17354,16 @@ function closeAllDropdowns(exceptWrap = null) {
 
       let estimates = Array.isArray(poolObj?.estimates) ? poolObj.estimates : [];
       let unattr = Math.max(0, Number(poolObj?.unattributedPct || 0));
-      let effectiveBasis = poolObj?.basis || null;
+      const hasServerTrustedBasis = Boolean(
+        isServerPool &&
+        (poolObj?.basis === 'cost' || poolObj?.basis === 'weighted') &&
+        (usedPct <= 0 || estimates.length > 0)
+      );
+      let effectiveBasis = (hasServerTrustedBasis && usedPct > 0 && poolObj?.basis === 'weighted')
+        ? 'server_weighted'
+        : (poolObj?.basis || null);
 
-      // 当服务端因未定价模型退回 tokens 口径时，改用近 7 天按模型加权等效价值分摊，避免低价缓存 Token 抢占高配额占比
+      // 当服务端因未定价模型退回 tokens 口径（或本地快照推导）时，改用近 7 天按模型加权等效价值分摊，避免低价缓存 Token 抢占高配额占比
       const weightedScores = weeklySource
         .filter(m => !m.archived)
         .map(m => ({ name: m.name, val: computeFamilyMemberPoolWeighted(m, poolObj?.pool).effectiveUSD }))
@@ -17277,7 +17374,7 @@ function closeAllDropdowns(exceptWrap = null) {
         estimates = [];
         unattr = 0;
         effectiveBasis = null;
-      } else if (hasTrueWeeklyMembers && poolObj?.basis !== 'cost' && weightedSum > 0) {
+      } else if (hasTrueWeeklyMembers && !hasServerTrustedBasis && weightedSum > 0) {
         estimates = weightedScores.map(item => ({
           name: item.name,
           pct: Number(((item.val / weightedSum) * usedPct).toFixed(2))
@@ -17320,11 +17417,13 @@ function closeAllDropdowns(exceptWrap = null) {
         ? 'family.pieBasisZero'
         : effectiveBasis === 'cost'
           ? 'family.pieBasisCost'
-          : effectiveBasis === 'tokens'
-            ? 'family.pieBasisTokens'
-            : effectiveBasis === 'weighted'
-              ? 'family.pieBasisWeighted'
-              : 'family.pieBasisNone';
+          : effectiveBasis === 'server_weighted'
+            ? 'family.pieBasisCycleWeighted'
+            : effectiveBasis === 'tokens'
+              ? 'family.pieBasisTokens'
+              : effectiveBasis === 'weighted'
+                ? 'family.pieBasisWeighted'
+                : 'family.pieBasisNone';
       const driftPrefix = (usedPct - minReported >= 0.05)
         ? t('family.pieBasisDrift', { min: Number(minReported.toFixed(1)), max: Number(usedPct.toFixed(1)) })
         : '';
@@ -17573,7 +17672,7 @@ function closeAllDropdowns(exceptWrap = null) {
     if (reqRange === '7d' && reqScope !== 'personal' && Array.isArray(data?.members) && data.members.length) {
       familyView.weeklyCache = { key: weekCacheKey, ts: Date.now(), members: data.members };
     }
-    if (reqScope !== 'personal' && reqRange !== '7d' && (!Array.isArray(data?.weeklyMembers) || !data.weeklyMembers.length)) {
+    if (reqScope !== 'personal' && reqRange !== '7d' && !hasTrustedServerWeeklyPools(data) && (!Array.isArray(data?.weeklyMembers) || !data.weeklyMembers.length)) {
       const cachedWeek = familyView.weeklyCache;
       if (!force && cachedWeek && cachedWeek.key === weekCacheKey && (Date.now() - cachedWeek.ts) < FAMILY_WEEKLY_FALLBACK_TTL_MS) {
         data.weeklyMembers = cachedWeek.members;
@@ -28643,6 +28742,7 @@ var cumLockedKey = null;
       const activeKeyLower = String(activeSessionModelKey || '').trim().toLowerCase();
       const matched = activeKeyLower ? cfgList.find(c =>
         String(c?.modelId || '').trim().toLowerCase() === activeKeyLower ||
+        String(c?.model || '').trim().toLowerCase() === activeKeyLower ||
         String(c?.modelOrAlias?.model || '').trim().toLowerCase() === activeKeyLower
       ) : null;
       if (matched) return matched;
@@ -28794,38 +28894,44 @@ var cumLockedKey = null;
     });
 
     // 针对实时切换后的会话模型重新匹配池与模型
-    const tStr = currentModelInput
-      ? String(currentModelInput.modelId || currentModelInput.label || '').trim().toLowerCase()
-      : '';
-    const tStripped = tStr.replace(/^model_/, '');
     let matchedPool = null;
     let matchedModel = null;
-    if (tStr) {
-      for (const p of updatedPools) {
-        for (const m of (p.models || [])) {
-          const allIds = [...(m.modelIds || []), ...(m.aliases || [])].map(x => String(x).toLowerCase());
-          if (allIds.some(id => id === tStr || id.replace(/^model_/, '') === tStripped)) {
-            matchedPool = p;
-            matchedModel = m;
-            break;
+    if (currentModelInput && core?.matchQuotaPoolForModel) {
+      const mRes = core.matchQuotaPoolForModel(updatedPools, currentModelInput);
+      matchedPool = mRes.pool || null;
+      matchedModel = mRes.model || null;
+    } else {
+      const tStr = currentModelInput
+        ? String(currentModelInput.modelId || currentModelInput.label || '').trim().toLowerCase()
+        : '';
+      const tStripped = tStr.replace(/^model_/, '');
+      if (tStr) {
+        for (const p of updatedPools) {
+          for (const m of (p.models || [])) {
+            const allIds = [...(m.modelIds || []), ...(m.aliases || [])].map(x => String(x).toLowerCase());
+            if (allIds.some(id => id === tStr || id.replace(/^model_/, '') === tStripped)) {
+              matchedPool = p;
+              matchedModel = m;
+              break;
+            }
+            if (m.productLabel && m.productLabel.toLowerCase() === tStr) {
+              matchedPool = p;
+              matchedModel = m;
+              break;
+            }
+            if (m.productKey && currentModelInput?.productKey && m.productKey === currentModelInput.productKey) {
+              matchedPool = p;
+              matchedModel = m;
+              break;
+            }
           }
-          if (m.productLabel && m.productLabel.toLowerCase() === tStr) {
-            matchedPool = p;
-            matchedModel = m;
-            break;
-          }
-          if (m.productKey && currentModelInput?.productKey && m.productKey === currentModelInput.productKey) {
-            matchedPool = p;
-            matchedModel = m;
-            break;
-          }
+          if (matchedPool) break;
         }
-        if (matchedPool) break;
-      }
-      if (!matchedPool && core?.getSharedQuotaGroupKey) {
-        const gKey = core.getSharedQuotaGroupKey(currentModelInput);
-        matchedPool = updatedPools.find(p => p.poolKey === gKey) || null;
-        if (matchedPool) matchedModel = matchedPool.models?.[0] || null;
+        if (!matchedPool && core?.getSharedQuotaGroupKey) {
+          const gKey = core.getSharedQuotaGroupKey(currentModelInput);
+          matchedPool = updatedPools.find(p => p.poolKey === gKey) || null;
+          if (matchedPool) matchedModel = matchedPool.models?.[0] || null;
+        }
       }
     }
 

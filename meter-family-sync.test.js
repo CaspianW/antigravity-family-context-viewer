@@ -637,3 +637,71 @@ test('createFamilySync caches dashboard/weeklyMembers responses, enforces failur
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('createFamilySync skips redundant 7d dashboard request when server returns trusted weighted familyWeekly', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-family-sync-trusted-week-'));
+  const ledgerPath = path.join(tmpDir, 'ledger.json');
+  fs.writeFileSync(ledgerPath, JSON.stringify({ calls: {} }));
+  const requests = [];
+  const serverUrl = 'https://example-family.test';
+  const secret = 'b'.repeat(32);
+  const memberId = '22222222-2222-4222-8222-222222222222';
+  let nowMs = 1795271000000;
+
+  const sync = createFamilySync({
+    stateDir: tmpDir,
+    ledgerPath,
+    now: () => nowMs,
+    fetch: async (url) => {
+      const u = new URL(url);
+      requests.push({ pathname: u.pathname, range: u.searchParams.get('range'), familyWeekly: u.searchParams.get('familyWeekly') });
+      if (u.pathname.endsWith('/members')) {
+        return { ok: true, status: 200, headers: { get: () => 'application/json' }, async json() { return { members: [{ id: memberId, name: 'FDNAN' }] }; } };
+      }
+      if (u.pathname.endsWith('/devices/register')) {
+        return { ok: true, status: 200, headers: { get: () => 'application/json' }, async json() { return { device: { deviceId: 'dev-1' } }; } };
+      }
+      if (u.pathname.endsWith('/dashboard')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          async json() {
+            return {
+              total: { calls: 10, totalTokens: 1000, costUSD: 1.5, unpricedCalls: 0 },
+              members: [{ id: memberId, name: 'FDNAN', calls: 10, totalTokens: 1000, costUSD: 1.5, unpricedCalls: 0 }],
+              familyWeekly: [
+                {
+                  pool: 'Gemini Models',
+                  usedPct: 8.2,
+                  expiresAt: nowMs + 86_400_000,
+                  observedAt: nowMs,
+                  estimates: [{ name: 'FDNAN', pct: 8.2 }],
+                  unattributedPct: 0,
+                  basis: 'weighted'
+                }
+              ],
+              quotaSnapshots: []
+            };
+          }
+        };
+      }
+      return { ok: true, status: 200, headers: { get: () => 'application/json' }, async json() { return {}; } };
+    }
+  });
+
+  try {
+    const saved = await sync.action({ action: 'save', serverUrl, familySecret: secret, memberId, deviceName: 'DevBox', enabled: true });
+    assert.equal(saved.ok, true);
+    requests.length = 0;
+    const res = await sync.action({ action: 'dashboard', range: 'today', scope: 'shared', tzOffset: 480 });
+    assert.equal(res.ok, true);
+    const dashReqs = requests.filter(r => r.pathname.endsWith('/dashboard'));
+    assert.equal(dashReqs.length, 1, '服务端返回有效 basis=weighted 时不应额外并发拉取 range=7d');
+    assert.equal(dashReqs[0].range, 'today');
+    assert.equal(dashReqs[0].familyWeekly, '1');
+  } finally {
+    sync.stop();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

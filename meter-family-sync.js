@@ -178,6 +178,19 @@ function getSnapshot(result, config, now) {
     accountAlias: config.accountRules[key].alias, poolScope: 'shared', observedAt, windows } } : null;
 }
 
+function hasTrustedServerWeeklyPools(data, nowTs = Date.now()) {
+  const pools = Array.isArray(data?.familyWeekly) ? data.familyWeekly : [];
+  const active = pools.filter(p => p && (!p.expiresAt || Number(p.expiresAt) > nowTs));
+  if (!active.length) return false;
+  return active.every(p => {
+    const usedPct = Number(p.usedPct || 0);
+    if (!(usedPct > 0)) return true;
+    return (p.basis === 'cost' || p.basis === 'weighted')
+      && Array.isArray(p.estimates)
+      && p.estimates.length > 0;
+  });
+}
+
 function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch, now = Date.now, readQuota } = {}) {
   const configPath = path.join(stateDir, 'family_sync_config.json');
   const syncPath = path.join(stateDir, 'family_sync_state.json');
@@ -583,23 +596,27 @@ function createFamilySync({ stateDir, ledgerPath, fetch: send = globalThis.fetch
             tzOffset,
             familyWeekly: '1'
           });
-          const needWeekly = reqScope !== 'personal' && reqRange !== '7d';
+          const data = await api(cfg, 'dashboard?' + query);
+          const needWeekly = reqScope !== 'personal'
+            && reqRange !== '7d'
+            && !hasTrustedServerWeeklyPools(data, nowTs);
           const cachedWeek = !force ? weeklyCache.get(weekKey) : null;
           const hasFreshWeek = Boolean(cachedWeek && (nowTs - cachedWeek.ts) < WEEKLY_CACHE_TTL);
-          const weekQuery = (needWeekly && !hasFreshWeek) ? new URLSearchParams({
-            range: '7d',
-            scope: reqScope,
-            tzOffset
-          }) : null;
-          const [data, weekData] = await Promise.all([
-            api(cfg, 'dashboard?' + query),
-            weekQuery ? api(cfg, 'dashboard?' + weekQuery).catch(() => null) : Promise.resolve(null)
-          ]);
-          if (Array.isArray(weekData?.members)) {
-            weeklyCache.set(weekKey, { ts: nowTs, members: weekData.members });
-            data.weeklyMembers = weekData.members;
-          } else if (hasFreshWeek) {
-            data.weeklyMembers = cachedWeek.members;
+          if (needWeekly) {
+            if (hasFreshWeek) {
+              data.weeklyMembers = cachedWeek.members;
+            } else {
+              const weekQuery = new URLSearchParams({
+                range: '7d',
+                scope: reqScope,
+                tzOffset
+              });
+              const weekData = await api(cfg, 'dashboard?' + weekQuery).catch(() => null);
+              if (Array.isArray(weekData?.members)) {
+                weeklyCache.set(weekKey, { ts: nowTs, members: weekData.members });
+                data.weeklyMembers = weekData.members;
+              }
+            }
           }
           if (reqRange === '7d' && reqScope !== 'personal' && Array.isArray(data?.members)) {
             weeklyCache.set(weekKey, { ts: nowTs, members: data.members });

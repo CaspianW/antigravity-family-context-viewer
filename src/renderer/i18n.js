@@ -132,6 +132,7 @@ const PANEL_I18N = {
   'family.pieBasisCost': { 'zh-CN': "成员占比按本周已上报调用参考费用估算", 'zh-TW': "成員佔比依本週已上報呼叫參考費用估算", en: "Estimated by reported weekly API cost" },
   'family.pieBasisTokens': { 'zh-CN': "成员占比按本周已上报调用 Token 估算", 'zh-TW': "成員佔比依本週已上報呼叫 Token 估算", en: "Estimated by reported weekly tokens" },
   'family.pieBasisWeighted': { 'zh-CN': "成员占比按近 7 天模型加权等效价值估算", 'zh-TW': "成員佔比依近 7 天模型加權等效價值估算", en: "Estimated by 7-day weighted model value" },
+  'family.pieBasisCycleWeighted': { 'zh-CN': "成员占比按本周期模型加权等效价值估算", 'zh-TW': "成員佔比依本週期模型加權等效價值估算", en: "Estimated by cycle weighted model value" },
   'family.pieBasisDrift': { 'zh-CN': "各端上报 {min}%~{max}%（已按最高已用 {max}% 锁定防回退）· ", 'zh-TW': "各端上報 {min}%~{max}%（已按最高已用 {max}% 鎖定防回退）· ", en: "Device cache range {min}%-{max}% (locked at max {max}%) · " },
   'family.pieBasisNone': { 'zh-CN': "暂无可用于分摊的本周调用记录，已用额度暂未归属", 'zh-TW': "暫無可用於分攤的本週呼叫記錄，已用額度暫未歸屬", en: "No attributed weekly calls yet" },
   'family.pieBasisZero': { 'zh-CN': "当前共享池尚无已用额度", 'zh-TW': "目前共享池尚無已用額度", en: "No pool quota used yet" },
